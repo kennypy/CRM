@@ -1,0 +1,28 @@
+{
+  "name": "@nexcrm/graph-core",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "db:migrate": "node -r tsx/cjs src/db/migrate.ts",
+    "db:seed": "node -r tsx/cjs src/db/seed.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nexcrm/shared-types": "*",
+    "fastify": "^5.2.0",
+    "@fastify/jwt": "^9.0.1",
+    "pg": "^8.13.1",
+    "redis": "^4.7.0",
+    "zod": "^3.24.0",
+    "pino": "^9.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

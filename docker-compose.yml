@@ -1,0 +1,104 @@
+version: "3.9"
+
+# NexCRM — Local development infrastructure stack
+# Starts all dependencies; services run via `npm run dev`
+#
+# Usage:
+#   npm run docker:up       — start all infra
+#   npm run docker:down     — stop all infra
+#   docker compose logs -f  — tail logs
+
+services:
+  # ── PostgreSQL 16 with Apache AGE (graph) + pgvector ──────────────────────
+  postgres:
+    image: apache/age:PG16
+    container_name: nexcrm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexcrm
+      POSTGRES_PASSWORD: nexcrm_dev
+      POSTGRES_DB: nexcrm
+    ports:
+      - "5432:5432"
+    volumes:
+      - .docker-data/postgres:/var/lib/postgresql/data
+      - ./infra/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexcrm -d nexcrm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis 7 (cache + streams) ──────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nexcrm-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - .docker-data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── MinIO (S3-compatible file storage) ────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: nexcrm-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - .docker-data/minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Typesense (full-text + semantic search) ───────────────────────────────
+  typesense:
+    image: typesense/typesense:27.0
+    container_name: nexcrm-typesense
+    restart: unless-stopped
+    environment:
+      TYPESENSE_API_KEY: nexcrm-typesense-dev-key
+      TYPESENSE_DATA_DIR: /data
+    ports:
+      - "8108:8108"
+    volumes:
+      - .docker-data/typesense:/data
+
+  # ── OpenTelemetry Collector ───────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: nexcrm-otel
+    restart: unless-stopped
+    volumes:
+      - ./infra/otel/config.yml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - "4317:4317"   # gRPC
+      - "4318:4318"   # HTTP
+      - "8888:8888"   # metrics
+
+  # ── Mailhog (local email capture for dev) ─────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: nexcrm-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+
+networks:
+  default:
+    name: nexcrm-network
