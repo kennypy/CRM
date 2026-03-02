@@ -11,7 +11,7 @@ version: "3.9"
 services:
   # ── PostgreSQL 16 with Apache AGE (graph) + pgvector ──────────────────────
   postgres:
-    image: apache/age:PG16
+    image: apache/age:release_PG16_1.6.0
     container_name: nexcrm-postgres
     restart: unless-stopped
     environment:

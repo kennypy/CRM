@@ -11,13 +11,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@nexcrm/shared-types": "*",
-    "fastify": "^5.2.0",
     "@fastify/jwt": "^9.0.1",
+    "@nexcrm/shared-types": "*",
+    "dotenv": "^17.3.1",
+    "fastify": "^5.2.0",
     "pg": "^8.13.1",
+    "pino": "^9.5.0",
     "redis": "^4.7.0",
-    "zod": "^3.24.0",
-    "pino": "^9.5.0"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
