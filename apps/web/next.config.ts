@@ -6,14 +6,19 @@ const nextConfig: NextConfig = {
 
   // Proxy API calls to the gateway in dev
   async rewrites() {
+    const gateway = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}/api/:path*`,
+        destination: `${gateway}/api/:path*`,
+      },
+      {
+        source: "/auth/:path*",
+        destination: `${gateway}/auth/:path*`,
       },
       {
         source: "/graphql",
-        destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}/graphql`,
+        destination: `${gateway}/graphql`,
       },
     ];
   },
