@@ -328,6 +328,7 @@ export async function computeRealityScore(
   await cypher(`
     MATCH (d:Deal {id: '${dealId}', tenant_id: '${tenantId}'})
     SET d.reality_score = ${score}, d.updated_at = '${new Date().toISOString()}'
+    RETURN {id: d.id}
   `);
 
   return {

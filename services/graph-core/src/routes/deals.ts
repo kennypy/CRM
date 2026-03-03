@@ -18,6 +18,25 @@ const CreateDealSchema = z.object({
   isExpansion: z.boolean().optional(),
 });
 
+// ── Deal map query helpers ─────────────────────────────────────────────────────
+// AGE's cypher() in pool.ts returns a single `v agtype` column.
+// All queries MUST return exactly one expression (a map); never raw vertices.
+// Maps serialise to plain JSON; vertices serialise with "::vertex" suffix (invalid JSON).
+
+/** RETURN clause that flattens a Deal + optional Company into one map. */
+function dealReturnMap() {
+  return `{
+    id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
+    value: d.value, currency: d.currency, close_date: d.close_date,
+    archetype: d.archetype, is_expansion: d.is_expansion,
+    declared_probability: d.declared_probability,
+    reality_score: d.reality_score, reality_explanation: d.reality_explanation,
+    risk_flags: d.risk_flags, owner_id: d.owner_id,
+    created_at: d.created_at, updated_at: d.updated_at,
+    company_id: c.id, company_name: c.name
+  }`;
+}
+
 export async function dealsRoutes(server: FastifyInstance) {
   server.get("/", async (request, reply) => {
     const q = request.query as Record<string, string>;
@@ -31,19 +50,28 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (q.stage) {
       cyph += ` WHERE d.stage = '${q.stage}'`;
     }
-    // At-risk filter: reality score < 50 or dark > 7d
+    // At-risk filter: reality score < 50
     if (q.atRisk === "true") {
       cyph += ` WHERE d.reality_score < 50 OR d.stage NOT IN ['closed_won','closed_lost']`;
     }
 
     cyph += `
-      OPTIONAL MATCH (c:Company)<-[:INVOLVED_IN]-(d)
+      OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
       OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
-      RETURN d, c,
-             count(DISTINCT p) AS buying_group_size,
-             collect(DISTINCT {person: p, role: inf.role}) AS stakeholders
+      WITH d, c, count(DISTINCT p) AS bgs
       ORDER BY d.value DESC
       LIMIT ${limit}
+      RETURN {
+        id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
+        value: d.value, currency: d.currency, close_date: d.close_date,
+        archetype: d.archetype, is_expansion: d.is_expansion,
+        declared_probability: d.declared_probability,
+        reality_score: d.reality_score, reality_explanation: d.reality_explanation,
+        risk_flags: d.risk_flags, owner_id: d.owner_id,
+        created_at: d.created_at, updated_at: d.updated_at,
+        company_id: c.id, company_name: c.name,
+        buying_group_size: bgs
+      }
     `;
 
     const rows = await cypher(cyph);
@@ -75,7 +103,7 @@ export async function dealsRoutes(server: FastifyInstance) {
         risk_flags: '[]',
         source: 'user',
         created_at: '${now}', updated_at: '${now}'
-      }) RETURN d
+      }) RETURN {id: d.id}
     `);
 
     // Link to company
@@ -83,6 +111,7 @@ export async function dealsRoutes(server: FastifyInstance) {
       await cypher(`
         MATCH (d:Deal {id: '${id}'}), (c:Company {id: '${companyId}', tenant_id: '${q.tenantId}'})
         MERGE (c)-[:INVOLVED_IN {type: 'buyer', created_at: '${now}'}]->(d)
+        RETURN {ok: true}
       `).catch(() => {});
     }
 
@@ -92,7 +121,11 @@ export async function dealsRoutes(server: FastifyInstance) {
       [q.tenantId, id, JSON.stringify(body.data)]
     ).catch(() => {});
 
-    const created = await cypher(`MATCH (d:Deal {id: '${id}'}) RETURN d LIMIT 1`);
+    const created = await cypher(`
+      MATCH (d:Deal {id: '${id}'})
+      OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
+      RETURN ${dealReturnMap()} LIMIT 1
+    `);
     return reply.status(201).send({ success: true, data: toDealResponse(created[0]) });
   });
 
@@ -102,12 +135,21 @@ export async function dealsRoutes(server: FastifyInstance) {
 
     const rows = await cypher(`
       MATCH (d:Deal {id: '${id}', tenant_id: '${q.tenantId}'})
-      OPTIONAL MATCH (c:Company)<-[:INVOLVED_IN]-(d)
+      OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
       OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
-      RETURN d, c,
-             count(DISTINCT p) AS buying_group_size,
-             collect({person: p, role: inf.role, score: inf.influence_score, sentiment: inf.sentiment}) AS stakeholders
-      LIMIT 1
+      WITH d, c, count(DISTINCT p) AS bgs,
+           collect({role: inf.role, score: inf.influence_score, sentiment: inf.sentiment}) AS stks
+      RETURN {
+        id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
+        value: d.value, currency: d.currency, close_date: d.close_date,
+        archetype: d.archetype, is_expansion: d.is_expansion,
+        declared_probability: d.declared_probability,
+        reality_score: d.reality_score, reality_explanation: d.reality_explanation,
+        risk_flags: d.risk_flags, owner_id: d.owner_id,
+        created_at: d.created_at, updated_at: d.updated_at,
+        company_id: c.id, company_name: c.name,
+        buying_group_size: bgs, stakeholders: stks
+      } LIMIT 1
     `);
 
     if (!rows.length) {
@@ -129,15 +171,15 @@ export async function dealsRoutes(server: FastifyInstance) {
     const now = new Date().toISOString();
     const setParts = [`d.updated_at = '${now}'`];
 
-    if (f.name)                          setParts.push(`d.name = '${esc(f.name)}'`);
-    if (f.value !== undefined)           setParts.push(`d.value = ${f.value}`);
-    if (f.currency)                      setParts.push(`d.currency = '${f.currency}'`);
-    if (f.closeDate)                     setParts.push(`d.close_date = '${f.closeDate}'`);
-    if (f.archetype)                     setParts.push(`d.archetype = '${f.archetype}'`);
-    if (f.isExpansion !== undefined)     setParts.push(`d.is_expansion = ${f.isExpansion}`);
+    if (f.name)                              setParts.push(`d.name = '${esc(f.name)}'`);
+    if (f.value !== undefined)               setParts.push(`d.value = ${f.value}`);
+    if (f.currency)                          setParts.push(`d.currency = '${f.currency}'`);
+    if (f.closeDate)                         setParts.push(`d.close_date = '${f.closeDate}'`);
+    if (f.archetype)                         setParts.push(`d.archetype = '${f.archetype}'`);
+    if (f.isExpansion !== undefined)         setParts.push(`d.is_expansion = ${f.isExpansion}`);
     if (f.declaredProbability !== undefined) setParts.push(`d.declared_probability = ${f.declaredProbability}`);
 
-    // Stage change — emit specific event + record prior stage
+    // Stage change — emit specific event
     let stageChanged = false;
     if (f.stage) {
       setParts.push(`d.stage = '${f.stage}'`);
@@ -146,7 +188,8 @@ export async function dealsRoutes(server: FastifyInstance) {
 
     await cypher(`
       MATCH (d:Deal {id: '${id}', tenant_id: '${q.tenantId}'})
-      SET ${setParts.join(", ")} RETURN d
+      SET ${setParts.join(", ")}
+      RETURN {id: d.id}
     `);
 
     const evType = stageChanged
@@ -163,8 +206,8 @@ export async function dealsRoutes(server: FastifyInstance) {
 
     const updated = await cypher(`
       MATCH (d:Deal {id: '${id}'})
-      OPTIONAL MATCH (c:Company)<-[:INVOLVED_IN]-(d)
-      RETURN d, c LIMIT 1
+      OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
+      RETURN ${dealReturnMap()} LIMIT 1
     `);
     return reply.send({ success: true, data: toDealResponse(updated[0]) });
   });
@@ -175,6 +218,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     await cypher(`
       MATCH (d:Deal {id: '${id}', tenant_id: '${q.tenantId}'})
       SET d.deleted_at = '${new Date().toISOString()}'
+      RETURN {id: d.id}
     `);
     return reply.status(204).send();
   });
@@ -182,7 +226,7 @@ export async function dealsRoutes(server: FastifyInstance) {
   // ── Reality Score: deterministic computation from graph signals ─────────────
   // Each call: computes fresh score, writes deal_score_snapshots row, updates
   // Deal node's reality_score property, returns full evidence breakdown.
-  server.get("/:id/score", async (request, reply) => {
+  server.get("/:id/reality-score", async (request, reply) => {
     const { id } = request.params as { id: string };
     const q = request.query as { tenantId: string };
     if (!q.tenantId) {
@@ -206,27 +250,29 @@ function esc(s: string) {
 }
 
 function toDealResponse(row: Record<string, unknown>) {
-  const d = (row?.d ?? row) as Record<string, unknown>;
-  const c = row?.c as Record<string, unknown> | undefined;
+  // Queries return flat maps: {id, name, ..., company_id, company_name, buying_group_size, stakeholders}
+  const r = row as Record<string, unknown>;
+  const companyId   = r.company_id   as string | undefined;
+  const companyName = r.company_name as string | undefined;
   return {
-    id: d.id,
-    tenantId: d.tenant_id,
-    name: d.name,
-    stage: d.stage,
-    value: d.value,
-    currency: d.currency,
-    closeDate: d.close_date || undefined,
-    archetype: (d.archetype as string) ?? "simple",
-    isExpansion: d.is_expansion ?? false,
-    declaredProbability: d.declared_probability != null ? Number(d.declared_probability) : undefined,
-    realityScore: d.reality_score != null ? Number(d.reality_score) : undefined,
-    realityExplanation: d.reality_explanation,
-    riskFlags: d.risk_flags ? JSON.parse(d.risk_flags as string) : [],
-    ownerId: d.owner_id,
-    company: c ? { id: c.id, name: c.name } : undefined,
-    buyingGroupSize: (row as any).buying_group_size ?? 0,
-    stakeholders: (row as any).stakeholders ?? [],
-    createdAt: d.created_at,
-    updatedAt: d.updated_at,
+    id:                  r.id,
+    tenantId:            r.tenant_id,
+    name:                r.name,
+    stage:               r.stage,
+    value:               r.value,
+    currency:            r.currency,
+    closeDate:           r.close_date || undefined,
+    archetype:           (r.archetype as string) ?? "simple",
+    isExpansion:         r.is_expansion ?? false,
+    declaredProbability: r.declared_probability != null ? Number(r.declared_probability) : undefined,
+    realityScore:        r.reality_score        != null ? Number(r.reality_score)        : undefined,
+    realityExplanation:  r.reality_explanation,
+    riskFlags:           r.risk_flags ? JSON.parse(r.risk_flags as string) : [],
+    ownerId:             r.owner_id,
+    company:             companyId ? { id: companyId, name: companyName } : undefined,
+    buyingGroupSize:     (r.buying_group_size as number) ?? 0,
+    stakeholders:        (r.stakeholders as unknown[]) ?? [],
+    createdAt:           r.created_at,
+    updatedAt:           r.updated_at,
   };
 }
