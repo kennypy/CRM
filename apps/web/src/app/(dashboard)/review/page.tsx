@@ -16,6 +16,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import {
   AlertCircle,
   CheckCircle2,
@@ -226,7 +227,7 @@ export default function ReviewQueuePage() {
       const params = new URLSearchParams({ limit: "100" });
       if (filter !== "all") params.set("status", filter);
 
-      const res = await fetch(`/api/v1/ai/review-queue?${params}`);
+      const res = await api.get(`/api/v1/ai/review-queue?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setItems(json.data ?? []);
@@ -248,11 +249,7 @@ export default function ReviewQueuePage() {
     );
 
     try {
-      const res = await fetch(`/api/v1/ai/review-queue/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision }),
-      });
+      const res = await api.patch(`/api/v1/ai/review-queue/${id}`, { decision });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
       // Revert on failure

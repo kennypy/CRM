@@ -10,6 +10,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import {
   Briefcase,
   RefreshCw,
@@ -212,7 +213,7 @@ export default function PipelinePage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/deals?limit=200");
+      const res = await api.get("/api/v1/deals?limit=200");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setDeals(json.data ?? []);
@@ -241,11 +242,7 @@ export default function PipelinePage() {
     );
 
     try {
-      await fetch(`/api/v1/deals/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage: newStage }),
-      });
+      await api.patch(`/api/v1/deals/${id}`, { stage: newStage });
     } catch {
       // Revert on failure
       setDeals((prev) =>

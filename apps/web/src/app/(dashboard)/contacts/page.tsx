@@ -10,9 +10,12 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import { AddContactModal } from "@/components/modals/add-contact-modal";
 import {
   Users,
   Search,
+  Plus,
   RefreshCw,
   AlertCircle,
   Building2,
@@ -88,6 +91,7 @@ export default function ContactsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
+  const [showAdd, setShowAdd]     = useState(false);
   const searchTimer               = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounce search input
@@ -110,7 +114,7 @@ export default function ContactsPage() {
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
 
-      const res = await fetch(`/api/v1/contacts?${params}`);
+      const res = await api.get(`/api/v1/contacts?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setContacts(json.data ?? []);
@@ -140,15 +144,18 @@ export default function ContactsPage() {
           )}
         </div>
 
-        <button
-          onClick={fetchContacts}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          <button onClick={fetchContacts} disabled={loading}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          </button>
+          <button onClick={() => setShowAdd(true)}
+            className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+            <Plus className="h-4 w-4" /> Add Contact
+          </button>
+        </div>
       </div>
+      {showAdd && <AddContactModal onClose={() => setShowAdd(false)} onCreated={() => fetchContacts()} />}
 
       {/* Search bar */}
       <div className="relative">

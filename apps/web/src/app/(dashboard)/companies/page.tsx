@@ -10,9 +10,12 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import { AddCompanyModal } from "@/components/modals/add-company-modal";
 import {
   Building2,
   Search,
+  Plus,
   RefreshCw,
   AlertCircle,
   Globe,
@@ -88,6 +91,7 @@ export default function CompaniesPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
+  const [showAdd, setShowAdd]     = useState(false);
   const timer                     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSearch = (v: string) => {
@@ -106,7 +110,7 @@ export default function CompaniesPage() {
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
 
-      const res = await fetch(`/api/v1/companies?${params}`);
+      const res = await api.get(`/api/v1/companies?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setCompanies(json.data ?? []);
@@ -148,15 +152,23 @@ export default function CompaniesPage() {
             </span>
           )}
         </div>
-        <button
-          onClick={fetchCompanies}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={fetchCompanies}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          </button>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Add Company
+          </button>
+        </div>
       </div>
+      {showAdd && <AddCompanyModal onClose={() => setShowAdd(false)} onCreated={() => fetchCompanies()} />}
 
       {/* Search */}
       <div className="relative">

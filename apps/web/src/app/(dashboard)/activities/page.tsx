@@ -13,6 +13,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import {
   Zap,
   RefreshCw,
@@ -202,7 +203,7 @@ export default function ActivitiesPage() {
       });
       if (typeFilter !== "all") params.set("type", typeFilter);
 
-      const res = await fetch(`/api/v1/activities?${params}`);
+      const res = await api.get(`/api/v1/activities?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setActivities(json.data ?? []);
