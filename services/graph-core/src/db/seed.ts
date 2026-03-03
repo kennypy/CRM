@@ -16,7 +16,7 @@
 import * as path from "path";
 import * as dotenv from "dotenv";
 import { Pool } from "pg";
-import * as crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
 
@@ -45,10 +45,6 @@ const IDS = {
   dealGlob: "00000000-0000-0000-0000-000000000042",
 };
 
-function sha256(s: string) {
-  return crypto.createHash("sha256").update(s).digest("hex");
-}
-
 async function main() {
   const client = await pool.connect();
   try {
@@ -75,14 +71,14 @@ async function main() {
 
     // ── Users ─────────────────────────────────────────────────────────────────
     // Password for both: "dev-password-123" (never use in prod)
-    const pwHash = sha256("dev-password-123");
+    const pwHash = await bcrypt.hash("dev-password-123", 12);
 
     await client.query(`
       INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, role)
       VALUES
         ($1, $2, 'admin@nexcrm.dev', $3, 'Alex', 'Admin', 'admin'),
         ($4, $2, 'rep@nexcrm.dev',   $3, 'Jordan', 'Rep', 'rep')
-      ON CONFLICT (tenant_id, email) DO NOTHING
+      ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash
     `, [IDS.userAdmin, IDS.tenant, pwHash, IDS.userRep]);
 
     console.log("[seed] Tenant + users ✓");
