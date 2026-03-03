@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import gmail, outlook, health
+from .routers import gmail, outlook, gcal, health
 from .workers.normalizer import start_normalizer_workers
 from .telemetry import setup_telemetry
 
@@ -49,5 +49,6 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
-app.include_router(gmail.router, prefix="/gmail")
+app.include_router(gmail.router,   prefix="/gmail")
 app.include_router(outlook.router, prefix="/outlook")
+app.include_router(gcal.router,    prefix="/gcal")

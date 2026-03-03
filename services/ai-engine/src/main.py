@@ -21,6 +21,7 @@ from .config import settings
 from .routers import extraction, scoring, nl_command, health
 from .workers.extraction_worker import start_extraction_worker
 from .telemetry import setup_telemetry
+from .db import get_pool, close_pool
 
 log = structlog.get_logger()
 
@@ -29,7 +30,9 @@ log = structlog.get_logger()
 async def lifespan(app: FastAPI):
     setup_telemetry()
     log.info("ai_engine.starting")
+    await get_pool()   # warm up DB connection pool
     yield
+    await close_pool()
     log.info("ai_engine.stopping")
 
 

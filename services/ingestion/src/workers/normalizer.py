@@ -82,10 +82,67 @@ def normalize_zoom_transcript(raw: dict[str, Any], tenant_id: str, user_id: str)
     )
 
 
+def normalize_outlook(raw: dict[str, Any], tenant_id: str, user_id: str) -> ActivityEvent:
+    """Convert Microsoft Graph Message or Event payload to ActivityEvent."""
+    resource_type = raw.get("_resource_type", "outlook")
+
+    if resource_type == "outlook_cal":
+        attendees = raw.get("attendees", [])
+        participant_emails = [
+            a["emailAddress"]["address"]
+            for a in attendees
+            if a.get("emailAddress", {}).get("address")
+        ]
+        start = raw.get("start", {})
+        occurred_at_str = start.get("dateTime")
+        occurred_at = (
+            datetime.fromisoformat(occurred_at_str.replace("Z", "+00:00"))
+            if occurred_at_str else datetime.utcnow()
+        )
+        return ActivityEvent(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            source="outlook",
+            source_event_id=raw["id"],
+            activity_type="meeting",
+            subject=raw.get("subject"),
+            body_text=raw.get("body", {}).get("content"),
+            participant_emails=participant_emails,
+            meeting_url=raw.get("onlineMeeting", {}).get("joinUrl"),
+            occurred_at=occurred_at,
+        )
+
+    # Email message
+    from_addr   = raw.get("from", {}).get("emailAddress", {})
+    to_addrs    = [r["emailAddress"]["address"] for r in raw.get("toRecipients", []) if r.get("emailAddress")]
+    cc_addrs    = [r["emailAddress"]["address"] for r in raw.get("ccRecipients", []) if r.get("emailAddress")]
+    received    = raw.get("receivedDateTime")
+    occurred_at = (
+        datetime.fromisoformat(received.replace("Z", "+00:00"))
+        if received else datetime.utcnow()
+    )
+    return ActivityEvent(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        source="outlook",
+        source_event_id=raw["id"],
+        activity_type="email",
+        from_email=from_addr.get("address"),
+        from_name=from_addr.get("name"),
+        to_emails=to_addrs,
+        cc_emails=cc_addrs,
+        subject=raw.get("subject"),
+        body_text=raw.get("body", {}).get("content"),
+        thread_id=raw.get("conversationId"),
+        occurred_at=occurred_at,
+    )
+
+
 NORMALIZERS = {
-    "gmail": normalize_gmail,
-    "gcal": normalize_gcal,
-    "zoom": normalize_zoom_transcript,
+    "gmail":   normalize_gmail,
+    "gcal":    normalize_gcal,
+    "outlook": normalize_outlook,
+    "zoom":    normalize_zoom_transcript,
 }
 
 
