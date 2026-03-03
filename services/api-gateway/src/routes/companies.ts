@@ -1,31 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import { createProxy } from "../lib/proxy";
 
-const CreateCompanySchema = z.object({
-  name: z.string().min(1),
-  domain: z.string().min(1),
-  industry: z.string().optional(),
-  headcount: z.number().int().positive().optional(),
-  tier: z.enum(["smb", "mid_market", "enterprise"]).optional(),
-});
+const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
 
-export async function companiesRoutes(fastify: FastifyInstance) {
-  fastify.get("/", async (_, reply) =>
-    reply.send({ success: true, data: [], pagination: { total: 0, page: 1, limit: 20, hasMore: false } })
-  );
-
-  fastify.post("/", async (request, reply) => {
-    const body = CreateCompanySchema.parse(request.body);
-    return reply.status(201).send({ success: true, data: { id: crypto.randomUUID(), ...body } });
-  });
-
-  fastify.get("/:id", async (request, reply) => reply.send({ success: true, data: null }));
-
-  fastify.patch("/:id", async (request, reply) => {
-    const body = CreateCompanySchema.partial().parse(request.body);
-    const { id } = request.params as { id: string };
-    return reply.send({ success: true, data: { id, ...body } });
-  });
-
-  fastify.delete("/:id", async (_, reply) => reply.status(204).send());
+export async function companiesRoutes(server: FastifyInstance) {
+  const proxy = createProxy({ baseUrl: GRAPH_CORE, stripPrefix: "/api/v1" });
+  server.get("/",       proxy);
+  server.post("/",      proxy);
+  server.get("/:id",    proxy);
+  server.patch("/:id",  proxy);
+  server.delete("/:id", proxy);
 }

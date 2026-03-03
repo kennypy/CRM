@@ -1,88 +1,117 @@
+/**
+ * AI routes — proxied to the Python AI Engine.
+ * NL command is streaming SSE; review queue operations are REST.
+ * Review queue approve/reject also write back via graph-core.
+ */
+
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import { createProxy } from "../lib/proxy";
+import { pool } from "../db";
 
-const NLCommandSchema = z.object({
-  command: z.string().min(1).max(1000),
-  context: z.object({
-    currentPage: z.string().optional(),
-    selectedEntityId: z.string().optional(),
-    selectedEntityType: z.string().optional(),
-  }).optional(),
-});
+const AI_ENGINE  = process.env.AI_ENGINE_URL  ?? "http://localhost:5001";
+const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
 
-export async function aiRoutes(fastify: FastifyInstance) {
-  // POST /api/v1/ai/nl — Natural language command (streaming SSE)
-  fastify.post("/nl", async (request, reply) => {
-    const body = NLCommandSchema.parse(request.body);
+export async function aiRoutes(server: FastifyInstance) {
+  // Streaming NL command — proxy handles SSE pipe
+  server.post("/nl", createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
 
-    reply.raw.setHeader("Content-Type", "text/event-stream");
-    reply.raw.setHeader("Cache-Control", "no-cache");
-    reply.raw.setHeader("Connection", "keep-alive");
+  // Review queue — reads from Postgres directly (fast, no extra hop)
+  server.get("/review-queue", async (request, reply) => {
+    const q = request.query as Record<string, string>;
+    const jwt = (request as any).user as { tenantId: string };
+    const status = q.status ?? "pending";
+    const limit = Math.min(parseInt(q.limit ?? "20", 10), 100);
 
-    const send = (chunk: object) => {
-      reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-    };
+    const { rows } = await pool.query(
+      `SELECT * FROM review_queue
+       WHERE tenant_id = $1 AND status = $2 AND NOT EXISTS (
+         SELECT 1 FROM review_queue rq2
+         WHERE rq2.id = review_queue.id AND rq2.status != 'pending'
+       )
+       ORDER BY confidence ASC, created_at DESC
+       LIMIT $3`,
+      [jwt.tenantId, status, limit]
+    );
 
-    try {
-      // TODO: Forward to ai-engine service with streaming
-      // For now, simulate streaming response
-      send({ type: "thinking", content: "Analyzing your request…" });
+    return reply.send({
+      success: true,
+      data: rows,
+      pagination: { total: rows.length, limit, hasMore: rows.length === limit },
+    });
+  });
 
-      await new Promise((r) => setTimeout(r, 300));
+  // Approve a review item — apply the proposed changes to the graph
+  server.post("/review-queue/:id/approve", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const jwt = (request as any).user as { tenantId: string; sub: string };
 
-      send({ type: "thinking", content: "Querying the graph…" });
+    const { rows } = await pool.query(
+      `UPDATE review_queue
+       SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()
+       WHERE id = $2 AND tenant_id = $3 AND status = 'pending'
+       RETURNING *`,
+      [jwt.sub, id, jwt.tenantId]
+    );
 
-      await new Promise((r) => setTimeout(r, 400));
-
-      send({
-        type: "result",
-        content: `Processed: "${body.command}". AI Engine integration pending.`,
-      });
-
-    } catch (err) {
-      send({ type: "error", content: "Failed to process command" });
-    } finally {
-      reply.raw.end();
+    if (!rows.length) {
+      return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
     }
+
+    // TODO: apply proposed_changes to graph-core (async via Redis Stream)
+    server.log.info({ reviewId: id, userId: jwt.sub }, "review.approved");
+
+    return reply.send({ success: true, data: rows[0] });
   });
 
-  // GET /api/v1/ai/review-queue
-  fastify.get("/review-queue", async (request, reply) => {
-    const query = request.query as { status?: string; limit?: string; cursor?: string };
-    // TODO: proxy to ai-engine service
-    return reply.send({ success: true, data: [], pagination: { total: 0, hasMore: false } });
-  });
-
-  // POST /api/v1/ai/review-queue/:id/approve
-  fastify.post("/review-queue/:id/approve", async (request, reply) => {
+  // Reject a review item — feedback loop for extraction quality
+  server.post("/review-queue/:id/reject", async (request, reply) => {
     const { id } = request.params as { id: string };
-    // TODO: proxy to ai-engine service
-    return reply.send({ success: true, data: { id, status: "approved" } });
+    const jwt = (request as any).user as { tenantId: string; sub: string };
+    const body = request.body as { reason?: string };
+
+    const { rows } = await pool.query(
+      `UPDATE review_queue
+       SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(),
+           rejection_reason = $2
+       WHERE id = $3 AND tenant_id = $4 AND status = 'pending'
+       RETURNING *`,
+      [jwt.sub, body?.reason ?? null, id, jwt.tenantId]
+    );
+
+    if (!rows.length) {
+      return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+    }
+
+    server.log.info({ reviewId: id, reason: body?.reason }, "review.rejected");
+    return reply.send({ success: true, data: rows[0] });
   });
 
-  // POST /api/v1/ai/review-queue/:id/reject
-  fastify.post("/review-queue/:id/reject", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const body = z.object({ reason: z.string().optional() }).parse(request.body);
-    // TODO: proxy to ai-engine service
-    return reply.send({ success: true, data: { id, status: "rejected", ...body } });
-  });
+  // Provenance / explain endpoint — why did AI write this field?
+  server.get("/explain/:entityType/:entityId/:field", async (request, reply) => {
+    const params = request.params as Record<string, string>;
+    const jwt = (request as any).user as { tenantId: string };
 
-  // GET /api/v1/ai/explain/:entityType/:entityId/:field
-  fastify.get("/explain/:entityType/:entityId/:field", async (request, reply) => {
-    const { entityType, entityId, field } = request.params as Record<string, string>;
-    // TODO: proxy to ai-engine service — returns provenance for this field
+    // Look up in crm_events for the most recent write to this field
+    const { rows } = await pool.query(
+      `SELECT metadata, created_at, source
+       FROM crm_events
+       WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+         AND payload->>'field' = $4
+       ORDER BY created_at DESC LIMIT 1`,
+      [jwt.tenantId, params.entityType, params.entityId, params.field]
+    );
+
+    const ev = rows[0];
     return reply.send({
       success: true,
       data: {
-        entityType,
-        entityId,
-        field,
-        explanation: "This field was extracted from an email sent on 2024-12-01.",
-        evidence: "…excerpt from source…",
-        confidence: 0.92,
-        source: "gmail",
-        extractedAt: new Date().toISOString(),
+        entityType: params.entityType,
+        entityId:   params.entityId,
+        field:      params.field,
+        explanation: ev?.metadata?.evidence ?? "No provenance record found",
+        confidence:  ev?.metadata?.confidence ?? null,
+        source:      ev?.source ?? "unknown",
+        recordedAt:  ev?.created_at ?? null,
       },
     });
   });

@@ -1,31 +1,16 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import { createProxy } from "../lib/proxy";
 
-const GraphQuerySchema = z.object({
-  queryName: z.string(),
-  params: z.record(z.unknown()).optional(),
-});
+const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
 
-export async function graphRoutes(fastify: FastifyInstance) {
-  // POST /api/v1/graph/query — run named graph query
-  fastify.post("/query", async (request, reply) => {
-    const body = GraphQuerySchema.parse(request.body);
-    // TODO: proxy to graph-core service
-    return reply.send({ success: true, data: { nodes: [], edges: [] } });
-  });
+export async function graphRoutes(server: FastifyInstance) {
+  const proxy = createProxy({ baseUrl: GRAPH_CORE, stripPrefix: "/api/v1" });
 
-  // GET /api/v1/graph/network/:id — ego network
-  fastify.get("/network/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const depth = parseInt((request.query as any).depth ?? "2", 10);
-    // TODO: proxy to graph-core service
-    return reply.send({ success: true, data: { rootId: id, depth, nodes: [], edges: [] } });
-  });
-
-  // GET /api/v1/graph/path — shortest intro path
-  fastify.get("/path", async (request, reply) => {
-    const { from, to } = request.query as { from: string; to: string };
-    // TODO: proxy to graph-core service — Cypher shortest path query
-    return reply.send({ success: true, data: { from, to, path: [], length: 0 } });
-  });
+  // Named graph queries — all proxied to graph-core
+  server.get("/stalling-deals",    proxy);
+  server.get("/network/:nodeId",   proxy);
+  server.get("/intro-path",        proxy);
+  server.get("/buying-group/:dealId", proxy);
+  server.get("/at-risk-accounts",  proxy);
+  server.get("/dark-contacts",     proxy);
 }

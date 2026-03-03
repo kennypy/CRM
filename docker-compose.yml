@@ -99,6 +99,68 @@ services:
       - "1025:1025"   # SMTP
       - "8025:8025"   # Web UI
 
+  # ── Application services (built images for full-stack testing) ─────────────
+  # For day-to-day dev, run services directly with `npm run dev` instead.
+  # Use these targets for integration testing or staging validation.
+
+  api-gateway:
+    build: { context: ., dockerfile: services/api-gateway/Dockerfile }
+    container_name: nexcrm-api-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AUTH_SERVICE_URL: http://auth:4001
+      GRAPH_CORE_URL: http://graph-core:4002
+      AI_ENGINE_URL: http://ai-engine:5001
+    ports:
+      - "4000:4000"
+    depends_on: [postgres, redis]
+    profiles: [full-stack]
+
+  auth:
+    build: { context: ., dockerfile: services/auth/Dockerfile }
+    container_name: nexcrm-auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AUTH_PORT: "4001"
+    ports:
+      - "4001:4001"
+    depends_on: [postgres, redis]
+    profiles: [full-stack]
+
+  graph-core:
+    build: { context: ., dockerfile: services/graph-core/Dockerfile }
+    container_name: nexcrm-graph-core
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GRAPH_CORE_PORT: "4002"
+    ports:
+      - "4002:4002"
+    depends_on: [postgres, redis]
+    profiles: [full-stack]
+
+  ai-engine:
+    build: { context: ., dockerfile: services/ai-engine/Dockerfile }
+    container_name: nexcrm-ai-engine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "5001:5001"
+    depends_on: [postgres, redis]
+    profiles: [full-stack]
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    container_name: nexcrm-web
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    depends_on: [api-gateway]
+    profiles: [full-stack]
+
 networks:
   default:
     name: nexcrm-network
