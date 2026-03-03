@@ -1,44 +1,41 @@
 "use client";
 
 /**
- * Pipeline Kanban Board
+ * Pipeline — Kanban + Forecast Clarity
  *
- * Groups deals by stage and lets reps drag (or click) cards between columns.
- * Reality Score is shown as a colour-coded badge on every deal card.
- * Data is fetched client-side so the board stays live-refreshable.
+ * Stage (existing) + Reality Score badge (existing)
+ * + Declared probability (rep input, editable inline)
+ * + Δ delta (declared − reality)
+ * + Forecast rollup: Declared forecast vs Reality forecast vs Gap
+ * + Evidence panel (slides in on score badge click)
  */
 
 import { useEffect, useState, useCallback } from "react";
 import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { EvidencePanel } from "@/components/deals/evidence-panel";
 import {
-  Briefcase,
-  RefreshCw,
-  TrendingUp,
-  AlertCircle,
-  ChevronRight,
-  ChevronLeft,
-  DollarSign,
+  Briefcase, RefreshCw, TrendingUp, AlertCircle,
+  ChevronRight, ChevronLeft, DollarSign, AlertTriangle,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type DealStage =
-  | "discovery"
-  | "proposal"
-  | "negotiation"
-  | "closed_won"
-  | "closed_lost";
+  | "discovery" | "proposal" | "negotiation"
+  | "closed_won" | "closed_lost";
 
 interface Deal {
-  id: string;
-  name: string;
-  value: number;
-  stage: DealStage;
-  closeDate?: string;
-  company?: { id: string; name: string };
-  realityScore?: number;
-  updatedAt: string;
+  id:                  string;
+  name:                string;
+  value:               number;
+  stage:               DealStage;
+  closeDate?:          string;
+  company?:            { id: string; name: string };
+  archetype?:          "simple" | "complex";
+  realityScore?:       number;
+  declaredProbability?: number;
+  updatedAt:           string;
 }
 
 // ── Stage config ──────────────────────────────────────────────────────────────
@@ -52,27 +49,50 @@ const STAGES: { key: DealStage; label: string; color: string }[] = [
 ];
 
 const STAGE_ORDER: DealStage[] = [
-  "discovery",
-  "proposal",
-  "negotiation",
-  "closed_won",
-  "closed_lost",
+  "discovery", "proposal", "negotiation", "closed_won", "closed_lost",
 ];
 
 // ── Reality Score badge ───────────────────────────────────────────────────────
 
-function RealityBadge({ score }: { score?: number }) {
+function RealityBadge({
+  score, onClick,
+}: {
+  score?: number; onClick?: () => void;
+}) {
   if (score == null) return null;
-
   const color =
-    score >= 70 ? "bg-green-100 text-green-700" :
-    score >= 40 ? "bg-yellow-100 text-yellow-700" :
-                  "bg-red-100 text-red-700";
-
+    score >= 70 ? "bg-green-100 text-green-700 hover:bg-green-200" :
+    score >= 40 ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200" :
+                  "bg-red-100 text-red-700 hover:bg-red-200";
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", color)}>
+    <button
+      onClick={onClick}
+      title="Click to see score evidence"
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors",
+        color, onClick && "cursor-pointer"
+      )}
+    >
       <TrendingUp className="h-3 w-3" />
       {score}
+    </button>
+  );
+}
+
+// ── Delta badge ───────────────────────────────────────────────────────────────
+
+function DeltaBadge({ declared, reality }: { declared?: number; reality?: number }) {
+  if (declared == null || reality == null) return null;
+  const delta = reality - declared;
+  const label = `${delta > 0 ? "+" : ""}${delta}`;
+  const color =
+    delta < -20 ? "text-red-600 font-bold" :
+    delta < -10 ? "text-yellow-600 font-semibold" :
+    delta >= 0  ? "text-green-600" : "text-muted-foreground";
+  return (
+    <span className={cn("tabular-nums text-xs", color)} title={`Declared ${declared}% vs Reality ${reality}%`}>
+      {delta < -20 && <AlertTriangle className="inline h-3 w-3 mr-0.5" />}
+      {label}
     </span>
   );
 }
@@ -80,18 +100,25 @@ function RealityBadge({ score }: { score?: number }) {
 // ── Deal card ─────────────────────────────────────────────────────────────────
 
 function DealCard({
-  deal,
-  onMove,
-  isFirst,
-  isLast,
+  deal, onMove, isFirst, isLast, onScoreClick, onDeclaredChange,
 }: {
-  deal: Deal;
-  onMove: (id: string, direction: "prev" | "next") => void;
-  isFirst: boolean;
-  isLast: boolean;
+  deal:              Deal;
+  onMove:            (id: string, direction: "prev" | "next") => void;
+  isFirst:           boolean;
+  isLast:            boolean;
+  onScoreClick:      (deal: Deal) => void;
+  onDeclaredChange:  (id: string, pct: number) => void;
 }) {
   const isWon  = deal.stage === "closed_won";
   const isLost = deal.stage === "closed_lost";
+  const [editingProb, setEditingProb] = useState(false);
+  const [probInput, setProbInput]     = useState(String(deal.declaredProbability ?? ""));
+
+  const commitProb = () => {
+    const v = parseInt(probInput, 10);
+    if (!isNaN(v) && v >= 0 && v <= 100) onDeclaredChange(deal.id, v);
+    setEditingProb(false);
+  };
 
   return (
     <div className={cn(
@@ -99,26 +126,63 @@ function DealCard({
       isWon  && "border-green-200 bg-green-50/50",
       isLost && "border-red-200 bg-red-50/50 opacity-70",
     )}>
+      {/* Top row: name + score badge */}
       <div className="mb-1 flex items-start justify-between gap-2">
         <p className="text-sm font-semibold leading-tight text-foreground line-clamp-2">
           {deal.name}
         </p>
-        <RealityBadge score={deal.realityScore} />
+        <RealityBadge
+          score={deal.realityScore}
+          onClick={() => onScoreClick(deal)}
+        />
       </div>
 
       {deal.company && (
         <p className="mb-2 text-xs text-muted-foreground">{deal.company.name}</p>
       )}
 
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span className="flex items-center gap-1 font-medium text-foreground">
-          <DollarSign className="h-3 w-3" />
-          {formatCurrency(deal.value, "USD", true)}
-        </span>
+      {/* Value */}
+      <div className="flex items-center gap-1 text-xs font-medium text-foreground">
+        <DollarSign className="h-3 w-3" />
+        {formatCurrency(deal.value, "USD", true)}
         {deal.closeDate && (
-          <span>Close {new Date(deal.closeDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+          <span className="ml-auto text-muted-foreground">
+            {new Date(deal.closeDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          </span>
         )}
       </div>
+
+      {/* Declared probability + delta */}
+      {!isWon && !isLost && (
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground shrink-0">Rep:</span>
+          {editingProb ? (
+            <input
+              autoFocus
+              type="number" min={0} max={100}
+              value={probInput}
+              onChange={(e) => setProbInput(e.target.value)}
+              onBlur={commitProb}
+              onKeyDown={(e) => { if (e.key === "Enter") commitProb(); if (e.key === "Escape") setEditingProb(false); }}
+              className="w-12 rounded border border-border bg-background px-1 py-0.5 text-center tabular-nums outline-none focus:border-primary"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingProb(true)}
+              className="tabular-nums hover:underline"
+              title="Click to edit declared probability"
+            >
+              {deal.declaredProbability != null ? `${deal.declaredProbability}%` : "—"}
+            </button>
+          )}
+          {deal.realityScore != null && (
+            <>
+              <span className="text-muted-foreground">Reality: {deal.realityScore}%</span>
+              <DeltaBadge declared={deal.declaredProbability} reality={deal.realityScore} />
+            </>
+          )}
+        </div>
+      )}
 
       <p className="mt-1.5 text-xs text-muted-foreground">
         Updated {formatRelativeTime(deal.updatedAt)}
@@ -152,21 +216,20 @@ function DealCard({
 // ── Kanban column ─────────────────────────────────────────────────────────────
 
 function KanbanColumn({
-  stage,
-  deals,
-  onMove,
+  stage, deals, onMove, onScoreClick, onDeclaredChange,
 }: {
-  stage: (typeof STAGES)[number];
-  deals: Deal[];
-  onMove: (id: string, direction: "prev" | "next") => void;
+  stage:             (typeof STAGES)[number];
+  deals:             Deal[];
+  onMove:            (id: string, direction: "prev" | "next") => void;
+  onScoreClick:      (deal: Deal) => void;
+  onDeclaredChange:  (id: string, pct: number) => void;
 }) {
-  const total = deals.reduce((sum, d) => sum + d.value, 0);
+  const total   = deals.reduce((s, d) => s + d.value, 0);
   const isFirst = stage.key === STAGE_ORDER[0];
   const isLast  = stage.key === STAGE_ORDER[STAGE_ORDER.length - 1];
 
   return (
     <div className="flex w-64 shrink-0 flex-col gap-2">
-      {/* Column header */}
       <div className={cn("rounded-t-lg border-t-4 bg-muted/50 px-3 py-2", stage.color)}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold">{stage.label}</span>
@@ -181,7 +244,6 @@ function KanbanColumn({
         )}
       </div>
 
-      {/* Cards */}
       <div className="flex flex-col gap-2">
         {deals.map((deal) => (
           <DealCard
@@ -190,6 +252,8 @@ function KanbanColumn({
             onMove={onMove}
             isFirst={isFirst}
             isLast={isLast}
+            onScoreClick={onScoreClick}
+            onDeclaredChange={onDeclaredChange}
           />
         ))}
         {deals.length === 0 && (
@@ -202,12 +266,58 @@ function KanbanColumn({
   );
 }
 
+// ── Forecast bar ──────────────────────────────────────────────────────────────
+
+function ForecastBar({ deals }: { deals: Deal[] }) {
+  const open = deals.filter((d) => d.stage !== "closed_won" && d.stage !== "closed_lost");
+
+  const declared = open.reduce((s, d) =>
+    s + d.value * ((d.declaredProbability ?? 50) / 100), 0);
+  const reality  = open.reduce((s, d) =>
+    s + d.value * ((d.realityScore ?? 50) / 100), 0);
+  const gap      = declared - reality;
+
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      <div className="rounded-lg border bg-card px-4 py-3">
+        <p className="text-xs text-muted-foreground">Open pipeline</p>
+        <p className="mt-0.5 text-lg font-semibold">
+          {formatCurrency(open.reduce((s, d) => s + d.value, 0), "USD", true)}
+        </p>
+      </div>
+      <div className="rounded-lg border bg-card px-4 py-3">
+        <p className="text-xs text-muted-foreground">Declared forecast</p>
+        <p className="mt-0.5 text-lg font-semibold">{formatCurrency(declared, "USD", true)}</p>
+      </div>
+      <div className={cn("rounded-lg border px-4 py-3",
+        gap > 20_000 ? "border-red-200 bg-red-50" : "bg-card"
+      )}>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Reality forecast</p>
+          {gap > 20_000 && <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}
+        </div>
+        <p className={cn("mt-0.5 text-lg font-semibold",
+          gap > 20_000 ? "text-red-700" : "text-foreground"
+        )}>
+          {formatCurrency(reality, "USD", true)}
+        </p>
+        {gap > 0 && (
+          <p className="text-xs text-red-600">
+            −{formatCurrency(gap, "USD", true)} vs declared
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PipelinePage() {
-  const [deals, setDeals]     = useState<Deal[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [deals,         setDeals]         = useState<Deal[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState<string | null>(null);
+  const [evidenceDeal,  setEvidenceDeal]  = useState<Deal | null>(null);
 
   const fetchDeals = useCallback(async () => {
     setLoading(true);
@@ -229,29 +339,30 @@ export default function PipelinePage() {
   const handleMove = useCallback(async (id: string, direction: "prev" | "next") => {
     const deal = deals.find((d) => d.id === id);
     if (!deal) return;
-
     const currentIdx = STAGE_ORDER.indexOf(deal.stage);
     const nextIdx    = direction === "next" ? currentIdx + 1 : currentIdx - 1;
     if (nextIdx < 0 || nextIdx >= STAGE_ORDER.length) return;
-
     const newStage = STAGE_ORDER[nextIdx];
-
-    // Optimistic update
-    setDeals((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, stage: newStage } : d))
-    );
-
+    setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: newStage } : d));
     try {
       await api.patch(`/api/v1/deals/${id}`, { stage: newStage });
     } catch {
-      // Revert on failure
-      setDeals((prev) =>
-        prev.map((d) => (d.id === id ? { ...d, stage: deal.stage } : d))
-      );
+      setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: deal.stage } : d));
     }
   }, [deals]);
 
-  // Group deals by stage
+  const handleDeclaredChange = useCallback(async (id: string, pct: number) => {
+    setDeals((prev) =>
+      prev.map((d) => d.id === id ? { ...d, declaredProbability: pct } : d)
+    );
+    try {
+      await api.patch(`/api/v1/deals/${id}`, { declaredProbability: pct });
+    } catch {
+      // Non-critical — optimistic update stays
+    }
+  }, []);
+
+  // Group by stage
   const byStage = STAGE_ORDER.reduce<Record<DealStage, Deal[]>>(
     (acc, s) => ({ ...acc, [s]: [] }),
     {} as Record<DealStage, Deal[]>
@@ -260,11 +371,9 @@ export default function PipelinePage() {
     byStage[deal.stage]?.push(deal);
   }
 
-  // Pipeline metrics
-  const openDeals  = deals.filter((d) => d.stage !== "closed_won" && d.stage !== "closed_lost");
-  const totalValue = openDeals.reduce((sum, d) => sum + d.value, 0);
-  const wonDeals   = deals.filter((d) => d.stage === "closed_won");
-  const wonValue   = wonDeals.reduce((sum, d) => sum + d.value, 0);
+  const wonValue = deals
+    .filter((d) => d.stage === "closed_won")
+    .reduce((s, d) => s + d.value, 0);
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -274,29 +383,25 @@ export default function PipelinePage() {
           <Briefcase className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">Pipeline</h1>
         </div>
-        <button
-          onClick={fetchDeals}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {wonValue > 0 && (
+            <span className="text-sm text-muted-foreground">
+              Won: <strong className="text-green-700">{formatCurrency(wonValue, "USD", true)}</strong>
+            </span>
+          )}
+          <button
+            onClick={fetchDeals}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            Refresh
+          </button>
+        </div>
       </div>
 
-      {/* Summary bar */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Open deals",  value: openDeals.length.toString() },
-          { label: "Open value",  value: formatCurrency(totalValue, "USD", true) },
-          { label: "Closed won",  value: formatCurrency(wonValue, "USD", true) },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-lg border bg-card px-4 py-3">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="mt-0.5 text-lg font-semibold">{value}</p>
-          </div>
-        ))}
-      </div>
+      {/* Forecast summary (replaces simple 3-stat bar) */}
+      <ForecastBar deals={deals} />
 
       {/* Board */}
       {error ? (
@@ -313,10 +418,23 @@ export default function PipelinePage() {
                 stage={stage}
                 deals={byStage[stage.key]}
                 onMove={handleMove}
+                onScoreClick={setEvidenceDeal}
+                onDeclaredChange={handleDeclaredChange}
               />
             ))}
           </div>
         </div>
+      )}
+
+      {/* Evidence panel — slides in when score badge clicked */}
+      {evidenceDeal && (
+        <EvidencePanel
+          dealId={evidenceDeal.id}
+          dealName={evidenceDeal.name}
+          dealValue={evidenceDeal.value}
+          declaredProbability={evidenceDeal.declaredProbability}
+          onClose={() => setEvidenceDeal(null)}
+        />
       )}
     </div>
   );

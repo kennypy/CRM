@@ -41,6 +41,12 @@ export interface Deal {
   value: number;
   currency: string;
   closeDate?: string;
+  /** "simple" (≤2 expected stakeholders, 30d cycle) or "complex" (4 expected, 60d cycle). */
+  archetype?: "simple" | "complex";
+  /** Is this an expansion into an existing customer? Lowers structural risk. */
+  isExpansion?: boolean;
+  /** Rep's gut-feel probability (0–100). Compared against realityScore to show Δ. */
+  declaredProbability?: number;
   realityScore?: number;
   realityExplanation?: string;
   riskFlags?: string[];

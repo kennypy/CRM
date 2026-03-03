@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, cypher } from "../db/pool";
+import { computeRealityScore } from "../lib/reality-score";
 
 const DealStages = ["lead","qualified","discovery","proposal","negotiation","closed_won","closed_lost"] as const;
 
@@ -12,6 +13,9 @@ const CreateDealSchema = z.object({
   closeDate: z.string().optional(),
   companyId: z.string().optional(),
   ownerId: z.string().optional(),
+  archetype: z.enum(["simple", "complex"]).optional(),
+  declaredProbability: z.number().min(0).max(100).optional(),
+  isExpansion: z.boolean().optional(),
 });
 
 export async function dealsRoutes(server: FastifyInstance) {
@@ -125,10 +129,13 @@ export async function dealsRoutes(server: FastifyInstance) {
     const now = new Date().toISOString();
     const setParts = [`d.updated_at = '${now}'`];
 
-    if (f.name)      setParts.push(`d.name = '${esc(f.name)}'`);
-    if (f.value !== undefined) setParts.push(`d.value = ${f.value}`);
-    if (f.currency)  setParts.push(`d.currency = '${f.currency}'`);
-    if (f.closeDate) setParts.push(`d.close_date = '${f.closeDate}'`);
+    if (f.name)                          setParts.push(`d.name = '${esc(f.name)}'`);
+    if (f.value !== undefined)           setParts.push(`d.value = ${f.value}`);
+    if (f.currency)                      setParts.push(`d.currency = '${f.currency}'`);
+    if (f.closeDate)                     setParts.push(`d.close_date = '${f.closeDate}'`);
+    if (f.archetype)                     setParts.push(`d.archetype = '${f.archetype}'`);
+    if (f.isExpansion !== undefined)     setParts.push(`d.is_expansion = ${f.isExpansion}`);
+    if (f.declaredProbability !== undefined) setParts.push(`d.declared_probability = ${f.declaredProbability}`);
 
     // Stage change — emit specific event + record prior stage
     let stageChanged = false;
@@ -171,6 +178,27 @@ export async function dealsRoutes(server: FastifyInstance) {
     `);
     return reply.status(204).send();
   });
+
+  // ── Reality Score: deterministic computation from graph signals ─────────────
+  // Each call: computes fresh score, writes deal_score_snapshots row, updates
+  // Deal node's reality_score property, returns full evidence breakdown.
+  server.get("/:id/score", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const q = request.query as { tenantId: string };
+    if (!q.tenantId) {
+      return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
+    }
+    try {
+      const result = await computeRealityScore(id, q.tenantId);
+      return reply.send({ success: true, data: result });
+    } catch (err: any) {
+      if (err.message?.includes("not found")) {
+        return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+      }
+      request.log.error({ err }, "reality_score.error");
+      return reply.status(500).send({ success: false, error: { code: "SCORE_FAILED", message: err.message } });
+    }
+  });
 }
 
 function esc(s: string) {
@@ -188,7 +216,10 @@ function toDealResponse(row: Record<string, unknown>) {
     value: d.value,
     currency: d.currency,
     closeDate: d.close_date || undefined,
-    realityScore: d.reality_score,
+    archetype: (d.archetype as string) ?? "simple",
+    isExpansion: d.is_expansion ?? false,
+    declaredProbability: d.declared_probability != null ? Number(d.declared_probability) : undefined,
+    realityScore: d.reality_score != null ? Number(d.reality_score) : undefined,
     realityExplanation: d.reality_explanation,
     riskFlags: d.risk_flags ? JSON.parse(d.risk_flags as string) : [],
     ownerId: d.owner_id,
