@@ -18,7 +18,7 @@ import * as dotenv from "dotenv";
 import { Pool } from "pg";
 import * as crypto from "crypto";
 
-dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
 
 const pool = new Pool({
   connectionString:

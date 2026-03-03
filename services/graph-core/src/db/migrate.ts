@@ -3,7 +3,7 @@ import * as path from "path";
 import * as dotenv from "dotenv";
 import { Pool } from "pg";
 
-dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
 
 const pool = new Pool({
   connectionString:
@@ -11,7 +11,7 @@ const pool = new Pool({
     "postgresql://nexcrm:nexcrm_dev@localhost:5432/nexcrm",
 });
 
-const MIGRATIONS_DIR = path.resolve(__dirname, "../../../infra/db/migrations");
+const MIGRATIONS_DIR = path.resolve(__dirname, "../../../../infra/db/migrations");
 
 async function main() {
   const client = await pool.connect();
