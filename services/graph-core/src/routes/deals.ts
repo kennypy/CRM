@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { pool, cypher } from "../db/pool";
 import { computeRealityScore } from "../lib/reality-score";
@@ -38,7 +38,7 @@ function dealReturnMap() {
 }
 
 export async function dealsRoutes(server: FastifyInstance) {
-  server.get("/", async (request, reply) => {
+  server.get("/", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as Record<string, string>;
     const tenantId = q.tenantId;
     if (!tenantId) return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
@@ -82,7 +82,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     });
   });
 
-  server.post("/", async (request, reply) => {
+  server.post("/", async (request: FastifyRequest, reply: FastifyReply) => {
     const body = CreateDealSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message } });
@@ -129,7 +129,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     return reply.status(201).send({ success: true, data: toDealResponse(created[0]) });
   });
 
-  server.get("/:id", async (request, reply) => {
+  server.get("/:id", async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     const q = request.query as { tenantId: string };
 
@@ -159,7 +159,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: toDealResponse(rows[0]) });
   });
 
-  server.patch("/:id", async (request, reply) => {
+  server.patch("/:id", async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     const q = request.query as { tenantId: string };
     const body = CreateDealSchema.partial().safeParse(request.body);
@@ -212,7 +212,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: toDealResponse(updated[0]) });
   });
 
-  server.delete("/:id", async (request, reply) => {
+  server.delete("/:id", async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     const q = request.query as { tenantId: string };
     await cypher(`
@@ -226,7 +226,7 @@ export async function dealsRoutes(server: FastifyInstance) {
   // ── Reality Score: deterministic computation from graph signals ─────────────
   // Each call: computes fresh score, writes deal_score_snapshots row, updates
   // Deal node's reality_score property, returns full evidence breakdown.
-  server.get("/:id/reality-score", async (request, reply) => {
+  server.get("/:id/reality-score", async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     const q = request.query as { tenantId: string };
     if (!q.tenantId) {
