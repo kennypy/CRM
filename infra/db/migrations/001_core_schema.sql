@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
 
 -- ── Audit Log ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit_log (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id              UUID NOT NULL DEFAULT gen_random_uuid(),
   tenant_id       UUID NOT NULL,
   user_id         UUID,
   action          TEXT NOT NULL,               -- 'contact.updated', 'deal.deleted', etc.
@@ -202,7 +202,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
   after_state     JSONB,
   ip_address      INET,
   user_agent      TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
 CREATE TABLE audit_log_2026_q1 PARTITION OF audit_log
