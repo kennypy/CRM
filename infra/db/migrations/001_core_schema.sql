@@ -119,23 +119,32 @@ CREATE TABLE IF NOT EXISTS review_queue (
 CREATE INDEX idx_review_queue_tenant_status ON review_queue(tenant_id, status, created_at DESC);
 
 -- ── Embeddings (pgvector) ─────────────────────────────────────────────────────
--- Stores vector embeddings for graph nodes to enable semantic search
-CREATE TABLE IF NOT EXISTS node_embeddings (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id       UUID NOT NULL,
-  node_id         TEXT NOT NULL,               -- AGE graph node ID
-  node_label      TEXT NOT NULL,
-  embedding       vector(1536) NOT NULL,
-  content_hash    TEXT NOT NULL,               -- detect when re-embedding is needed
-  model           TEXT NOT NULL,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (tenant_id, node_id)
-);
-
--- HNSW index for approximate nearest-neighbor search
-CREATE INDEX idx_node_embeddings_hnsw ON node_embeddings
-  USING hnsw (embedding vector_cosine_ops)
-  WITH (m = 16, ef_construction = 64);
+-- Only created when pgvector extension is available (skipped in dev without it)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    CREATE TABLE IF NOT EXISTS node_embeddings (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id       UUID NOT NULL,
+      node_id         TEXT NOT NULL,
+      node_label      TEXT NOT NULL,
+      embedding       vector(1536) NOT NULL,
+      content_hash    TEXT NOT NULL,
+      model           TEXT NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (tenant_id, node_id)
+    );
+    -- HNSW index for approximate nearest-neighbor search
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_indexes WHERE indexname = 'idx_node_embeddings_hnsw'
+    ) THEN
+      CREATE INDEX idx_node_embeddings_hnsw ON node_embeddings
+        USING hnsw (embedding vector_cosine_ops)
+        WITH (m = 16, ef_construction = 64);
+    END IF;
+  END IF;
+END
+$$;
 
 -- ── Integration State ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS integrations (
