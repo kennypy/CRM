@@ -9,6 +9,7 @@ import { contactsRoutes } from "./routes/contacts";
 import { companiesRoutes } from "./routes/companies";
 import { dealsRoutes } from "./routes/deals";
 import { graphRoutes } from "./routes/graph";
+import { activitiesRoutes } from "./routes/activities";
 
 const server = Fastify({
   logger: {
@@ -38,10 +39,11 @@ async function bootstrap() {
     timestamp: new Date().toISOString(),
   }));
 
-  await server.register(contactsRoutes,  { prefix: "/contacts" });
-  await server.register(companiesRoutes, { prefix: "/companies" });
-  await server.register(dealsRoutes,     { prefix: "/deals" });
-  await server.register(graphRoutes,     { prefix: "/graph" });
+  await server.register(contactsRoutes,   { prefix: "/contacts" });
+  await server.register(companiesRoutes,  { prefix: "/companies" });
+  await server.register(dealsRoutes,      { prefix: "/deals" });
+  await server.register(graphRoutes,      { prefix: "/graph" });
+  await server.register(activitiesRoutes, { prefix: "/activities" });
 
   const port = parseInt(process.env.GRAPH_CORE_PORT ?? "4002", 10);
   const host = process.env.HOST ?? "0.0.0.0";
