@@ -77,7 +77,7 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">AI-Native Revenue OS</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" suppressHydrationWarning>
           {/* Workspace */}
           <div>
             <label className="mb-1.5 block text-sm font-medium">Workspace</label>
@@ -150,6 +150,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
+            suppressHydrationWarning
             className={cn(
               "w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity",
               loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90"
