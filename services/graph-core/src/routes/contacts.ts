@@ -160,7 +160,7 @@ export async function contactsRoutes(server: FastifyInstance) {
       }
     );
 
-    // Link to company if provided (non-fatal — company may not exist)
+    // Link to company if explicitly provided (non-fatal — company may not exist)
     if (companyId) {
       await cypher(
         `MATCH (p:Person {id: $id}), (c:Company {id: $companyId, tenant_id: $tenantId})
@@ -168,6 +168,27 @@ export async function contactsRoutes(server: FastifyInstance) {
          RETURN {ok: true}`,
         { id, companyId, tenantId, now }
       ).catch(() => {});
+    } else {
+      // Domain auto-linking: derive domain from email and look up matching Company
+      const emailDomain = email.split("@")[1]?.toLowerCase();
+      const skipDomains = new Set(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com"]);
+      if (emailDomain && !skipDomains.has(emailDomain)) {
+        const domainMatch = await cypher(
+          `MATCH (c:Company {tenant_id: $tenantId})
+           WHERE c.domain = $emailDomain
+           RETURN {id: c.id} LIMIT 1`,
+          { tenantId, emailDomain }
+        ).catch(() => []);
+        if (domainMatch.length > 0) {
+          const matchedCompanyId = (domainMatch[0] as any).id as string;
+          await cypher(
+            `MATCH (p:Person {id: $id}), (c:Company {id: $matchedCompanyId, tenant_id: $tenantId})
+             MERGE (p)-[:WORKS_AT {is_current: true, auto_linked: true, created_at: $now}]->(c)
+             RETURN {ok: true}`,
+            { id, matchedCompanyId, tenantId, now }
+          ).catch(() => {});
+        }
+      }
     }
 
     await emitEvent(tenantId, "contact.created", "person", id, "user", {});
