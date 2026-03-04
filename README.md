@@ -144,18 +144,36 @@ Services will be available at:
 
 ## MVP Scope (Phase 1 — Months 1–6)
 
-- [x] Project scaffold + monorepo
-- [ ] Graph schema + migrations
-- [ ] Auth (JWT, OAuth, RBAC)
-- [ ] Core CRM entities (Contacts, Companies, Deals, Activities)
-- [ ] Email ingestion (Gmail + Outlook)
-- [ ] Calendar ingestion
-- [ ] LLM extraction pipeline with confidence scoring
-- [ ] Natural Language interface (command bar)
-- [ ] Core dashboards (pipeline, activity, deals)
-- [ ] REST + GraphQL API
-- [ ] Basic workflow automation
-- [ ] Mobile-responsive web
+> **Status as of 2026-03-04 — Phase 1 feature-complete. GraphQL and Stripe billing are the only remaining items.**
+
+### Completed
+- [x] Project scaffold + monorepo (Turborepo, Docker Compose, OTel)
+- [x] Graph schema + migrations (core schema, entity-resolution indexes, Reality Score table)
+- [x] Auth service (JWT access/refresh tokens, Google OAuth2 PKCE, RBAC middleware)
+- [x] Core CRM entities — Contacts, Companies, Deals, Activities (REST CRUD + web UI)
+- [x] Leads and Tasks pages (added scope)
+- [x] Email ingestion — Gmail connector (full), Outlook connector (basic)
+- [x] Calendar ingestion — Google Calendar connector
+- [x] LLM extraction pipeline (Claude Haiku) with confidence scoring + confidence gate (auto-write / review queue / discard)
+- [x] Entity resolver worker (deduplication by email, domain, fuzzy name)
+- [x] Normalizer worker (canonical ActivityEvent schema, PII stripping config)
+- [x] Review queue UI (`/review` page)
+- [x] Command bar v1 — `⌘K` / `Ctrl+K`, SSE streaming, query + create + update intents
+- [x] Reality Score v1 — deterministic scoring engine (recency, engagement breadth, sentiment, momentum) with explainability evidence panel
+- [x] Pipeline dashboard (`/pipeline` — Kanban + list)
+- [x] Activity feed (`/activities`)
+- [x] AI Intelligence Brief on home dashboard (daily AI-generated summary)
+- [x] REST API — full routes for all entities via API Gateway + Graph Core
+- [x] Basic reporting (`/reports`)
+- [x] Workflows page scaffold (`/workflows` — UI shell, Phase 2 logic)
+- [x] Mobile-responsive web
+
+### Remaining (Phase 1)
+- [ ] GraphQL API — proxy route wired, schema not implemented
+- [ ] Stripe billing integration — webhook stub exists, event handling not implemented
+
+### Explicitly Out of Phase 1 Scope
+Native mobile app · Workflow builder logic · Marketplace · Multi-currency · Territories · Quote/CPQ · Advanced forecasting · SAML/SCIM · Zoom/Slack ingestion
 
 ---
 

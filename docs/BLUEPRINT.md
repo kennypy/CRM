@@ -1,6 +1,6 @@
 # NexCRM — Full Architecture Blueprint
 
-> Lead Architect Document · Version 1.0 · AI-Native Revenue OS
+> Lead Architect Document · Version 1.1 · AI-Native Revenue OS · Updated 2026-03-04
 
 ---
 
@@ -542,34 +542,41 @@ Sandbox: dev environment never touches prod data.
 ### Phase 1 — Months 1–6: Pilot
 **Goal**: 10 pilot customers, core loop working, reps never open a form for routine activities.
 
-**In scope:**
-- [x] Monorepo + infra scaffold
-- [ ] Auth (JWT, Google OAuth, RBAC)
-- [ ] Graph schema + migrations (core nodes/edges)
-- [ ] Contact + Company + Deal CRUD (via NL + minimal forms)
-- [ ] Email ingestion: Gmail (full), Outlook (basic)
-- [ ] Calendar ingestion: Google Calendar
-- [ ] LLM extraction pipeline (Haiku-based) with confidence scoring
-- [ ] Review queue UI
-- [ ] Command bar v1 (query + create + update)
-- [ ] Pipeline dashboard (Kanban + list)
-- [ ] Activity feed
-- [ ] Reality Score v1 (rule-based + basic ML)
-- [ ] REST + GraphQL API
-- [ ] Basic reporting (pipeline, activity summary)
-- [ ] Mobile-responsive web (no native app yet)
-- [ ] Stripe billing integration
+> **Status: Feature-complete as of 2026-03-04. Two items remain (GraphQL schema, Stripe billing).**
 
-**NOT building in Phase 1:**
-- Native mobile app
-- Workflow builder
-- Marketplace / plugins
-- Multi-currency
-- Territories
-- Quote/CPQ
-- Advanced forecasting models
-- SAML/SCIM
-- Zoom / Slack ingestion
+#### Built ✅
+| Item | Notes |
+|------|-------|
+| Monorepo + infra scaffold | Turborepo, Docker Compose, OTel config |
+| Auth service | JWT access (15m) + refresh (30d) tokens, Google OAuth2 PKCE, RBAC middleware (5 roles) |
+| Graph schema + migrations | 3 migrations: core schema, entity-resolution indexes, Reality Score tables |
+| Contact + Company + Deal CRUD | REST routes (api-gateway + graph-core), full web UI pages with add-record modals |
+| Leads + Tasks pages | Added to Phase 1 scope during build |
+| Email ingestion | Gmail connector (full OAuth watch), Outlook connector (webhook-based, basic) |
+| Calendar ingestion | Google Calendar connector |
+| LLM extraction pipeline | Claude Haiku, structured JSON schema, confidence scoring |
+| Confidence gate | ≥0.85 auto-write · 0.60–0.84 review queue · <0.60 discard+log |
+| Entity resolver worker | Deduplication: email exact-match, domain match, fuzzy name |
+| Normalizer worker | Canonical ActivityEvent schema, PII-stripping config |
+| Review queue UI | `/review` page with accept / edit / reject cards |
+| Command bar v1 | `⌘K` / `Ctrl+K`, SSE streaming, query + create + update intents |
+| Reality Score v1 | Deterministic engine: recency, engagement breadth, sentiment, momentum; evidence panel for explainability |
+| Pipeline dashboard | `/pipeline` — Kanban + list views |
+| Activity feed | `/activities` — unified feed |
+| AI Intelligence Brief | Home dashboard daily AI-generated summary widget |
+| REST API | Full CRUD for all entities; graph query, NL, review queue, ingestion, webhook routes |
+| Basic reporting | `/reports` page |
+| Workflows page (shell) | `/workflows` UI scaffold — logic deferred to Phase 2 |
+| Mobile-responsive web | Tailwind responsive layout throughout |
+
+#### Remaining (Phase 1) 🔲
+| Item | Current State |
+|------|--------------|
+| GraphQL API | Proxy route wired at `/graphql`; schema + resolvers not implemented |
+| Stripe billing integration | Webhook stub at `/webhooks/stripe`; signature verification + event handling not implemented |
+
+#### NOT in Phase 1 Scope
+Native mobile app · Workflow builder logic · Marketplace / plugins · Multi-currency · Territories · Quote/CPQ · Advanced forecasting models · SAML/SCIM · Zoom / Slack ingestion
 
 ### Phase 2 — Months 7–12: Expansion
 **Goal**: 100+ customers, self-serve growth, workflow automation driving viral adoption.
