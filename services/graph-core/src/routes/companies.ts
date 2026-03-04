@@ -1,39 +1,66 @@
+/**
+ * Companies CRUD — Company nodes in the AGE graph.
+ *
+ * Security: all Cypher uses named $params — no string interpolation of
+ * user-supplied values. All RETURN clauses emit maps (never raw vertices).
+ * Aggregate functions (count/sum) are computed in a WITH clause before RETURN.
+ */
+
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, cypher } from "../db/pool";
 
 const CreateCompanySchema = z.object({
-  name: z.string().min(1),
-  domain: z.string().min(1),
-  industry: z.string().optional(),
+  name:      z.string().min(1),
+  domain:    z.string().min(1),
+  industry:  z.string().optional(),
   headcount: z.number().int().positive().optional(),
-  tier: z.enum(["smb", "mid_market", "enterprise"]).optional(),
-  website: z.string().url().optional(),
-  country: z.string().optional(),
+  tier:      z.enum(["smb", "mid_market", "enterprise"]).optional(),
+  website:   z.string().url().optional(),
+  country:   z.string().optional(),
 });
+
+const GetCompaniesQuery = z.object({
+  tenantId: z.string().min(1),
+  search:   z.string().optional(),
+  limit:    z.coerce.number().int().min(1).max(100).default(20),
+});
+
+const IdParam     = z.object({ id: z.string().uuid() });
+const TenantQuery = z.object({ tenantId: z.string().min(1) });
 
 export async function companiesRoutes(server: FastifyInstance) {
   server.get("/", async (request, reply) => {
-    const q = request.query as Record<string, string>;
-    const tenantId = q.tenantId;
-    const search = q.search ?? "";
-    const limit = Math.min(parseInt(q.limit ?? "20", 10), 100);
-
-    if (!tenantId) return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
-
-    let cyph = `MATCH (c:Company {tenant_id: '${tenantId}'})`;
-    if (search) {
-      const s = search.replace(/'/g, "\\'");
-      cyph += ` WHERE c.name CONTAINS '${s}' OR c.domain CONTAINS '${s}'`;
+    const parsed = GetCompaniesQuery.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
+      });
     }
-    cyph += `
-      OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
-      RETURN c, count(d) AS open_deals, sum(d.value) AS open_deal_value
-      ORDER BY c.name
-      LIMIT ${limit}
-    `;
+    const { tenantId, search, limit } = parsed.data;
+    const params: Record<string, unknown> = { tenantId };
 
-    const rows = await cypher(cyph);
+    let cyph = `MATCH (c:Company {tenant_id: $tenantId})\n`;
+    if (search) {
+      cyph += `  WHERE (c.name CONTAINS $search OR c.domain CONTAINS $search)\n`;
+      params.search = search;
+    }
+
+    // Aggregate in WITH before RETURN (required to mix node props + aggregates in map)
+    cyph += `  OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
+  WITH c, count(d) AS open_deals, sum(d.value) AS open_deal_value
+  RETURN {
+    id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
+    industry: c.industry, headcount: c.headcount, tier: c.tier,
+    website: c.website, country: c.country,
+    open_deals: open_deals, open_deal_value: open_deal_value,
+    created_at: c.created_at, updated_at: c.updated_at
+  }
+  ORDER BY c.name
+  LIMIT ${limit}`;     // validated integer — safe literal
+
+    const rows = await cypher(cyph, params);
     return reply.send({
       success: true,
       data: rows.map(toCompanyResponse),
@@ -49,16 +76,22 @@ export async function companiesRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
       });
     }
-    const q = request.query as { tenantId: string };
-    const id = crypto.randomUUID();
+    const tq = TenantQuery.safeParse(request.query);
+    if (!tq.success) {
+      return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
+    }
+    const tenantId = tq.data.tenantId;
+
+    const id  = crypto.randomUUID();
     const now = new Date().toISOString();
     const { name, domain, industry, headcount, tier, website, country } = body.data;
 
     // Dedup by domain within tenant
-    const existing = await cypher(`
-      MATCH (c:Company {tenant_id: '${q.tenantId}', domain: '${domain}'})
-      RETURN c LIMIT 1
-    `);
+    const existing = await cypher(
+      `MATCH (c:Company {tenant_id: $tenantId, domain: $domain})
+       RETURN {id: c.id} LIMIT 1`,
+      { tenantId, domain }
+    );
     if (existing.length > 0) {
       return reply.status(409).send({
         success: false,
@@ -66,104 +99,164 @@ export async function companiesRoutes(server: FastifyInstance) {
       });
     }
 
-    await cypher(`
-      CREATE (c:Company {
-        id: '${id}', tenant_id: '${q.tenantId}',
-        name: '${esc(name)}', domain: '${domain}',
-        industry: '${esc(industry ?? "")}',
-        headcount: ${headcount ?? 0},
-        tier: '${tier ?? "smb"}',
-        website: '${esc(website ?? "")}',
-        country: '${esc(country ?? "")}',
-        source: 'user',
-        created_at: '${now}', updated_at: '${now}'
-      }) RETURN c
-    `);
+    await cypher(
+      `CREATE (c:Company {
+        id:        $id,
+        tenant_id: $tenantId,
+        name:      $name,
+        domain:    $domain,
+        industry:  $industry,
+        headcount: $headcount,
+        tier:      $tier,
+        website:   $website,
+        country:   $country,
+        source:    'user',
+        created_at: $now,
+        updated_at: $now
+      }) RETURN {id: c.id}`,
+      {
+        id, tenantId, name, domain,
+        industry:  industry  ?? "",
+        headcount: headcount ?? 0,
+        tier:      tier      ?? "smb",
+        website:   website   ?? "",
+        country:   country   ?? "",
+        now,
+      }
+    );
 
     await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, 'company.created', 'user', 'company', $2, $3)`,
-      [q.tenantId, id, JSON.stringify(body.data)]
+      [tenantId, id, JSON.stringify(body.data)]
     ).catch(() => {});
 
-    const created = await cypher(`MATCH (c:Company {id: '${id}'}) RETURN c LIMIT 1`);
+    const created = await cypher(
+      `MATCH (c:Company {id: $id, tenant_id: $tenantId})
+       RETURN {
+         id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
+         industry: c.industry, headcount: c.headcount, tier: c.tier,
+         website: c.website, country: c.country,
+         open_deals: 0, open_deal_value: 0,
+         created_at: c.created_at, updated_at: c.updated_at
+       } LIMIT 1`,
+      { id, tenantId }
+    );
     return reply.status(201).send({ success: true, data: toCompanyResponse(created[0]) });
   });
 
   server.get("/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const q = request.query as { tenantId: string };
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
+    }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
 
-    const rows = await cypher(`
-      MATCH (c:Company {id: '${id}', tenant_id: '${q.tenantId}'})
-      OPTIONAL MATCH (p:Person)-[:WORKS_AT]->(c)
-      OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
-      RETURN c, collect(DISTINCT p) AS people, collect(DISTINCT d) AS deals
-      LIMIT 1
-    `);
+    const rows = await cypher(
+      `MATCH (c:Company {id: $id, tenant_id: $tenantId})
+       OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
+       WITH c, count(d) AS open_deals, sum(d.value) AS open_deal_value
+       RETURN {
+         id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
+         industry: c.industry, headcount: c.headcount, tier: c.tier,
+         website: c.website, country: c.country,
+         open_deals: open_deals, open_deal_value: open_deal_value,
+         created_at: c.created_at, updated_at: c.updated_at
+       } LIMIT 1`,
+      { id, tenantId }
+    );
 
     if (!rows.length) {
       return reply.status(404).send({ success: false, error: { code: "NOT_FOUND", message: "Company not found" } });
     }
-
     return reply.send({ success: true, data: toCompanyResponse(rows[0]) });
   });
 
   server.patch("/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const q = request.query as { tenantId: string };
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
+    }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
+
     const body = CreateCompanySchema.partial().safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message } });
     }
 
     const f = body.data;
-    const setParts = [`c.updated_at = '${new Date().toISOString()}'`];
-    if (f.name)      setParts.push(`c.name = '${esc(f.name)}'`);
-    if (f.industry)  setParts.push(`c.industry = '${esc(f.industry)}'`);
-    if (f.headcount) setParts.push(`c.headcount = ${f.headcount}`);
-    if (f.tier)      setParts.push(`c.tier = '${f.tier}'`);
-    if (f.country)   setParts.push(`c.country = '${esc(f.country)}'`);
+    const params: Record<string, unknown> = { id, tenantId, now: new Date().toISOString() };
+    const setParts = ["c.updated_at = $now"];
 
-    await cypher(`
-      MATCH (c:Company {id: '${id}', tenant_id: '${q.tenantId}'})
-      SET ${setParts.join(", ")} RETURN c
-    `);
+    if (f.name)      { setParts.push("c.name      = $name");      params.name      = f.name; }
+    if (f.industry)  { setParts.push("c.industry  = $industry");  params.industry  = f.industry; }
+    if (f.headcount) { setParts.push("c.headcount = $headcount"); params.headcount = f.headcount; }
+    if (f.tier)      { setParts.push("c.tier      = $tier");      params.tier      = f.tier; }
+    if (f.country)   { setParts.push("c.country   = $country");   params.country   = f.country; }
 
-    const updated = await cypher(`MATCH (c:Company {id: '${id}'}) RETURN c LIMIT 1`);
+    await cypher(
+      `MATCH (c:Company {id: $id, tenant_id: $tenantId})
+       SET ${setParts.join(", ")}
+       RETURN {id: c.id}`,
+      params
+    );
+
+    const updated = await cypher(
+      `MATCH (c:Company {id: $id, tenant_id: $tenantId})
+       OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
+       WITH c, count(d) AS open_deals, sum(d.value) AS open_deal_value
+       RETURN {
+         id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
+         industry: c.industry, headcount: c.headcount, tier: c.tier,
+         website: c.website, country: c.country,
+         open_deals: open_deals, open_deal_value: open_deal_value,
+         created_at: c.created_at, updated_at: c.updated_at
+       } LIMIT 1`,
+      { id, tenantId }
+    );
     return reply.send({ success: true, data: toCompanyResponse(updated[0]) });
   });
 
   server.delete("/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const q = request.query as { tenantId: string };
-    await cypher(`
-      MATCH (c:Company {id: '${id}', tenant_id: '${q.tenantId}'})
-      SET c.deleted_at = '${new Date().toISOString()}'
-    `);
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
+    }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
+
+    await cypher(
+      `MATCH (c:Company {id: $id, tenant_id: $tenantId})
+       SET c.deleted_at = $now
+       RETURN {id: c.id}`,
+      { id, tenantId, now: new Date().toISOString() }
+    );
     return reply.status(204).send();
   });
 }
 
-function esc(s: string) {
-  return s.replace(/'/g, "\\'").replace(/\\/g, "\\\\");
-}
+// ── Response mapper ───────────────────────────────────────────────────────────
 
 function toCompanyResponse(row: Record<string, unknown>) {
-  const c = (row?.c ?? row) as Record<string, unknown>;
+  // Queries return flat maps — no row.c wrapper.
   return {
-    id: c.id,
-    tenantId: c.tenant_id,
-    name: c.name,
-    domain: c.domain,
-    industry: c.industry || undefined,
-    headcount: c.headcount || undefined,
-    tier: c.tier || undefined,
-    website: c.website || undefined,
-    country: c.country || undefined,
-    openDeals: (row as any).open_deals ?? 0,
-    openDealValue: (row as any).open_deal_value ?? 0,
-    createdAt: c.created_at,
-    updatedAt: c.updated_at,
+    id:             row.id,
+    tenantId:       row.tenant_id,
+    name:           row.name,
+    domain:         row.domain,
+    industry:       row.industry       || undefined,
+    headcount:      row.headcount      || undefined,
+    tier:           row.tier           || undefined,
+    website:        row.website        || undefined,
+    country:        row.country        || undefined,
+    openDeals:      row.open_deals     ?? 0,
+    openDealValue:  row.open_deal_value ?? 0,
+    createdAt:      row.created_at,
+    updatedAt:      row.updated_at,
   };
 }

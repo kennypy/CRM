@@ -52,12 +52,14 @@ export async function graphRoutes(server: FastifyInstance) {
   });
 
   /**
-   * GET /graph/buying-group/:dealId
+   * GET /graph/buying-group/:dealId?tenantId=
    * All stakeholders with roles and influence scores for a deal.
    */
   server.get("/buying-group/:dealId", async (request, reply) => {
     const { dealId } = request.params as { dealId: string };
-    const rows = await getBuyingGroup(dealId);
+    const { tenantId } = request.query as { tenantId: string };
+    if (!tenantId) return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
+    const rows = await getBuyingGroup(dealId, tenantId);
     return reply.send({ success: true, data: rows });
   });
 

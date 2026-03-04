@@ -1,29 +1,45 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+/**
+ * Deals CRUD — Deal nodes in the AGE graph.
+ *
+ * Security: all Cypher uses named $params — no string interpolation of
+ * user-supplied values. All RETURN clauses emit maps (never raw vertices).
+ * WHERE predicates are accumulated in an array and joined — no overwrite.
+ */
+
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, cypher } from "../db/pool";
 import { computeRealityScore } from "../lib/reality-score";
 
-const DealStages = ["lead","qualified","discovery","proposal","negotiation","closed_won","closed_lost"] as const;
+const DealStages = [
+  "lead", "qualified", "discovery", "proposal",
+  "negotiation", "closed_won", "closed_lost",
+] as const;
 
 const CreateDealSchema = z.object({
-  name: z.string().min(1),
-  stage: z.enum(DealStages).default("lead"),
-  value: z.number().min(0),
-  currency: z.string().default("USD"),
-  closeDate: z.string().optional(),
-  companyId: z.string().optional(),
-  ownerId: z.string().optional(),
-  archetype: z.enum(["simple", "complex"]).optional(),
+  name:                z.string().min(1),
+  stage:               z.enum(DealStages).default("lead"),
+  value:               z.number().min(0),
+  currency:            z.string().default("USD"),
+  closeDate:           z.string().optional(),
+  companyId:           z.string().uuid().optional(),
+  ownerId:             z.string().optional(),
+  archetype:           z.enum(["simple", "complex"]).optional(),
   declaredProbability: z.number().min(0).max(100).optional(),
-  isExpansion: z.boolean().optional(),
+  isExpansion:         z.boolean().optional(),
 });
 
-// ── Deal map query helpers ─────────────────────────────────────────────────────
-// AGE's cypher() in pool.ts returns a single `v agtype` column.
-// All queries MUST return exactly one expression (a map); never raw vertices.
-// Maps serialise to plain JSON; vertices serialise with "::vertex" suffix (invalid JSON).
+const GetDealsQuery = z.object({
+  tenantId: z.string().min(1),
+  stage:    z.enum(DealStages).optional(),
+  atRisk:   z.enum(["true", "false"]).optional(),
+  limit:    z.coerce.number().int().min(1).max(200).default(50),
+});
 
-/** RETURN clause that flattens a Deal + optional Company into one map. */
+const IdParam     = z.object({ id: z.string().uuid() });
+const TenantQuery = z.object({ tenantId: z.string().min(1) });
+
+// ── Shared map return used in all deal queries ────────────────────────────────
 function dealReturnMap() {
   return `{
     id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
@@ -38,43 +54,49 @@ function dealReturnMap() {
 }
 
 export async function dealsRoutes(server: FastifyInstance) {
-  server.get("/", async (request: FastifyRequest, reply: FastifyReply) => {
-    const q = request.query as Record<string, string>;
-    const tenantId = q.tenantId;
-    if (!tenantId) return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
-
-    const limit = Math.min(parseInt(q.limit ?? "50", 10), 200);
-    let cyph = `MATCH (d:Deal {tenant_id: '${tenantId}'})`;
-
-    // Filter by stage
-    if (q.stage) {
-      cyph += ` WHERE d.stage = '${q.stage}'`;
+  server.get("/", async (request, reply) => {
+    const parsed = GetDealsQuery.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
+      });
     }
-    // At-risk filter: reality score < 50
-    if (q.atRisk === "true") {
-      cyph += ` WHERE d.reality_score < 50 OR d.stage NOT IN ['closed_won','closed_lost']`;
+    const { tenantId, stage, atRisk, limit } = parsed.data;
+    const params: Record<string, unknown> = { tenantId };
+
+    let cyph = `MATCH (d:Deal {tenant_id: $tenantId})\n`;
+
+    // Accumulate WHERE predicates — no overwrite
+    const where: string[] = [];
+    if (stage) {
+      where.push("d.stage = $stage");
+      params.stage = stage;
     }
+    if (atRisk === "true") {
+      where.push("d.reality_score < 50");
+      where.push("NOT d.stage IN ['closed_won', 'closed_lost']");
+    }
+    if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
 
-    cyph += `
-      OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
-      OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
-      WITH d, c, count(DISTINCT p) AS bgs
-      ORDER BY d.value DESC
-      LIMIT ${limit}
-      RETURN {
-        id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
-        value: d.value, currency: d.currency, close_date: d.close_date,
-        archetype: d.archetype, is_expansion: d.is_expansion,
-        declared_probability: d.declared_probability,
-        reality_score: d.reality_score, reality_explanation: d.reality_explanation,
-        risk_flags: d.risk_flags, owner_id: d.owner_id,
-        created_at: d.created_at, updated_at: d.updated_at,
-        company_id: c.id, company_name: c.name,
-        buying_group_size: bgs
-      }
-    `;
+    cyph += `  OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
+  OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
+  WITH d, c, count(DISTINCT p) AS bgs
+  ORDER BY d.value DESC
+  LIMIT ${limit}
+  RETURN {
+    id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
+    value: d.value, currency: d.currency, close_date: d.close_date,
+    archetype: d.archetype, is_expansion: d.is_expansion,
+    declared_probability: d.declared_probability,
+    reality_score: d.reality_score, reality_explanation: d.reality_explanation,
+    risk_flags: d.risk_flags, owner_id: d.owner_id,
+    created_at: d.created_at, updated_at: d.updated_at,
+    company_id: c.id, company_name: c.name,
+    buying_group_size: bgs
+  }`;
 
-    const rows = await cypher(cyph);
+    const rows = await cypher(cyph, params);
     return reply.send({
       success: true,
       data: rows.map(toDealResponse),
@@ -82,115 +104,156 @@ export async function dealsRoutes(server: FastifyInstance) {
     });
   });
 
-  server.post("/", async (request: FastifyRequest, reply: FastifyReply) => {
+  server.post("/", async (request, reply) => {
     const body = CreateDealSchema.safeParse(request.body);
     if (!body.success) {
-      return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message } });
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
+      });
     }
-    const q = request.query as { tenantId: string };
-    const id = crypto.randomUUID();
+    const tq = TenantQuery.safeParse(request.query);
+    if (!tq.success) {
+      return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
+    }
+    const tenantId = tq.data.tenantId;
+
+    const id  = crypto.randomUUID();
     const now = new Date().toISOString();
-    const { name, stage, value, currency, closeDate, companyId, ownerId } = body.data;
+    const { name, stage, value, currency, closeDate, companyId, ownerId, archetype, declaredProbability, isExpansion } = body.data;
 
-    await cypher(`
-      CREATE (d:Deal {
-        id: '${id}', tenant_id: '${q.tenantId}',
-        name: '${esc(name)}', stage: '${stage}',
-        value: ${value}, currency: '${currency}',
-        close_date: '${closeDate ?? ""}',
-        owner_id: '${ownerId ?? ""}',
-        reality_score: 50,
-        risk_flags: '[]',
-        source: 'user',
-        created_at: '${now}', updated_at: '${now}'
-      }) RETURN {id: d.id}
-    `);
+    await cypher(
+      `CREATE (d:Deal {
+        id:                   $id,
+        tenant_id:            $tenantId,
+        name:                 $name,
+        stage:                $stage,
+        value:                $value,
+        currency:             $currency,
+        close_date:           $closeDate,
+        owner_id:             $ownerId,
+        archetype:            $archetype,
+        declared_probability: $declaredProbability,
+        is_expansion:         $isExpansion,
+        reality_score:        50,
+        risk_flags:           '[]',
+        source:               'user',
+        created_at:           $now,
+        updated_at:           $now
+      }) RETURN {id: d.id}`,
+      {
+        id, tenantId, name, stage, value, currency,
+        closeDate:           closeDate           ?? "",
+        ownerId:             ownerId             ?? "",
+        archetype:           archetype           ?? "simple",
+        declaredProbability: declaredProbability ?? null,
+        isExpansion:         isExpansion         ?? false,
+        now,
+      }
+    );
 
-    // Link to company
+    // Link to company (non-fatal — company may not exist)
     if (companyId) {
-      await cypher(`
-        MATCH (d:Deal {id: '${id}'}), (c:Company {id: '${companyId}', tenant_id: '${q.tenantId}'})
-        MERGE (c)-[:INVOLVED_IN {type: 'buyer', created_at: '${now}'}]->(d)
-        RETURN {ok: true}
-      `).catch(() => {});
+      await cypher(
+        `MATCH (d:Deal {id: $id}), (c:Company {id: $companyId, tenant_id: $tenantId})
+         MERGE (c)-[:INVOLVED_IN {type: 'buyer', created_at: $now}]->(d)
+         RETURN {ok: true}`,
+        { id, companyId, tenantId, now }
+      ).catch(() => {});
     }
 
     await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, 'deal.created', 'user', 'deal', $2, $3)`,
-      [q.tenantId, id, JSON.stringify(body.data)]
+      [tenantId, id, JSON.stringify(body.data)]
     ).catch(() => {});
 
-    const created = await cypher(`
-      MATCH (d:Deal {id: '${id}'})
-      OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
-      RETURN ${dealReturnMap()} LIMIT 1
-    `);
+    const created = await cypher(
+      `MATCH (d:Deal {id: $id, tenant_id: $tenantId})
+       OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
+       RETURN ${dealReturnMap()} LIMIT 1`,
+      { id, tenantId }
+    );
     return reply.status(201).send({ success: true, data: toDealResponse(created[0]) });
   });
 
-  server.get("/:id", async (request: FastifyRequest, reply: FastifyReply) => {
-    const { id } = request.params as { id: string };
-    const q = request.query as { tenantId: string };
+  server.get("/:id", async (request, reply) => {
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
+    }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
 
-    const rows = await cypher(`
-      MATCH (d:Deal {id: '${id}', tenant_id: '${q.tenantId}'})
-      OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
-      OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
-      WITH d, c, count(DISTINCT p) AS bgs,
-           collect({role: inf.role, score: inf.influence_score, sentiment: inf.sentiment}) AS stks
-      RETURN {
-        id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
-        value: d.value, currency: d.currency, close_date: d.close_date,
-        archetype: d.archetype, is_expansion: d.is_expansion,
-        declared_probability: d.declared_probability,
-        reality_score: d.reality_score, reality_explanation: d.reality_explanation,
-        risk_flags: d.risk_flags, owner_id: d.owner_id,
-        created_at: d.created_at, updated_at: d.updated_at,
-        company_id: c.id, company_name: c.name,
-        buying_group_size: bgs, stakeholders: stks
-      } LIMIT 1
-    `);
+    const rows = await cypher(
+      `MATCH (d:Deal {id: $id, tenant_id: $tenantId})
+       OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
+       OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
+       WITH d, c, count(DISTINCT p) AS bgs,
+            collect({role: inf.role, score: inf.influence_score, sentiment: inf.sentiment}) AS stks
+       RETURN {
+         id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
+         value: d.value, currency: d.currency, close_date: d.close_date,
+         archetype: d.archetype, is_expansion: d.is_expansion,
+         declared_probability: d.declared_probability,
+         reality_score: d.reality_score, reality_explanation: d.reality_explanation,
+         risk_flags: d.risk_flags, owner_id: d.owner_id,
+         created_at: d.created_at, updated_at: d.updated_at,
+         company_id: c.id, company_name: c.name,
+         buying_group_size: bgs, stakeholders: stks
+       } LIMIT 1`,
+      { id, tenantId }
+    );
 
     if (!rows.length) {
       return reply.status(404).send({ success: false, error: { code: "NOT_FOUND", message: "Deal not found" } });
     }
-
     return reply.send({ success: true, data: toDealResponse(rows[0]) });
   });
 
-  server.patch("/:id", async (request: FastifyRequest, reply: FastifyReply) => {
-    const { id } = request.params as { id: string };
-    const q = request.query as { tenantId: string };
+  server.patch("/:id", async (request, reply) => {
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
+    }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
+
     const body = CreateDealSchema.partial().safeParse(request.body);
     if (!body.success) {
-      return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message } });
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
+      });
     }
 
     const f = body.data;
-    const now = new Date().toISOString();
-    const setParts = [`d.updated_at = '${now}'`];
+    const params: Record<string, unknown> = { id, tenantId, now: new Date().toISOString() };
+    const setParts = ["d.updated_at = $now"];
 
-    if (f.name)                              setParts.push(`d.name = '${esc(f.name)}'`);
-    if (f.value !== undefined)               setParts.push(`d.value = ${f.value}`);
-    if (f.currency)                          setParts.push(`d.currency = '${f.currency}'`);
-    if (f.closeDate)                         setParts.push(`d.close_date = '${f.closeDate}'`);
-    if (f.archetype)                         setParts.push(`d.archetype = '${f.archetype}'`);
-    if (f.isExpansion !== undefined)         setParts.push(`d.is_expansion = ${f.isExpansion}`);
-    if (f.declaredProbability !== undefined) setParts.push(`d.declared_probability = ${f.declaredProbability}`);
+    if (f.name                !== undefined) { setParts.push("d.name                 = $name");                params.name                = f.name; }
+    if (f.value               !== undefined) { setParts.push("d.value                = $value");               params.value               = f.value; }
+    if (f.currency            !== undefined) { setParts.push("d.currency             = $currency");            params.currency            = f.currency; }
+    if (f.closeDate           !== undefined) { setParts.push("d.close_date           = $closeDate");           params.closeDate           = f.closeDate; }
+    if (f.archetype           !== undefined) { setParts.push("d.archetype            = $archetype");           params.archetype           = f.archetype; }
+    if (f.isExpansion         !== undefined) { setParts.push("d.is_expansion         = $isExpansion");         params.isExpansion         = f.isExpansion; }
+    if (f.declaredProbability !== undefined) { setParts.push("d.declared_probability = $declaredProbability"); params.declaredProbability = f.declaredProbability; }
 
-    // Stage change — emit specific event
     let stageChanged = false;
-    if (f.stage) {
-      setParts.push(`d.stage = '${f.stage}'`);
+    if (f.stage !== undefined) {
+      setParts.push("d.stage = $stage");
+      params.stage = f.stage;
       stageChanged = true;
     }
 
-    await cypher(`
-      MATCH (d:Deal {id: '${id}', tenant_id: '${q.tenantId}'})
-      SET ${setParts.join(", ")}
-      RETURN {id: d.id}
-    `);
+    await cypher(
+      `MATCH (d:Deal {id: $id, tenant_id: $tenantId})
+       SET ${setParts.join(", ")}
+       RETURN {id: d.id}`,
+      params
+    );
 
     const evType = stageChanged
       ? f.stage === "closed_won" ? "deal.closed_won"
@@ -201,39 +264,48 @@ export async function dealsRoutes(server: FastifyInstance) {
     await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, $2, 'user', 'deal', $3, $4)`,
-      [q.tenantId, evType, id, JSON.stringify(f)]
+      [tenantId, evType, id, JSON.stringify(f)]
     ).catch(() => {});
 
-    const updated = await cypher(`
-      MATCH (d:Deal {id: '${id}'})
-      OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
-      RETURN ${dealReturnMap()} LIMIT 1
-    `);
+    const updated = await cypher(
+      `MATCH (d:Deal {id: $id, tenant_id: $tenantId})
+       OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
+       RETURN ${dealReturnMap()} LIMIT 1`,
+      { id, tenantId }
+    );
     return reply.send({ success: true, data: toDealResponse(updated[0]) });
   });
 
-  server.delete("/:id", async (request: FastifyRequest, reply: FastifyReply) => {
-    const { id } = request.params as { id: string };
-    const q = request.query as { tenantId: string };
-    await cypher(`
-      MATCH (d:Deal {id: '${id}', tenant_id: '${q.tenantId}'})
-      SET d.deleted_at = '${new Date().toISOString()}'
-      RETURN {id: d.id}
-    `);
+  server.delete("/:id", async (request, reply) => {
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
+    }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
+
+    await cypher(
+      `MATCH (d:Deal {id: $id, tenant_id: $tenantId})
+       SET d.deleted_at = $now
+       RETURN {id: d.id}`,
+      { id, tenantId, now: new Date().toISOString() }
+    );
     return reply.status(204).send();
   });
 
   // ── Reality Score: deterministic computation from graph signals ─────────────
-  // Each call: computes fresh score, writes deal_score_snapshots row, updates
-  // Deal node's reality_score property, returns full evidence breakdown.
-  server.get("/:id/reality-score", async (request: FastifyRequest, reply: FastifyReply) => {
-    const { id } = request.params as { id: string };
-    const q = request.query as { tenantId: string };
-    if (!q.tenantId) {
-      return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
+  server.get("/:id/reality-score", async (request, reply) => {
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
     }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
+
     try {
-      const result = await computeRealityScore(id, q.tenantId);
+      const result = await computeRealityScore(id, tenantId);
       return reply.send({ success: true, data: result });
     } catch (err: any) {
       if (err.message?.includes("not found")) {
@@ -245,34 +317,30 @@ export async function dealsRoutes(server: FastifyInstance) {
   });
 }
 
-function esc(s: string) {
-  return s.replace(/'/g, "\\'").replace(/\\/g, "\\\\");
-}
+// ── Response mapper ───────────────────────────────────────────────────────────
 
 function toDealResponse(row: Record<string, unknown>) {
-  // Queries return flat maps: {id, name, ..., company_id, company_name, buying_group_size, stakeholders}
-  const r = row as Record<string, unknown>;
-  const companyId   = r.company_id   as string | undefined;
-  const companyName = r.company_name as string | undefined;
+  const companyId   = row.company_id   as string | undefined;
+  const companyName = row.company_name as string | undefined;
   return {
-    id:                  r.id,
-    tenantId:            r.tenant_id,
-    name:                r.name,
-    stage:               r.stage,
-    value:               r.value,
-    currency:            r.currency,
-    closeDate:           r.close_date || undefined,
-    archetype:           (r.archetype as string) ?? "simple",
-    isExpansion:         r.is_expansion ?? false,
-    declaredProbability: r.declared_probability != null ? Number(r.declared_probability) : undefined,
-    realityScore:        r.reality_score        != null ? Number(r.reality_score)        : undefined,
-    realityExplanation:  r.reality_explanation,
-    riskFlags:           r.risk_flags ? JSON.parse(r.risk_flags as string) : [],
-    ownerId:             r.owner_id,
+    id:                  row.id,
+    tenantId:            row.tenant_id,
+    name:                row.name,
+    stage:               row.stage,
+    value:               row.value,
+    currency:            row.currency,
+    closeDate:           row.close_date           || undefined,
+    archetype:           (row.archetype as string) ?? "simple",
+    isExpansion:         row.is_expansion          ?? false,
+    declaredProbability: row.declared_probability != null ? Number(row.declared_probability) : undefined,
+    realityScore:        row.reality_score         != null ? Number(row.reality_score)        : undefined,
+    realityExplanation:  row.reality_explanation,
+    riskFlags:           row.risk_flags ? JSON.parse(row.risk_flags as string) : [],
+    ownerId:             row.owner_id,
     company:             companyId ? { id: companyId, name: companyName } : undefined,
-    buyingGroupSize:     (r.buying_group_size as number) ?? 0,
-    stakeholders:        (r.stakeholders as unknown[]) ?? [],
-    createdAt:           r.created_at,
-    updatedAt:           r.updated_at,
+    buyingGroupSize:     (row.buying_group_size as number) ?? 0,
+    stakeholders:        (row.stakeholders        as unknown[]) ?? [],
+    createdAt:           row.created_at,
+    updatedAt:           row.updated_at,
   };
 }

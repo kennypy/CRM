@@ -12,7 +12,10 @@
  * Fix 3: Buying-group deficit penalty scales linearly; sentiment capped ±10.
  * Fix 4: No days-to-close "urgency" — close dates are rep-entered garbage.
  * Fix 5: deal_signals table uses deal_uuid UUID (never AGE internal id).
- * Fix 6: Snapshot written on every computation; trend reads > 7d old snapshot.
+ * Fix 6: Snapshot written on every computation; trend compares against the
+ *        most-recent snapshot that is at least 24 h old (responsive yet stable).
+ * Fix 7: Email direction uses a.direction field — never inferred from sentiment.
+ * Fix 8: All Cypher calls use $params — no string interpolation.
  */
 
 import { pool, cypher } from "../db/pool";
@@ -36,6 +39,8 @@ const COMMERCIAL_WATERMARKS: Record<string, number> = {
 };
 
 // ── Activity weights for momentum ─────────────────────────────────────────────
+// email_inbound / email_outbound are separate keys mapped from a.direction.
+// Activities without a direction default to email_outbound (lower weight).
 
 const ACTIVITY_WEIGHTS: Record<string, number> = {
   meeting:        25,
@@ -83,27 +88,27 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 // ── Pillar 1: Momentum ────────────────────────────────────────────────────────
-// Fix 2: half-life = expectedDays × 0.25 (not a hardcoded 14 d)
+// Fix 7: email direction comes from a.direction, not sentiment proxy.
 
 function scoreMomentum(
-  activities: Array<{ type: string; occurredAt: string; sentiment: number }>,
+  activities: Array<{ type: string; direction: string | null; occurredAt: string }>,
   archetype:  "simple" | "complex",
 ): PillarResult {
   const { expectedDays } = ARCHETYPES[archetype];
-  const halfLife = expectedDays * 0.25;              // simple: 7.5 d | complex: 15 d
-  const windowMs = expectedDays * 2 * 86_400_000;   // simple: 60 d  | complex: 120 d
-  const now      = Date.now();
-  let   raw      = 0;
+  const halfLife  = expectedDays * 0.25;            // simple: 7.5 d | complex: 15 d
+  const windowMs  = expectedDays * 2 * 86_400_000;  // simple: 60 d  | complex: 120 d
+  const now       = Date.now();
+  let   raw       = 0;
   const evidence: string[] = [];
 
   for (const act of activities) {
     const ts = new Date(act.occurredAt).getTime();
     if (isNaN(ts) || now - ts > windowMs) continue;
 
-    // Distinguish inbound vs outbound email by sentiment proxy
+    // Fix 7: use explicit direction field — never infer from sentiment
     let key = act.type;
     if (act.type === "email") {
-      key = act.sentiment > 0 ? "email_inbound" : "email_outbound";
+      key = act.direction === "inbound" ? "email_inbound" : "email_outbound";
     }
 
     const weight  = ACTIVITY_WEIGHTS[key] ?? 5;
@@ -140,7 +145,7 @@ function scoreCommercial(
 }
 
 // ── Pillar 3: Buying Group ────────────────────────────────────────────────────
-// Fix 3: linear deficit penalty (×8 per missing person), sentiment capped ±10
+// Linear deficit penalty (×8 per missing person), sentiment capped ±10.
 
 function scoreBuyingGroup(
   stakeholders: Array<{ role: string; sentiment: number }>,
@@ -154,8 +159,8 @@ function scoreBuyingGroup(
     : 0;
 
   const coverageBase   = Math.min(actual / expected, 1.0) * 80;
-  const deficitPenalty = Math.max(0, expected - actual) * 8; // Fix 3: linear, not jump
-  const sentimentAdj   = clamp(avgSentiment * 10, -10, 10);  // Fix 3: ±10 cap
+  const deficitPenalty = Math.max(0, expected - actual) * 8;
+  const sentimentAdj   = clamp(avgSentiment * 10, -10, 10);
 
   const score = clamp(Math.round(coverageBase - deficitPenalty + sentimentAdj), 0, 100);
 
@@ -171,22 +176,19 @@ function scoreBuyingGroup(
 }
 
 // ── Pillar 4: Structural Context ──────────────────────────────────────────────
-// Fix 1: ICP-fit — expansion vs new + profile completeness (no tier, no dates)
-// Fix 4: no urgency / days-to-close
+// ICP-fit: expansion vs new + profile completeness. No tier ranking, no dates.
 
 function scoreStructural(
   company:     { industry?: string; headcount?: number } | null,
   isExpansion: boolean,
 ): PillarResult {
-  // Expansion de-risks: proven fit, lower churn, shorter cycle
   const accountScore      = isExpansion ? 40 : 20;
-  // Profile completeness: do we know enough to assess ICP fit?
   const completenessScore = (company?.industry && (company.headcount ?? 0) > 0) ? 20 : 0;
   const score             = accountScore + completenessScore; // range 20–60
 
   const evidence: string[] = [
     isExpansion ? "Existing customer (expansion)" : "New business",
-    company?.industry       ? `Industry: ${company.industry}` : "Industry not set",
+    company?.industry          ? `Industry: ${company.industry}` : "Industry not set",
     (company?.headcount ?? 0) > 0 ? `Headcount: ${company.headcount}` : "Headcount unknown",
   ];
 
@@ -195,12 +197,7 @@ function scoreStructural(
 
 // ── Explanation builder ───────────────────────────────────────────────────────
 
-function buildExplanation(
-  score: number,
-  m: PillarResult,
-  c: PillarResult,
-  bg: PillarResult,
-): string {
+function buildExplanation(score: number, m: PillarResult, c: PillarResult, bg: PillarResult): string {
   const parts: string[] = [];
 
   if      (m.score >= 60) parts.push("strong engagement cadence");
@@ -226,48 +223,51 @@ export async function computeRealityScore(
   tenantId: string,
 ): Promise<ScoreResult> {
 
-  // 1. Deal archetype + expansion flag
-  //    Use map return (not vertex RETURN d) to avoid agtype::vertex serialisation issues.
-  const dealRows = await cypher<{ archetype: string; is_expansion: boolean | null }>(`
-    MATCH (d:Deal {id: '${dealId}', tenant_id: '${tenantId}'})
-    RETURN {archetype: d.archetype, is_expansion: d.is_expansion} LIMIT 1
-  `);
+  // 1. Deal archetype + expansion flag — Fix 8: $params
+  const dealRows = await cypher<{ archetype: string; is_expansion: boolean | null }>(
+    `MATCH (d:Deal {id: $dealId, tenant_id: $tenantId})
+     RETURN {archetype: d.archetype, is_expansion: d.is_expansion} LIMIT 1`,
+    { dealId, tenantId }
+  );
   if (!dealRows.length) throw new Error(`Deal not found: ${dealId}`);
   const { archetype: rawArch, is_expansion } = dealRows[0];
   const archetype: "simple" | "complex" = rawArch === "complex" ? "complex" : "simple";
   const isExpansion = is_expansion === true;
 
   // 2. Company profile (Fix 1: industry + headcount, not tier)
-  const compRows = await cypher<{ industry: string | null; headcount: number | null }>(`
-    MATCH (d:Deal {id: '${dealId}', tenant_id: '${tenantId}'})<-[:INVOLVED_IN]-(c:Company)
-    RETURN {industry: c.industry, headcount: c.headcount} LIMIT 1
-  `);
+  const compRows = await cypher<{ industry: string | null; headcount: number | null }>(
+    `MATCH (d:Deal {id: $dealId, tenant_id: $tenantId})<-[:INVOLVED_IN]-(c:Company)
+     RETURN {industry: c.industry, headcount: c.headcount} LIMIT 1`,
+    { dealId, tenantId }
+  );
   const company = compRows[0] ?? null;
 
   // 3. Stakeholders
-  const stkhRows = await cypher<{ role: string; sentiment: number }>(`
-    MATCH (p:Person)-[inf:INFLUENCES]->(d:Deal {id: '${dealId}', tenant_id: '${tenantId}'})
-    RETURN {role: inf.role, sentiment: inf.sentiment}
-  `);
+  const stkhRows = await cypher<{ role: string; sentiment: number }>(
+    `MATCH (p:Person)-[inf:INFLUENCES]->(d:Deal {id: $dealId, tenant_id: $tenantId})
+     RETURN {role: inf.role, sentiment: inf.sentiment}`,
+    { dealId, tenantId }
+  );
   const stakeholders = stkhRows.map((r) => ({
     role:      r.role ?? "unknown",
     sentiment: parseFloat(String(r.sentiment ?? 0)),
   }));
 
-  // 4. Activities linked via RELATED_TO (Fix 2: window handled inside scoreMomentum)
-  const actRows = await cypher<{ type: string; occurred_at: string; sentiment: number }>(`
-    MATCH (a:Activity)-[:RELATED_TO]->(d:Deal {id: '${dealId}', tenant_id: '${tenantId}'})
-    RETURN {type: a.type, occurred_at: a.occurred_at, sentiment: a.sentiment}
-    ORDER BY a.occurred_at DESC
-    LIMIT 50
-  `);
+  // 4. Activities via RELATED_TO — Fix 7: fetch direction field
+  const actRows = await cypher<{ type: string; direction: string | null; occurred_at: string }>(
+    `MATCH (a:Activity)-[:RELATED_TO]->(d:Deal {id: $dealId, tenant_id: $tenantId})
+     RETURN {type: a.type, direction: a.direction, occurred_at: a.occurred_at}
+     ORDER BY a.occurred_at DESC
+     LIMIT 50`,
+    { dealId, tenantId }
+  );
   const activities = actRows.map((r) => ({
-    type:       r.type      ?? "email",
+    type:       r.type        ?? "email",
+    direction:  r.direction   ?? null,
     occurredAt: r.occurred_at ?? "",
-    sentiment:  parseFloat(String(r.sentiment ?? 0)),
   }));
 
-  // 5. Commercial signals from Postgres (Fix 5: deal_uuid UUID column)
+  // 5. Commercial signals from Postgres (Fix 5: deal_uuid is the stable UUID)
   const sigResult = await pool.query<{ signal_type: string; occurred_at: string }>(
     `SELECT signal_type, occurred_at::text
      FROM deal_signals
@@ -297,11 +297,12 @@ export async function computeRealityScore(
     str.score * weights.structural,
   ), 0, 100);
 
-  // ── Trend: most-recent snapshot older than 7 days (Fix 6) ─────────────────
+  // ── Trend: most-recent snapshot at least 24 h old (Fix 6) ─────────────────
+  // 24 h gives responsive feedback while ignoring intra-day recomputations.
   const snapRow = await pool.query<{ score: number }>(
     `SELECT score FROM deal_score_snapshots
      WHERE tenant_id = $1 AND deal_uuid = $2
-       AND computed_at < now() - interval '7 days'
+       AND computed_at < now() - interval '24 hours'
      ORDER BY computed_at DESC LIMIT 1`,
     [tenantId, dealId],
   );
@@ -324,12 +325,13 @@ export async function computeRealityScore(
     ],
   );
 
-  // ── Persist updated score on Deal node ────────────────────────────────────
-  await cypher(`
-    MATCH (d:Deal {id: '${dealId}', tenant_id: '${tenantId}'})
-    SET d.reality_score = ${score}, d.updated_at = '${new Date().toISOString()}'
-    RETURN {id: d.id}
-  `);
+  // ── Persist updated score on Deal node — Fix 8: $params ───────────────────
+  await cypher(
+    `MATCH (d:Deal {id: $dealId, tenant_id: $tenantId})
+     SET d.reality_score = $score, d.updated_at = $now
+     RETURN {id: d.id}`,
+    { dealId, tenantId, score, now: new Date().toISOString() }
+  );
 
   return {
     score,
