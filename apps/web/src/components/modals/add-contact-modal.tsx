@@ -1,23 +1,24 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
-import { X, User, AlertCircle, CheckCircle2, Building2, Loader2 } from "lucide-react";
+import { X, User, AlertCircle, CheckCircle2, Building2, Loader2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MatchedCompany {
   id: string;
   name: string;
-  domain: string;
+  domain?: string;
 }
 
 interface Props {
   onClose: () => void;
   onCreated?: (contact: any) => void;
-  /** Pre-link to a specific company (from account detail page) */
   prelinkedCompanyId?: string;
   prelinkedCompanyName?: string;
 }
+
+const SKIP_DOMAINS = new Set(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "aol.com"]);
 
 export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelinkedCompanyName }: Props) {
   const [form, setForm] = useState({
@@ -25,9 +26,16 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
     linkedinUrl: "", notes: "",
   });
   const [matchedCompany, setMatchedCompany] = useState<MatchedCompany | null>(
-    prelinkedCompanyId ? { id: prelinkedCompanyId, name: prelinkedCompanyName ?? "", domain: "" } : null
+    prelinkedCompanyId ? { id: prelinkedCompanyId, name: prelinkedCompanyName ?? "" } : null
   );
   const [domainLookupPending, setDomainLookupPending] = useState(false);
+
+  // Manual company search
+  const [companySearch, setCompanySearch]         = useState("");
+  const [companySuggestions, setSuggestions]      = useState<MatchedCompany[]>([]);
+  const [companyDropOpen, setCompanyDropOpen]     = useState(false);
+  const companyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [done, setDone]       = useState(false);
@@ -35,10 +43,9 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const SKIP_DOMAINS = new Set(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "aol.com"]);
-
+  // Auto-match by email domain
   const handleEmailBlur = useCallback(async () => {
-    if (prelinkedCompanyId) return; // already linked
+    if (prelinkedCompanyId || matchedCompany) return;
     const email = form.email.trim();
     const atIdx = email.indexOf("@");
     if (atIdx === -1) return;
@@ -51,15 +58,43 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
       if (res.ok) {
         const data = await res.json();
         if (data.data) setMatchedCompany(data.data);
-      } else {
-        setMatchedCompany(null);
       }
     } catch {
-      // Non-fatal: just don't auto-link
+      // Non-fatal
     } finally {
       setDomainLookupPending(false);
     }
-  }, [form.email, prelinkedCompanyId]);
+  }, [form.email, prelinkedCompanyId, matchedCompany]);
+
+  // Manual company search with debounce
+  const handleCompanySearch = (v: string) => {
+    setCompanySearch(v);
+    if (!v.trim()) { setSuggestions([]); setCompanyDropOpen(false); return; }
+    if (companyTimer.current) clearTimeout(companyTimer.current);
+    companyTimer.current = setTimeout(async () => {
+      try {
+        const res = await api.get(`/api/v1/companies?search=${encodeURIComponent(v)}&limit=5`);
+        if (res.ok) {
+          const data = await res.json();
+          setSuggestions(data.data ?? []);
+          setCompanyDropOpen(true);
+        }
+      } catch {}
+    }, 300);
+  };
+
+  const selectCompany = (co: MatchedCompany) => {
+    setMatchedCompany(co);
+    setCompanySearch(co.name);
+    setSuggestions([]);
+    setCompanyDropOpen(false);
+  };
+
+  const clearCompany = () => {
+    setMatchedCompany(null);
+    setCompanySearch("");
+    setSuggestions([]);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,7 +132,7 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-card shadow-2xl">
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <User className="h-5 w-5 text-primary" />
@@ -108,7 +143,7 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4" suppressHydrationWarning>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1.5 block text-sm font-medium">First name *</label>
@@ -125,34 +160,58 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
           <div>
             <label className="mb-1.5 block text-sm font-medium">Email *</label>
             <div className="relative">
-              <input
-                type="email"
-                value={form.email}
-                onChange={set("email")}
-                onBlur={handleEmailBlur}
-                required
-                placeholder="ada@company.com"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 pr-8"
-              />
+              <input type="email" value={form.email} onChange={set("email")} onBlur={handleEmailBlur}
+                required placeholder="ada@company.com"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 pr-8" />
               {domainLookupPending && (
                 <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
               )}
             </div>
-            {/* Domain auto-match indicator */}
-            {matchedCompany && (
-              <div className="mt-1.5 flex items-center gap-1.5 text-xs text-emerald-700">
-                <Building2 className="h-3.5 w-3.5" />
-                <span>
-                  Matched: <strong>{matchedCompany.name}</strong> — contact will be linked automatically
-                </span>
-                {!prelinkedCompanyId && (
-                  <button
-                    type="button"
-                    onClick={() => setMatchedCompany(null)}
-                    className="ml-auto text-muted-foreground hover:text-foreground"
-                  >
-                    ✕
-                  </button>
+          </div>
+
+          {/* Manual company search */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Account / Company</label>
+            {prelinkedCompanyId ? (
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                <Building2 className="h-4 w-4 shrink-0" />
+                <span className="font-medium">{prelinkedCompanyName}</span>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    value={matchedCompany ? matchedCompany.name : companySearch}
+                    onChange={(e) => { if (matchedCompany) return; handleCompanySearch(e.target.value); }}
+                    onFocus={() => { if (matchedCompany) return; if (companySuggestions.length) setCompanyDropOpen(true); }}
+                    placeholder="Search or type company name…"
+                    className="w-full rounded-lg border border-border bg-background pl-9 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  {matchedCompany && (
+                    <button type="button" onClick={clearCompany}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                {companyDropOpen && companySuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-lg border bg-card shadow-lg overflow-hidden">
+                    {companySuggestions.map((co) => (
+                      <button key={co.id} type="button" onClick={() => selectCompany(co)}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted text-left">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span>{co.name}</span>
+                        {co.domain && <span className="text-xs text-muted-foreground ml-auto">{co.domain}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {matchedCompany && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-emerald-700">
+                    <Building2 className="h-3.5 w-3.5" />
+                    <span>Linked to <strong>{matchedCompany.name}</strong></span>
+                  </div>
                 )}
               </div>
             )}
@@ -199,7 +258,7 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
               className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
               Cancel
             </button>
-            <button type="submit" disabled={loading}
+            <button type="submit" disabled={loading} suppressHydrationWarning
               className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                 loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
               {loading ? "Creating…" : "Create Contact"}

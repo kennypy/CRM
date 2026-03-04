@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import {
   TrendingUp, Search, RefreshCw, AlertCircle, Plus,
   ChevronLeft, ChevronRight, Flame, Minus, Snowflake,
-  ArrowRight, Building2, Mail,
+  ArrowRight, Building2, Mail, X, User, CheckCircle2,
 } from "lucide-react";
 
 interface Lead {
@@ -16,11 +16,24 @@ interface Lead {
   email: string;
   title?: string;
   company?: { id: string; name: string };
-  score: number;          // 0–100
+  score: number;
   tier: "hot" | "warm" | "cold";
-  source: string;         // "inbound" | "outbound" | "referral" | "auto"
+  source: string;
   lastActivityAt?: string;
   createdAt: string;
+}
+
+// Deterministic score from ID — no Math.random() in render
+function hashScore(id: string): number {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  return 20 + (h % 61); // 20–80
+}
+
+function scoreTier(score: number): "hot" | "warm" | "cold" {
+  if (score >= 70) return "hot";
+  if (score >= 40) return "warm";
+  return "cold";
 }
 
 function TierBadge({ tier }: { tier: string }) {
@@ -50,17 +63,186 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
+// ── Add Lead Modal ─────────────────────────────────────────────────────────────
+
+function AddLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", title: "", company: "" });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.post("/api/v1/contacts", {
+        firstName: form.firstName,
+        lastName:  form.lastName,
+        email:     form.email,
+        title:     form.title    || undefined,
+        source:    "user",
+        isLead:    true,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.error?.message ?? "Failed to create lead");
+        return;
+      }
+      onCreated();
+      onClose();
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold">Add Lead</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">First name *</label>
+              <input value={form.firstName} onChange={set("firstName")} required placeholder="Ada"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">Last name *</label>
+              <input value={form.lastName} onChange={set("lastName")} required placeholder="Lovelace"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Email *</label>
+            <input type="email" value={form.email} onChange={set("email")} required placeholder="ada@company.com"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Title</label>
+            <input value={form.title} onChange={set("title")} placeholder="VP Engineering"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          </div>
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />{error}
+            </div>
+          )}
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
+                loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
+              {loading ? "Creating…" : "Create Lead"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Convert Lead Modal ─────────────────────────────────────────────────────────
+
+function ConvertLeadModal({ lead, onClose, onConverted }: {
+  lead: Lead; onClose: () => void; onConverted: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const handleConvert = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.patch(`/api/v1/contacts/${lead.id}`, { isLead: false, source: "converted" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.error?.message ?? "Failed to convert lead");
+        return;
+      }
+      setDone(true);
+      setTimeout(() => { onConverted(); onClose(); }, 1200);
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm rounded-2xl border bg-card shadow-2xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+            <User className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="font-semibold">Convert Lead</h2>
+            <p className="text-sm text-muted-foreground">{lead.firstName} {lead.lastName}</p>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground mb-6">
+          This will convert the lead into a full contact record. The lead's history and score will be preserved.
+        </p>
+        {error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 shrink-0" />{error}
+          </div>
+        )}
+        {done && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+            <CheckCircle2 className="h-4 w-4" /> Converted to contact!
+          </div>
+        )}
+        <div className="flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+            Cancel
+          </button>
+          <button onClick={handleConvert} disabled={loading || done}
+            className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
+              (loading || done) ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
+            {loading ? "Converting…" : "Convert to Contact"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 const PAGE_SIZE = 50;
 
 export default function LeadsPage() {
-  const [leads, setLeads]         = useState<Lead[]>([]);
-  const [total, setTotal]         = useState(0);
-  const [page, setPage]           = useState(1);
-  const [search, setSearch]       = useState("");
-  const [debounced, setDebounced] = useState("");
+  const [leads, setLeads]           = useState<Lead[]>([]);
+  const [total, setTotal]           = useState(0);
+  const [page, setPage]             = useState(1);
+  const [search, setSearch]         = useState("");
+  const [debounced, setDebounced]   = useState("");
   const [tierFilter, setTierFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [showAdd, setShowAdd]       = useState(false);
+  const [converting, setConverting] = useState<Lead | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSearch = (v: string) => {
@@ -75,20 +257,21 @@ export default function LeadsPage() {
     try {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) });
       if (debounced) params.set("search", debounced);
-      // Leads are contacts with lead_stage set — use contacts endpoint with type filter
       const res = await api.get(`/api/v1/contacts?${params}&isLead=true`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      // Enrich with score from scoring endpoint (batch mock for now)
-      const raw: Lead[] = (json.data ?? []).map((c: any) => ({
-        id: c.id, firstName: c.firstName, lastName: c.lastName, email: c.email,
-        title: c.title, company: c.company,
-        score: Math.floor(Math.random() * 60) + 20,
-        tier: "warm" as const,
-        source: c.source ?? "auto",
-        lastActivityAt: c.lastActivityAt,
-        createdAt: c.createdAt,
-      }));
+      const raw: Lead[] = (json.data ?? []).map((c: any) => {
+        const score = hashScore(c.id);
+        return {
+          id: c.id, firstName: c.firstName, lastName: c.lastName, email: c.email,
+          title: c.title, company: c.company,
+          score,
+          tier: scoreTier(score),
+          source: c.source ?? "auto",
+          lastActivityAt: c.lastActivityAt,
+          createdAt: c.createdAt,
+        };
+      });
       setLeads(raw);
       setTotal(json.pagination?.total ?? raw.length);
     } catch (e: any) {
@@ -121,11 +304,20 @@ export default function LeadsPage() {
           <button onClick={fetchLeads} disabled={loading} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
-          <button className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
             <Plus className="h-4 w-4" /> Add Lead
           </button>
         </div>
       </div>
+
+      {showAdd && <AddLeadModal onClose={() => setShowAdd(false)} onCreated={fetchLeads} />}
+      {converting && (
+        <ConvertLeadModal
+          lead={converting}
+          onClose={() => setConverting(null)}
+          onConverted={fetchLeads}
+        />
+      )}
 
       {/* Tier summary */}
       <div className="grid grid-cols-3 gap-3">
@@ -212,7 +404,10 @@ export default function LeadsPage() {
                     {lead.lastActivityAt ? formatRelativeTime(lead.lastActivityAt) : "Never"}
                   </td>
                   <td className="px-4 py-3">
-                    <button className="flex items-center gap-1 text-xs text-primary hover:underline">
+                    <button
+                      onClick={() => setConverting(lead)}
+                      className="flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
                       Convert <ArrowRight className="h-3 w-3" />
                     </button>
                   </td>

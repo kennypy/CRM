@@ -2,15 +2,23 @@
 
 import { useEffect, useCallback, useState, useRef } from "react";
 import { Command } from "cmdk";
-import { Search, Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { useCommandBarStore } from "@/stores/command-bar-store";
 import { CommandResult } from "./command-result";
+import { api } from "@/lib/api";
 
 interface StreamChunk {
   type: "thinking" | "result" | "action" | "error";
   content: string;
   data?: Record<string, unknown>;
 }
+
+const SUGGESTIONS = [
+  "Show me deals losing momentum this week",
+  "Create a follow-up task for Acme stakeholders",
+  "Which accounts are at risk?",
+  "Log that Acme legal is concerned about data residency",
+];
 
 export function CommandBar() {
   const { isOpen, close } = useCommandBarStore();
@@ -41,18 +49,17 @@ export function CommandBar() {
     }
   }, [isOpen]);
 
-  const handleSubmit = useCallback(async () => {
-    if (!query.trim() || streaming) return;
+  // Accept optional override so suggestions can submit immediately
+  const handleSubmit = useCallback(async (overrideQuery?: string) => {
+    const q = (overrideQuery ?? query).trim();
+    if (!q || streaming) return;
 
     setStreaming(true);
     setChunks([]);
 
     try {
-      const response = await fetch("/api/v1/ai/nl", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: query }),
-      });
+      // Use api.post so the Authorization header is injected automatically
+      const response = await api.post("/api/v1/ai/nl", { command: q });
 
       if (!response.body) throw new Error("No response body");
 
@@ -77,7 +84,7 @@ export function CommandBar() {
           }
         }
       }
-    } catch (err) {
+    } catch {
       setChunks([{ type: "error", content: "Failed to process command. Please try again." }]);
     } finally {
       setStreaming(false);
@@ -108,9 +115,7 @@ export function CommandBar() {
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmit();
-              }}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               placeholder='Try "show deals losing momentum" or "log that Acme legal is involved"'
             />
@@ -126,15 +131,10 @@ export function CommandBar() {
             {chunks.length === 0 && !streaming && (
               <div className="space-y-1 p-2">
                 <p className="text-xs font-medium text-muted-foreground">Suggestions</p>
-                {[
-                  "Show me deals losing momentum this week",
-                  "Create a follow-up task for Acme stakeholders",
-                  "Which accounts are at risk?",
-                  "Log that Acme legal is concerned about data residency",
-                ].map((suggestion) => (
+                {SUGGESTIONS.map((suggestion) => (
                   <button
                     key={suggestion}
-                    onClick={() => setQuery(suggestion)}
+                    onClick={() => { setQuery(suggestion); handleSubmit(suggestion); }}
                     className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
                   >
                     {suggestion}

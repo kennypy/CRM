@@ -1,63 +1,35 @@
 "use client";
 
-/**
- * AI Review Queue
- *
- * Human-in-the-loop page for AI extractions that landed in the 0.75–0.90
- * confidence band. Each card shows:
- *   - The proposed change (entity field + value)
- *   - Evidence: the raw text snippet that triggered the extraction
- *   - Confidence score + match type
- *   - 1-click Accept / Reject
- *
- * Accepted items are written to the graph immediately; rejected items are
- * discarded and logged for prompt-tuning.
- */
-
 import { useEffect, useState, useCallback } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  RefreshCw,
-  ShieldCheck,
-  Brain,
-  ChevronDown,
-  ChevronUp,
-  Inbox,
+  AlertCircle, CheckCircle2, XCircle, RefreshCw,
+  ShieldCheck, Brain, ChevronDown, ChevronUp, Inbox,
 } from "lucide-react";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 type ReviewStatus = "pending" | "approved" | "rejected";
 
 interface ReviewItem {
   id: string;
-  entityType: string;    // "Person" | "Company" | "Deal" | ...
+  entityType: string;
   entityId?: string;
   field: string;
   proposedValue: string;
   currentValue?: string;
-  confidence: number;    // 0.0–1.0
-  matchType?: string;    // "exact_email" | "domain" | "created" | ...
+  confidence: number;
+  matchType?: string;
   evidenceText?: string;
-  sourceType: string;    // "email" | "call" | ...
+  sourceType: string;
   sourceId?: string;
   status: ReviewStatus;
   createdAt: string;
+  _decideError?: boolean;
 }
-
-// ── Confidence bar ────────────────────────────────────────────────────────────
 
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100);
-  const color =
-    pct >= 85 ? "bg-green-500" :
-    pct >= 75 ? "bg-yellow-500" :
-                "bg-orange-500";
-
+  const color = pct >= 85 ? "bg-green-500" : pct >= 75 ? "bg-yellow-500" : "bg-orange-500";
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
@@ -68,12 +40,7 @@ function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
-// ── Review card ───────────────────────────────────────────────────────────────
-
-function ReviewCard({
-  item,
-  onDecide,
-}: {
+function ReviewCard({ item, onDecide }: {
   item: ReviewItem;
   onDecide: (id: string, decision: "approved" | "rejected") => Promise<void>;
 }) {
@@ -82,107 +49,73 @@ function ReviewCard({
 
   const decide = async (decision: "approved" | "rejected") => {
     setBusy(true);
-    try {
-      await onDecide(item.id, decision);
-    } finally {
-      setBusy(false);
-    }
+    try { await onDecide(item.id, decision); }
+    finally { setBusy(false); }
   };
 
   return (
-    <div className={cn(
-      "rounded-lg border bg-card shadow-sm transition-opacity",
-      item.status !== "pending" && "opacity-60",
-    )}>
-      {/* Card header */}
+    <div className={cn("rounded-lg border bg-card shadow-sm transition-opacity", item.status !== "pending" && "opacity-60")}>
       <div className="flex items-start gap-3 p-4">
         <div className="mt-0.5 rounded-full bg-primary/10 p-1.5">
           <Brain className="h-4 w-4 text-primary" />
         </div>
 
         <div className="flex-1 min-w-0">
-          {/* Entity + field */}
           <p className="text-sm font-semibold text-foreground">
             <span className="text-muted-foreground font-normal">{item.entityType} · </span>
             {item.field}
           </p>
-
-          {/* Proposed value */}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             {item.currentValue && (
               <>
-                <span className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-600 line-through">
-                  {item.currentValue}
-                </span>
+                <span className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-600 line-through">{item.currentValue}</span>
                 <span className="text-xs text-muted-foreground">→</span>
               </>
             )}
-            <span className="rounded bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-              {item.proposedValue}
-            </span>
+            <span className="rounded bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">{item.proposedValue}</span>
           </div>
-
-          {/* Meta row */}
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <ConfidenceBar value={item.confidence} />
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground capitalize">
-              {item.sourceType}
-            </span>
-            {item.matchType && (
-              <span className="text-xs text-muted-foreground">{item.matchType}</span>
-            )}
-            <span className="text-xs text-muted-foreground">
-              {formatRelativeTime(item.createdAt)}
-            </span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground capitalize">{item.sourceType}</span>
+            {item.matchType && <span className="text-xs text-muted-foreground">{item.matchType}</span>}
+            <span className="text-xs text-muted-foreground">{formatRelativeTime(item.createdAt)}</span>
           </div>
+          {item._decideError && (
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              Failed to save — please try again
+            </div>
+          )}
         </div>
 
-        {/* Status badge or action buttons */}
         <div className="flex shrink-0 flex-col items-end gap-2">
           {item.status === "pending" ? (
             <div className="flex gap-2">
-              <button
-                onClick={() => decide("rejected")}
-                disabled={busy}
-                className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
-              >
-                <XCircle className="h-3.5 w-3.5" />
-                Reject
+              <button onClick={() => decide("rejected")} disabled={busy}
+                className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50">
+                <XCircle className="h-3.5 w-3.5" /> Reject
               </button>
-              <button
-                onClick={() => decide("approved")}
-                disabled={busy}
-                className="flex items-center gap-1 rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Accept
+              <button onClick={() => decide("approved")} disabled={busy}
+                className="flex items-center gap-1 rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Accept
               </button>
             </div>
           ) : (
-            <span className={cn(
-              "flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
-              item.status === "approved"
-                ? "bg-green-100 text-green-700"
-                : "bg-red-100 text-red-700"
-            )}>
-              {item.status === "approved" ? (
-                <><CheckCircle2 className="h-3 w-3" /> Accepted</>
-              ) : (
-                <><XCircle className="h-3 w-3" /> Rejected</>
-              )}
+            <span className={cn("flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
+              item.status === "approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+              {item.status === "approved"
+                ? <><CheckCircle2 className="h-3 w-3" /> Accepted</>
+                : <><XCircle className="h-3 w-3" /> Rejected</>}
             </span>
           )}
         </div>
       </div>
 
-      {/* Expandable evidence */}
       {item.evidenceText && (
         <>
           <div className="border-t px-4 py-2">
-            <button
-              onClick={() => setExpanded((e) => !e)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
+            <button onClick={() => setExpanded((e) => !e)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
               {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
               {expanded ? "Hide" : "Show"} evidence
             </button>
@@ -201,18 +134,13 @@ function ReviewCard({
   );
 }
 
-// ── Filter tabs ───────────────────────────────────────────────────────────────
-
 type Filter = "all" | "pending" | "approved" | "rejected";
-
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: "pending",  label: "Pending" },
+  { key: "pending",  label: "Pending"  },
   { key: "approved", label: "Accepted" },
   { key: "rejected", label: "Rejected" },
-  { key: "all",      label: "All" },
+  { key: "all",      label: "All"      },
 ];
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ReviewQueuePage() {
   const [items, setItems]     = useState<ReviewItem[]>([]);
@@ -226,7 +154,6 @@ export default function ReviewQueuePage() {
     try {
       const params = new URLSearchParams({ limit: "100" });
       if (filter !== "all") params.set("status", filter);
-
       const res = await api.get(`/api/v1/ai/review-queue?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -241,22 +168,18 @@ export default function ReviewQueuePage() {
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
   const handleDecide = useCallback(async (id: string, decision: "approved" | "rejected") => {
-    // Optimistic update
+    // Optimistic update — clear any previous error flag
     setItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, status: decision } : item
-      )
+      prev.map((item) => item.id === id ? { ...item, status: decision, _decideError: false } : item)
     );
-
     try {
-      const res = await api.patch(`/api/v1/ai/review-queue/${id}`, { decision });
+      // Backend expects { status } not { decision }
+      const res = await api.patch(`/api/v1/ai/review-queue/${id}`, { status: decision });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
-      // Revert on failure
+      // Revert and surface inline error on the card
       setItems((prev) =>
-        prev.map((item) =>
-          item.id === id ? { ...item, status: "pending" } : item
-        )
+        prev.map((item) => item.id === id ? { ...item, status: "pending", _decideError: true } : item)
       );
     }
   }, []);
@@ -265,7 +188,6 @@ export default function ReviewQueuePage() {
 
   return (
     <div className="flex h-full flex-col gap-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
@@ -276,18 +198,13 @@ export default function ReviewQueuePage() {
             </span>
           )}
         </div>
-
-        <button
-          onClick={fetchItems}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-        >
+        <button onClick={fetchItems} disabled={loading}
+          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           Refresh
         </button>
       </div>
 
-      {/* Context banner */}
       <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-700">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
@@ -297,33 +214,22 @@ export default function ReviewQueuePage() {
         </p>
       </div>
 
-      {/* Filter tabs */}
       <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
         {FILTERS.map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setFilter(key)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              filter === key
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
+          <button key={key} onClick={() => setFilter(key)}
+            className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              filter === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
             {label}
           </button>
         ))}
       </div>
 
-      {/* Error state */}
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <AlertCircle className="h-4 w-4" />
-          {error}
+          <AlertCircle className="h-4 w-4" />{error}
         </div>
       )}
 
-      {/* Item list */}
       <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="flex flex-col gap-3">

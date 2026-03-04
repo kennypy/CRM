@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Layers, Plus, Play, Pause, Zap, AlertCircle, CheckCircle2, Clock, ArrowRight } from "lucide-react";
+import {
+  Layers, Plus, Play, Zap, AlertCircle, CheckCircle2, Clock,
+  ArrowRight, X, Pencil, Trash2,
+} from "lucide-react";
+import { usePermissions } from "@/lib/permissions";
 
 interface Workflow {
   id: string;
@@ -14,6 +18,7 @@ interface Workflow {
   lastRun?: string;
   runCount: number;
   category: "deal" | "contact" | "activity" | "ai";
+  createdBy?: string;
 }
 
 const DEMO_WORKFLOWS: Workflow[] = [
@@ -23,10 +28,7 @@ const DEMO_WORKFLOWS: Workflow[] = [
     description: "Creates a legal review task and notifies the manager when a deal reaches Negotiation stage.",
     trigger: "Deal moved to Negotiation",
     actions: ["Create task: Legal review", "Notify manager via email"],
-    enabled: true,
-    lastRun: "2h ago",
-    runCount: 23,
-    category: "deal",
+    enabled: true, lastRun: "2h ago", runCount: 23, category: "deal", createdBy: "admin",
   },
   {
     id: "2",
@@ -34,10 +36,7 @@ const DEMO_WORKFLOWS: Workflow[] = [
     description: "Sends a Slack alert when a deal has had no activity for 7+ days.",
     trigger: "Deal inactive for 7 days",
     actions: ["Send Slack message to owner", "Create follow-up task"],
-    enabled: true,
-    lastRun: "6h ago",
-    runCount: 47,
-    category: "deal",
+    enabled: true, lastRun: "6h ago", runCount: 47, category: "deal", createdBy: "admin",
   },
   {
     id: "3",
@@ -45,10 +44,7 @@ const DEMO_WORKFLOWS: Workflow[] = [
     description: "Enrols new auto-captured contacts into a 3-step email nurture sequence.",
     trigger: "Contact auto-captured (confidence ≥ 90%)",
     actions: ["Add to nurture sequence", "Score as lead", "Assign to rep"],
-    enabled: true,
-    lastRun: "1d ago",
-    runCount: 118,
-    category: "contact",
+    enabled: true, lastRun: "1d ago", runCount: 118, category: "contact", createdBy: "sarah@acme.com",
   },
   {
     id: "4",
@@ -56,10 +52,7 @@ const DEMO_WORKFLOWS: Workflow[] = [
     description: "Notifies the team if review queue items are pending for more than 24 hours.",
     trigger: "Review queue item pending > 24h",
     actions: ["Email ops team", "Create urgent task"],
-    enabled: false,
-    lastRun: "3d ago",
-    runCount: 8,
-    category: "ai",
+    enabled: false, lastRun: "3d ago", runCount: 8, category: "ai", createdBy: "admin",
   },
   {
     id: "5",
@@ -67,10 +60,7 @@ const DEMO_WORKFLOWS: Workflow[] = [
     description: "Posts a win announcement to Slack and creates an onboarding task when a deal closes.",
     trigger: "Deal moved to Closed Won",
     actions: ["Post to #wins Slack channel", "Create onboarding task", "Update CRM stats"],
-    enabled: true,
-    lastRun: "1d ago",
-    runCount: 18,
-    category: "deal",
+    enabled: true, lastRun: "1d ago", runCount: 18, category: "deal", createdBy: "admin",
   },
   {
     id: "6",
@@ -78,10 +68,7 @@ const DEMO_WORKFLOWS: Workflow[] = [
     description: "Automatically extracts action items and next steps from every meeting transcript.",
     trigger: "Meeting activity created",
     actions: ["Extract action items (AI)", "Create tasks from action items", "Update deal notes"],
-    enabled: true,
-    lastRun: "30m ago",
-    runCount: 234,
-    category: "activity",
+    enabled: true, lastRun: "30m ago", runCount: 234, category: "activity", createdBy: "marcus@acme.com",
   },
 ];
 
@@ -92,14 +79,173 @@ const CATEGORY_CFG: Record<string, { label: string; cls: string }> = {
   ai:       { label: "AI",       cls: "bg-orange-100 text-orange-700" },
 };
 
+// ── Workflow Modal (create / edit) ─────────────────────────────────────────────
+
+const TRIGGERS = [
+  "Deal moved to Negotiation",
+  "Deal moved to Closed Won",
+  "Deal moved to Closed Lost",
+  "Deal inactive for 7 days",
+  "Contact auto-captured (confidence ≥ 90%)",
+  "Meeting activity created",
+  "Review queue item pending > 24h",
+  "New deal created",
+  "Task overdue",
+];
+
+interface WorkflowModalProps {
+  initial?: Workflow;
+  onClose: () => void;
+  onSave: (wf: Omit<Workflow, "id" | "lastRun" | "runCount">) => void;
+}
+
+function WorkflowModal({ initial, onClose, onSave }: WorkflowModalProps) {
+  const [name, setName]           = useState(initial?.name ?? "");
+  const [description, setDesc]    = useState(initial?.description ?? "");
+  const [trigger, setTrigger]     = useState(initial?.trigger ?? TRIGGERS[0]);
+  const [category, setCategory]   = useState<Workflow["category"]>(initial?.category ?? "deal");
+  const [actions, setActions]     = useState<string[]>(initial?.actions ?? [""]);
+
+  const addAction    = () => setActions((a) => [...a, ""]);
+  const removeAction = (i: number) => setActions((a) => a.filter((_, j) => j !== i));
+  const setAction    = (i: number, v: string) =>
+    setActions((a) => a.map((x, j) => (j === i ? v : x)));
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    onSave({
+      name: name.trim(),
+      description: description.trim(),
+      trigger,
+      actions: actions.filter((a) => a.trim()),
+      enabled: initial?.enabled ?? true,
+      category,
+      createdBy: initial?.createdBy ?? "you",
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <Layers className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold">{initial ? "Edit Workflow" : "New Workflow"}</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Workflow name *</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Deal → Negotiation: Legal task"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Description</label>
+            <textarea value={description} onChange={(e) => setDesc(e.target.value)} rows={2}
+              placeholder="What does this workflow do?"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Category</label>
+            <div className="flex gap-2 flex-wrap">
+              {(["deal", "contact", "activity", "ai"] as const).map((c) => (
+                <button key={c} onClick={() => setCategory(c)}
+                  className={cn("rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                    category === c ? CATEGORY_CFG[c].cls + " border-current" : "border-border text-muted-foreground hover:bg-muted")}>
+                  {CATEGORY_CFG[c].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5 text-primary" /> Trigger
+            </label>
+            <select value={trigger} onChange={(e) => setTrigger(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+              {TRIGGERS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium flex items-center gap-1.5">
+              <ArrowRight className="h-3.5 w-3.5 text-primary" /> Actions
+            </label>
+            <div className="space-y-2">
+              {actions.map((action, i) => (
+                <div key={i} className="flex gap-2">
+                  <input value={action} onChange={(e) => setAction(i, e.target.value)}
+                    placeholder={`Action ${i + 1}…`}
+                    className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                  {actions.length > 1 && (
+                    <button onClick={() => removeAction(i)} className="text-muted-foreground hover:text-red-600">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button onClick={addAction} className="mt-2 text-xs text-primary hover:underline flex items-center gap-1">
+              <Plus className="h-3 w-3" /> Add action
+            </button>
+          </div>
+        </div>
+
+        <div className="flex gap-3 border-t px-6 py-4">
+          <button onClick={onClose}
+            className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={!name.trim()}
+            className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
+              !name.trim() ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
+            {initial ? "Save changes" : "Create Workflow"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 type Filter = "all" | "deal" | "contact" | "activity" | "ai";
 
 export default function WorkflowsPage() {
+  const perms = usePermissions();
   const [workflows, setWorkflows] = useState<Workflow[]>(DEMO_WORKFLOWS);
   const [filter, setFilter]       = useState<Filter>("all");
+  const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing]       = useState<Workflow | null>(null);
+  const currentUser = "you"; // In real app: getStoredUser()?.email
 
   const toggle = (id: string) =>
     setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: !w.enabled } : w));
+
+  const handleCreate = (data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
+    setWorkflows((ws) => [...ws, { ...data, id: Date.now().toString(), runCount: 0 }]);
+  };
+
+  const handleEdit = (id: string, data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
+    setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, ...data } : w));
+  };
+
+  const handleDelete = (id: string) => {
+    setWorkflows((ws) => ws.filter((w) => w.id !== id));
+  };
+
+  // A user can edit a workflow if they're admin/manager, or if they created it
+  const canEdit = (wf: Workflow) =>
+    perms.canWrite && (perms.canManageUsers || wf.createdBy === currentUser);
 
   const filtered = filter === "all" ? workflows : workflows.filter((w) => w.category === filter);
   const active   = workflows.filter((w) => w.enabled).length;
@@ -114,10 +260,24 @@ export default function WorkflowsPage() {
             {active} active
           </span>
         </div>
-        <button className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
           <Plus className="h-4 w-4" /> New Workflow
         </button>
       </div>
+
+      {showCreate && (
+        <WorkflowModal onClose={() => setShowCreate(false)} onSave={handleCreate} />
+      )}
+      {editing && (
+        <WorkflowModal
+          initial={editing}
+          onClose={() => setEditing(null)}
+          onSave={(data) => { handleEdit(editing.id, data); setEditing(null); }}
+        />
+      )}
 
       {/* Info banner */}
       <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-700">
@@ -154,16 +314,30 @@ export default function WorkflowsPage() {
                   <h3 className="font-semibold text-sm">{wf.name}</h3>
                   <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{wf.description}</p>
                 </div>
-                {/* Toggle */}
-                <button
-                  onClick={() => toggle(wf.id)}
-                  className={cn(
-                    "shrink-0 flex h-7 w-12 items-center rounded-full px-1 transition-colors",
-                    wf.enabled ? "bg-primary justify-end" : "bg-muted justify-start"
+
+                {/* Controls */}
+                <div className="flex shrink-0 items-center gap-2">
+                  {canEdit(wf) && (
+                    <button
+                      onClick={() => setEditing(wf)}
+                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      title="Edit workflow"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
                   )}
-                >
-                  <div className="h-5 w-5 rounded-full bg-background shadow-sm" />
-                </button>
+                  {/* Toggle */}
+                  <button
+                    onClick={() => toggle(wf.id)}
+                    className={cn(
+                      "flex h-7 w-12 items-center rounded-full px-1 transition-colors",
+                      wf.enabled ? "bg-primary justify-end" : "bg-muted justify-start"
+                    )}
+                    title={wf.enabled ? "Disable workflow" : "Enable workflow"}
+                  >
+                    <div className="h-5 w-5 rounded-full bg-background shadow-sm" />
+                  </button>
+                </div>
               </div>
 
               {/* Trigger → actions */}
@@ -187,11 +361,22 @@ export default function WorkflowsPage() {
                 <span className="flex items-center gap-1">
                   <Play className="h-3 w-3" /> {wf.runCount} runs
                 </span>
-                {wf.lastRun && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Last run {wf.lastRun}
-                  </span>
-                )}
+                <div className="flex items-center gap-3">
+                  {wf.lastRun && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> Last run {wf.lastRun}
+                    </span>
+                  )}
+                  {canEdit(wf) && (
+                    <button
+                      onClick={() => handleDelete(wf.id)}
+                      className="text-muted-foreground hover:text-red-600 transition-colors"
+                      title="Delete workflow"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
