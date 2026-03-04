@@ -85,6 +85,7 @@ export default function LoginPage() {
                 value={form.tenantSlug}
                 onChange={(e) => setForm((f) => ({ ...f, tenantSlug: e.target.value }))}
                 required
+                suppressHydrationWarning
                 className="flex-1 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
@@ -99,6 +100,7 @@ export default function LoginPage() {
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               required
+              suppressHydrationWarning
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/30"
             />
           </div>
@@ -122,6 +124,7 @@ export default function LoginPage() {
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                 required
+                suppressHydrationWarning
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 pr-10 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/30"
               />
               <button
