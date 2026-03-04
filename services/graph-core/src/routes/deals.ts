@@ -17,14 +17,14 @@ const DealStages = [
 ] as const;
 
 const CreateDealSchema = z.object({
-  name:                z.string().min(1),
+  name:                z.string().min(1).max(300),
   stage:               z.enum(DealStages).default("lead"),
-  value:               z.number().min(0),
+  value:               z.number().min(0).max(1_000_000_000_000), // $1T cap
   /** ISO 4217 — caller should pass tenant.defaultCurrency; omitting falls back to "USD" only as a last resort. */
-  currency:            z.string().default("USD"),
+  currency:            z.string().length(3).default("USD"),
   closeDate:           z.string().optional(),
   companyId:           z.string().uuid().optional(),
-  ownerId:             z.string().optional(),
+  ownerId:             z.string().uuid().optional(),
   archetype:           z.enum(["simple", "complex"]).optional(),
   declaredProbability: z.number().min(0).max(100).optional(),
   isExpansion:         z.boolean().optional(),

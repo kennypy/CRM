@@ -11,13 +11,13 @@ import { z } from "zod";
 import { pool, cypher } from "../db/pool";
 
 const CreateCompanySchema = z.object({
-  name:      z.string().min(1),
-  domain:    z.string().min(1),
-  industry:  z.string().optional(),
-  headcount: z.number().int().positive().optional(),
+  name:      z.string().min(1).max(200),
+  domain:    z.string().min(1).max(253),
+  industry:  z.string().max(100).optional(),
+  headcount: z.number().int().positive().max(10_000_000).optional(),
   tier:      z.enum(["smb", "mid_market", "enterprise"]).optional(),
-  website:   z.string().url().optional(),
-  country:   z.string().optional(),
+  website:   z.string().url().max(2048).optional(),
+  country:   z.string().max(100).optional(),
 });
 
 const GetCompaniesQuery = z.object({

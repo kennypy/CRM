@@ -41,9 +41,11 @@ const RegisterSchema = z.object({
   email: z.string().email(),
   password: z
     .string()
-    .min(10)
-    .regex(/[A-Z]/, "Must contain uppercase")
-    .regex(/[0-9]/, "Must contain a number"),
+    .min(12, "Password must be at least 12 characters")
+    .regex(/[a-z]/, "Must contain a lowercase letter")
+    .regex(/[A-Z]/, "Must contain an uppercase letter")
+    .regex(/[0-9]/, "Must contain a number")
+    .regex(/[^a-zA-Z0-9]/, "Must contain a special character"),
 });
 
 const RefreshSchema = z.object({

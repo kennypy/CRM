@@ -69,6 +69,27 @@ const GOOGLE_SCOPES = [
 // In-memory state store (use Redis for multi-instance prod)
 const stateStore = new Map<string, { tenantId: string; createdAt: number }>();
 
+/**
+ * One-time session store — securely hands off tokens to the Next.js app
+ * without exposing them in the URL fragment or query string.
+ *
+ * Flow:
+ *   1. OAuth callback creates an entry here (15-second TTL, random ID)
+ *   2. Auth service redirects to {APP_URL}/api/auth/oauth-callback?session=<id>
+ *   3. Next.js Route Handler calls GET /auth/oauth-session/:id server-to-server
+ *   4. Entry is consumed (deleted on first read) — one-time use only
+ *   5. Next.js sets HttpOnly cookies and redirects the user to the app
+ *
+ * Only the internal Next.js server can reach /auth/oauth-session — the auth service
+ * is not publicly exposed — so intercepting the session ID in the redirect URL
+ * does not give an attacker access to the tokens.
+ */
+const oauthSessionStore = new Map<string, {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number; // epoch ms — sessions expire after 15 seconds
+}>();
+
 export async function oauthRoutes(server: FastifyInstance) {
   const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
@@ -213,10 +234,38 @@ export async function oauthRoutes(server: FastifyInstance) {
 
     server.log.info({ userId: dbUser.id, tenantId }, "auth.oauth.google.success");
 
-    // Redirect back to web app with tokens in URL fragment (SPA handles it)
+    // Create a one-time session entry so the Next.js server can exchange it for
+    // HttpOnly cookies without exposing tokens in the URL fragment or query string.
+    const sessionId = crypto.randomBytes(32).toString("hex");
+    oauthSessionStore.set(sessionId, {
+      accessToken,
+      refreshToken,
+      expiresAt: Date.now() + 15_000, // 15-second window is plenty for server-to-server exchange
+    });
+
     const appUrl = process.env.APP_URL ?? "http://localhost:3000";
-    return reply.redirect(
-      `${appUrl}/auth/callback#access_token=${accessToken}&refresh_token=${refreshToken}`
-    );
+    return reply.redirect(`${appUrl}/api/auth/oauth-callback?session=${sessionId}`);
+  });
+
+  /**
+   * GET /auth/oauth-session/:id
+   * Internal-only endpoint — called by the Next.js server (not the browser).
+   * Returns tokens once and immediately deletes the entry.
+   */
+  server.get("/oauth-session/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const entry = oauthSessionStore.get(id);
+
+    if (!entry) {
+      return reply.status(404).send({ error: "Session not found or already consumed" });
+    }
+
+    oauthSessionStore.delete(id);
+
+    if (Date.now() > entry.expiresAt) {
+      return reply.status(410).send({ error: "Session expired" });
+    }
+
+    return reply.send({ accessToken: entry.accessToken, refreshToken: entry.refreshToken });
   });
 }

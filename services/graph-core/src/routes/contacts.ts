@@ -16,11 +16,11 @@ const SeniorityValues = [
 ] as const;
 
 const CreateContactSchema = z.object({
-  firstName: z.string().min(1),
-  lastName:  z.string().min(1),
-  email:     z.string().email(),
-  title:     z.string().optional(),
-  phone:     z.string().optional(),
+  firstName: z.string().min(1).max(100),
+  lastName:  z.string().min(1).max(100),
+  email:     z.string().email().max(254),
+  title:     z.string().max(200).optional(),
+  phone:     z.string().max(30).optional(),
   seniority: z.enum(SeniorityValues).optional(),
   companyId: z.string().uuid().optional(),
 });

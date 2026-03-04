@@ -25,16 +25,16 @@ const ActivityDirections = ["inbound", "outbound", "internal"] as const;
 const CreateActivitySchema = z.object({
   type:            z.enum(ActivityTypes),
   direction:       z.enum(ActivityDirections).optional(), // replaces sentiment-as-direction proxy
-  subject:         z.string().optional(),
-  summary:         z.string().optional(),
+  subject:         z.string().max(500).optional(),
+  summary:         z.string().max(10_000).optional(),
   sentiment:       z.number().min(-1).max(1).optional(),
-  durationSeconds: z.number().int().positive().optional(),
+  durationSeconds: z.number().int().positive().max(86_400).optional(), // max 24h
   occurredAt:      z.string().datetime(),
-  participantIds:  z.array(z.string().uuid()).optional(),  // Person node UUIDs
+  participantIds:  z.array(z.string().uuid()).max(50).optional(),  // Person node UUIDs
   dealId:          z.string().uuid().optional(),
   companyId:       z.string().uuid().optional(),
-  externalId:      z.string().optional(),
-  source:          z.string().default("user"),
+  externalId:      z.string().max(255).optional(),
+  source:          z.string().max(50).default("user"),
 });
 
 /** Query-string params for GET /activities */

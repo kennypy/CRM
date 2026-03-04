@@ -286,7 +286,11 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
     if (!secret) {
-      fastify.log.warn("STRIPE_WEBHOOK_SECRET not configured; skipping verification");
+      if (process.env.NODE_ENV === "production") {
+        fastify.log.error("STRIPE_WEBHOOK_SECRET not configured in production — rejecting event");
+        return reply.status(500).send({ success: false, error: "Webhook verification not configured" });
+      }
+      fastify.log.warn("STRIPE_WEBHOOK_SECRET not configured; skipping verification (dev only)");
       return reply.send({ success: true });
     }
 

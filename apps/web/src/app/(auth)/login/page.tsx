@@ -14,9 +14,16 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const { refresh }  = useTenant();
 
-  // Guard against redirect loops: never redirect back to /login
+  // Validate the ?next= param is a safe relative path (prevents open redirect CWE-601)
   const rawNext = searchParams.get("next") ?? "/";
-  const next    = rawNext.startsWith("/login") || rawNext.startsWith("%2Flogin") ? "/" : rawNext;
+  const decoded = decodeURIComponent(rawNext);
+  const next = (
+    decoded.startsWith("/") &&
+    !decoded.startsWith("//") &&
+    !decoded.includes("://") &&
+    !decoded.startsWith("/login") &&
+    !decoded.startsWith("/register")
+  ) ? decoded : "/";
 
   const [form, setForm]       = useState({ tenantSlug: "", email: "", password: "" });
   const [showPw, setShowPw]   = useState(false);
