@@ -18,8 +18,10 @@ export function formatCurrency(
   }).format(value);
 }
 
-export function formatRelativeTime(date: Date | string): string {
+export function formatRelativeTime(date: Date | string | null | undefined): string {
+  if (date == null) return "Never";
   const d = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "Never";
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMins = Math.floor(diffMs / 60_000);

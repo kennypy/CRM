@@ -43,7 +43,7 @@ const FETCH_ONE = `
     first_name: p.first_name, last_name: p.last_name,
     email: p.email, title: p.title, phone: p.phone,
     seniority: p.seniority, influence_score: p.influence_score,
-    last_activity_at: p.last_activity_at,
+    last_activity_at: p.last_activity_at, source: p.source,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
   } LIMIT 1`;
@@ -85,7 +85,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     first_name: p.first_name, last_name: p.last_name,
     email: p.email, title: p.title, phone: p.phone,
     seniority: p.seniority, influence_score: p.influence_score,
-    last_activity_at: p.last_activity_at,
+    last_activity_at: p.last_activity_at, source: p.source,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
   }
@@ -301,6 +301,7 @@ function toContactResponse(row: Record<string, unknown>) {
     title:           row.title          || undefined,
     phone:           row.phone          || undefined,
     seniority:       row.seniority      || undefined,
+    source:          (row.source as string) || "user",
     influenceScore:  row.influence_score,
     lastActivityAt:  row.last_activity_at,
     dealMemberships: (row.deal_memberships as unknown[]) ?? undefined,

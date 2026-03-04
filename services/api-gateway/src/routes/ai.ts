@@ -35,7 +35,7 @@ export async function aiRoutes(server: FastifyInstance) {
 
     return reply.send({
       success: true,
-      data: rows,
+      data: rows.map(toReviewItem),
       pagination: { total: rows.length, limit, hasMore: rows.length === limit },
     });
   });
@@ -60,7 +60,7 @@ export async function aiRoutes(server: FastifyInstance) {
     // TODO: apply proposed_changes to graph-core (async via Redis Stream)
     server.log.info({ reviewId: id, userId: jwt.sub }, "review.approved");
 
-    return reply.send({ success: true, data: rows[0] });
+    return reply.send({ success: true, data: toReviewItem(rows[0]) });
   });
 
   // Reject a review item — feedback loop for extraction quality
@@ -83,7 +83,7 @@ export async function aiRoutes(server: FastifyInstance) {
     }
 
     server.log.info({ reviewId: id, reason: body?.reason }, "review.rejected");
-    return reply.send({ success: true, data: rows[0] });
+    return reply.send({ success: true, data: toReviewItem(rows[0]) });
   });
 
   // Provenance / explain endpoint — why did AI write this field?
@@ -115,4 +115,28 @@ export async function aiRoutes(server: FastifyInstance) {
       },
     });
   });
+}
+
+// Map a raw review_queue DB row to the shape the frontend expects.
+// proposed_changes is a JSONB array; we surface the first change's fields.
+function toReviewItem(row: Record<string, unknown>) {
+  const changes = (row.proposed_changes as any[]) ?? [];
+  const first   = changes[0] ?? {};
+  return {
+    id:            row.id,
+    status:        row.status,
+    confidence:    row.confidence,
+    summary:       row.summary,
+    entityType:    first.entityType   ?? null,
+    entityId:      first.entityId     ?? null,
+    field:         first.field        ?? null,
+    proposedValue: String(first.proposedValue ?? ""),
+    currentValue:  first.currentValue ?? null,
+    matchType:     first.matchType    ?? null,
+    evidenceText:  row.evidence       ?? null,
+    sourceType:    first.sourceType   ?? "ai",
+    sourceId:      (row.extraction_id as string) ?? null,
+    createdAt:     row.created_at,
+    updatedAt:     row.updated_at,
+  };
 }

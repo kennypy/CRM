@@ -32,6 +32,18 @@ async function bootstrap() {
     secret: process.env.JWT_SECRET ?? "dev-secret-CHANGE-IN-PRODUCTION",
   });
 
+  // Surface internal errors with enough detail to diagnose without leaking secrets
+  server.setErrorHandler((err, request, reply) => {
+    request.log.error({ err, url: request.url }, "unhandled_error");
+    return reply.status(500).send({
+      success: false,
+      error: {
+        code:    "INTERNAL_ERROR",
+        message: err.message ?? "Internal server error",
+      },
+    });
+  });
+
   // Health
   server.get("/health", async () => ({
     status: "ok",

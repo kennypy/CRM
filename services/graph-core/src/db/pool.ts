@@ -34,6 +34,13 @@ export async function cypher<T = Record<string, unknown>>(
     );
 
     return result.rows.map((r) => JSON.parse(r.v)) as T[];
+  } catch (err: any) {
+    // Re-throw with additional context so Fastify logs the actual AGE error
+    const enhanced = new Error(`AGE cypher failed: ${err.message}`);
+    (enhanced as any).cause  = err;
+    (enhanced as any).query  = query.slice(0, 200);
+    (enhanced as any).params = params;
+    throw enhanced;
   } finally {
     client.release();
   }
