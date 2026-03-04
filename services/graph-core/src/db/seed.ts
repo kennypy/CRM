@@ -76,10 +76,14 @@ async function main() {
       new Date(now.getTime() - n * 86_400_000).toISOString();
 
     // ── Tenant ────────────────────────────────────────────────────────────────
+    // default_currency = EUR to prove multi-currency plumbing works end-to-end.
     await client.query(`
-      INSERT INTO tenants (id, name, slug, plan, data_region, settings)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (id) DO NOTHING
+      INSERT INTO tenants (id, name, slug, plan, data_region, settings, default_currency, locale, timezone)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (id) DO UPDATE SET
+        default_currency = EXCLUDED.default_currency,
+        locale           = EXCLUDED.locale,
+        timezone         = EXCLUDED.timezone
     `, [
       IDS.tenant, "NexCRM Dev Org", "nexcrm-dev", "growth", "us",
       JSON.stringify({
@@ -88,10 +92,9 @@ async function main() {
         aiEventsUsedThisMonth: 1247,
         confidenceThreshold: 0.75,
         autoApproveThreshold: 0.90,
-        timezone: "America/New_York",
-        currency: "USD",
         features: { commandBar: true, realityScore: true, reviewQueue: true },
       }),
+      "EUR", "de-DE", "Europe/Berlin",
     ]);
 
     // ── Users — bcrypt hash, ON CONFLICT DO UPDATE so re-seeding fixes stale hashes ──
@@ -193,7 +196,7 @@ async function main() {
       await upsertNode("Deal", IDS.dealAcme, {
         name: "Acme Corp — Enterprise Platform",
         stage: "negotiation",
-        value: 180000, currency: "USD",
+        value: 180000, currency: "EUR",
         close_date: daysAgo(-12),
         archetype: "complex",
         is_expansion: false,
@@ -206,7 +209,7 @@ async function main() {
       await upsertNode("Deal", IDS.dealTech, {
         name: "TechStart — Starter Plan",
         stage: "proposal",
-        value: 18000, currency: "USD",
+        value: 18000, currency: "EUR",
         close_date: daysAgo(-21),
         archetype: "simple",
         is_expansion: false,
@@ -219,7 +222,7 @@ async function main() {
       await upsertNode("Deal", IDS.dealGlob, {
         name: "Globex — Enterprise Security Add-on",
         stage: "discovery",
-        value: 95000, currency: "USD",
+        value: 95000, currency: "EUR",
         close_date: daysAgo(-45),
         archetype: "simple",
         is_expansion: false,

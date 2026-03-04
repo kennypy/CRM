@@ -3,15 +3,13 @@
 /**
  * Pipeline — Kanban + Forecast Clarity
  *
- * Stage (existing) + Reality Score badge (existing)
- * + Declared probability (rep input, editable inline)
- * + Δ delta (declared − reality)
- * + Forecast rollup: Declared forecast vs Reality forecast vs Gap
- * + Evidence panel (slides in on score badge click)
+ * Currency: always uses tenant.defaultCurrency from TenantContext.
+ * Gap threshold: GAP_THRESHOLD_PCT % of declared forecast (currency-agnostic).
  */
 
 import { useEffect, useState, useCallback } from "react";
 import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
+import { useTenant } from "@/lib/tenant-context";
 import { api } from "@/lib/api";
 import { EvidencePanel } from "@/components/deals/evidence-panel";
 import {
@@ -19,26 +17,24 @@ import {
   ChevronRight, ChevronLeft, DollarSign, AlertTriangle,
 } from "lucide-react";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 type DealStage =
   | "discovery" | "proposal" | "negotiation"
   | "closed_won" | "closed_lost";
 
 interface Deal {
-  id:                  string;
-  name:                string;
-  value:               number;
-  stage:               DealStage;
-  closeDate?:          string;
-  company?:            { id: string; name: string };
-  archetype?:          "simple" | "complex";
-  realityScore?:       number;
+  id:                   string;
+  name:                 string;
+  value:                number;
+  /** ISO 4217 deal-level currency (falls back to tenant.defaultCurrency). */
+  currency?:            string;
+  stage:                DealStage;
+  closeDate?:           string;
+  company?:             { id: string; name: string };
+  archetype?:           "simple" | "complex";
+  realityScore?:        number;
   declaredProbability?: number;
-  updatedAt:           string;
+  updatedAt:            string;
 }
-
-// ── Stage config ──────────────────────────────────────────────────────────────
 
 const STAGES: { key: DealStage; label: string; color: string }[] = [
   { key: "discovery",   label: "Discovery",   color: "border-blue-400" },
@@ -52,13 +48,11 @@ const STAGE_ORDER: DealStage[] = [
   "discovery", "proposal", "negotiation", "closed_won", "closed_lost",
 ];
 
-// ── Reality Score badge ───────────────────────────────────────────────────────
+// Gap is significant when it exceeds this % of the declared forecast.
+// Currency-agnostic: 15 % of €50 k = €7.5 k; same rule for any currency.
+const GAP_THRESHOLD_PCT = 15;
 
-function RealityBadge({
-  score, onClick,
-}: {
-  score?: number; onClick?: () => void;
-}) {
+function RealityBadge({ score, onClick }: { score?: number; onClick?: () => void }) {
   if (score == null) return null;
   const color =
     score >= 70 ? "bg-green-100 text-green-700 hover:bg-green-200" :
@@ -79,8 +73,6 @@ function RealityBadge({
   );
 }
 
-// ── Delta badge ───────────────────────────────────────────────────────────────
-
 function DeltaBadge({ declared, reality }: { declared?: number; reality?: number }) {
   if (declared == null || reality == null) return null;
   const delta = reality - declared;
@@ -97,22 +89,20 @@ function DeltaBadge({ declared, reality }: { declared?: number; reality?: number
   );
 }
 
-// ── Deal card ─────────────────────────────────────────────────────────────────
-
 function DealCard({
-  deal, onMove, isFirst, isLast, onScoreClick, onDeclaredChange,
+  deal, currency, locale, onMove, isFirst, isLast, onScoreClick, onDeclaredChange,
 }: {
-  deal:              Deal;
-  onMove:            (id: string, direction: "prev" | "next") => void;
-  isFirst:           boolean;
-  isLast:            boolean;
-  onScoreClick:      (deal: Deal) => void;
-  onDeclaredChange:  (id: string, pct: number) => void;
+  deal: Deal; currency: string; locale: string;
+  onMove: (id: string, direction: "prev" | "next") => void;
+  isFirst: boolean; isLast: boolean;
+  onScoreClick: (deal: Deal) => void;
+  onDeclaredChange: (id: string, pct: number) => void;
 }) {
   const isWon  = deal.stage === "closed_won";
   const isLost = deal.stage === "closed_lost";
   const [editingProb, setEditingProb] = useState(false);
-  const [probInput, setProbInput]     = useState(String(deal.declaredProbability ?? ""));
+  const [probInput,   setProbInput]   = useState(String(deal.declaredProbability ?? ""));
+  const dealCurrency = deal.currency ?? currency;
 
   const commitProb = () => {
     const v = parseInt(probInput, 10);
@@ -126,40 +116,31 @@ function DealCard({
       isWon  && "border-green-200 bg-green-50/50",
       isLost && "border-red-200 bg-red-50/50 opacity-70",
     )}>
-      {/* Top row: name + score badge */}
       <div className="mb-1 flex items-start justify-between gap-2">
-        <p className="text-sm font-semibold leading-tight text-foreground line-clamp-2">
-          {deal.name}
-        </p>
-        <RealityBadge
-          score={deal.realityScore}
-          onClick={() => onScoreClick(deal)}
-        />
+        <p className="text-sm font-semibold leading-tight text-foreground line-clamp-2">{deal.name}</p>
+        <RealityBadge score={deal.realityScore} onClick={() => onScoreClick(deal)} />
       </div>
 
       {deal.company && (
         <p className="mb-2 text-xs text-muted-foreground">{deal.company.name}</p>
       )}
 
-      {/* Value */}
       <div className="flex items-center gap-1 text-xs font-medium text-foreground">
         <DollarSign className="h-3 w-3" />
-        {formatCurrency(deal.value, "USD", true)}
+        {formatCurrency(deal.value, dealCurrency, true, locale)}
         {deal.closeDate && (
           <span className="ml-auto text-muted-foreground">
-            {new Date(deal.closeDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            {new Date(deal.closeDate).toLocaleDateString(locale, { month: "short", day: "numeric" })}
           </span>
         )}
       </div>
 
-      {/* Declared probability + delta */}
       {!isWon && !isLost && (
         <div className="mt-2 flex items-center gap-2 text-xs">
           <span className="text-muted-foreground shrink-0">Rep:</span>
           {editingProb ? (
             <input
-              autoFocus
-              type="number" min={0} max={100}
+              autoFocus type="number" min={0} max={100}
               value={probInput}
               onChange={(e) => setProbInput(e.target.value)}
               onBlur={commitProb}
@@ -167,11 +148,7 @@ function DealCard({
               className="w-12 rounded border border-border bg-background px-1 py-0.5 text-center tabular-nums outline-none focus:border-primary"
             />
           ) : (
-            <button
-              onClick={() => setEditingProb(true)}
-              className="tabular-nums hover:underline"
-              title="Click to edit declared probability"
-            >
+            <button onClick={() => setEditingProb(true)} className="tabular-nums hover:underline" title="Click to edit declared probability">
               {deal.declaredProbability != null ? `${deal.declaredProbability}%` : "—"}
             </button>
           )}
@@ -185,25 +162,20 @@ function DealCard({
       )}
 
       <p className="mt-1.5 text-xs text-muted-foreground">
-        Updated {formatRelativeTime(deal.updatedAt)}
+        Updated {formatRelativeTime(deal.updatedAt, locale)}
       </p>
 
-      {/* Stage move controls */}
       {!isWon && !isLost && (
         <div className="mt-2 flex gap-1">
           {!isFirst && (
-            <button
-              onClick={() => onMove(deal.id, "prev")}
-              className="flex-1 rounded border border-border py-0.5 text-xs text-muted-foreground hover:bg-muted"
-            >
+            <button onClick={() => onMove(deal.id, "prev")}
+              className="flex-1 rounded border border-border py-0.5 text-xs text-muted-foreground hover:bg-muted">
               <ChevronLeft className="mx-auto h-3 w-3" />
             </button>
           )}
           {!isLast && (
-            <button
-              onClick={() => onMove(deal.id, "next")}
-              className="flex-1 rounded border border-border py-0.5 text-xs text-muted-foreground hover:bg-muted"
-            >
+            <button onClick={() => onMove(deal.id, "next")}
+              className="flex-1 rounded border border-border py-0.5 text-xs text-muted-foreground hover:bg-muted">
               <ChevronRight className="mx-auto h-3 w-3" />
             </button>
           )}
@@ -213,16 +185,13 @@ function DealCard({
   );
 }
 
-// ── Kanban column ─────────────────────────────────────────────────────────────
-
 function KanbanColumn({
-  stage, deals, onMove, onScoreClick, onDeclaredChange,
+  stage, deals, currency, locale, onMove, onScoreClick, onDeclaredChange,
 }: {
-  stage:             (typeof STAGES)[number];
-  deals:             Deal[];
-  onMove:            (id: string, direction: "prev" | "next") => void;
-  onScoreClick:      (deal: Deal) => void;
-  onDeclaredChange:  (id: string, pct: number) => void;
+  stage: (typeof STAGES)[number]; deals: Deal[]; currency: string; locale: string;
+  onMove: (id: string, direction: "prev" | "next") => void;
+  onScoreClick: (deal: Deal) => void;
+  onDeclaredChange: (id: string, pct: number) => void;
 }) {
   const total   = deals.reduce((s, d) => s + d.value, 0);
   const isFirst = stage.key === STAGE_ORDER[0];
@@ -233,27 +202,20 @@ function KanbanColumn({
       <div className={cn("rounded-t-lg border-t-4 bg-muted/50 px-3 py-2", stage.color)}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold">{stage.label}</span>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-            {deals.length}
-          </span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{deals.length}</span>
         </div>
         {deals.length > 0 && (
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {formatCurrency(total, "USD", true)} total
+            {formatCurrency(total, currency, true, locale)} total
           </p>
         )}
       </div>
-
       <div className="flex flex-col gap-2">
         {deals.map((deal) => (
           <DealCard
-            key={deal.id}
-            deal={deal}
-            onMove={onMove}
-            isFirst={isFirst}
-            isLast={isLast}
-            onScoreClick={onScoreClick}
-            onDeclaredChange={onDeclaredChange}
+            key={deal.id} deal={deal} currency={currency} locale={locale}
+            onMove={onMove} isFirst={isFirst} isLast={isLast}
+            onScoreClick={onScoreClick} onDeclaredChange={onDeclaredChange}
           />
         ))}
         {deals.length === 0 && (
@@ -266,58 +228,51 @@ function KanbanColumn({
   );
 }
 
-// ── Forecast bar ──────────────────────────────────────────────────────────────
-
-function ForecastBar({ deals }: { deals: Deal[] }) {
+function ForecastBar({ deals, currency, locale }: { deals: Deal[]; currency: string; locale: string }) {
   const open = deals.filter((d) => d.stage !== "closed_won" && d.stage !== "closed_lost");
-
-  const declared = open.reduce((s, d) =>
-    s + d.value * ((d.declaredProbability ?? 50) / 100), 0);
-  const reality  = open.reduce((s, d) =>
-    s + d.value * ((d.realityScore ?? 50) / 100), 0);
+  const declared = open.reduce((s, d) => s + d.value * ((d.declaredProbability ?? 50) / 100), 0);
+  const reality  = open.reduce((s, d) => s + d.value * ((d.realityScore     ?? 50) / 100), 0);
   const gap      = declared - reality;
+  // Significant gap = >GAP_THRESHOLD_PCT % of declared forecast (currency-agnostic)
+  const gapIsSignificant = declared > 0 && (gap / declared) * 100 > GAP_THRESHOLD_PCT;
 
   return (
     <div className="grid grid-cols-3 gap-3">
       <div className="rounded-lg border bg-card px-4 py-3">
         <p className="text-xs text-muted-foreground">Open pipeline</p>
         <p className="mt-0.5 text-lg font-semibold">
-          {formatCurrency(open.reduce((s, d) => s + d.value, 0), "USD", true)}
+          {formatCurrency(open.reduce((s, d) => s + d.value, 0), currency, true, locale)}
         </p>
       </div>
       <div className="rounded-lg border bg-card px-4 py-3">
         <p className="text-xs text-muted-foreground">Declared forecast</p>
-        <p className="mt-0.5 text-lg font-semibold">{formatCurrency(declared, "USD", true)}</p>
+        <p className="mt-0.5 text-lg font-semibold">{formatCurrency(declared, currency, true, locale)}</p>
       </div>
-      <div className={cn("rounded-lg border px-4 py-3",
-        gap > 20_000 ? "border-red-200 bg-red-50" : "bg-card"
-      )}>
+      <div className={cn("rounded-lg border px-4 py-3", gapIsSignificant ? "border-red-200 bg-red-50" : "bg-card")}>
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">Reality forecast</p>
-          {gap > 20_000 && <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}
+          {gapIsSignificant && <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}
         </div>
-        <p className={cn("mt-0.5 text-lg font-semibold",
-          gap > 20_000 ? "text-red-700" : "text-foreground"
-        )}>
-          {formatCurrency(reality, "USD", true)}
+        <p className={cn("mt-0.5 text-lg font-semibold", gapIsSignificant ? "text-red-700" : "text-foreground")}>
+          {formatCurrency(reality, currency, true, locale)}
         </p>
         {gap > 0 && (
-          <p className="text-xs text-red-600">
-            −{formatCurrency(gap, "USD", true)} vs declared
-          </p>
+          <p className="text-xs text-red-600">−{formatCurrency(gap, currency, true, locale)} vs declared</p>
         )}
       </div>
     </div>
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
-
 export default function PipelinePage() {
-  const [deals,         setDeals]         = useState<Deal[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [error,         setError]         = useState<string | null>(null);
-  const [evidenceDeal,  setEvidenceDeal]  = useState<Deal | null>(null);
+  const { tenant }  = useTenant();
+  const currency    = tenant.defaultCurrency;
+  const locale      = tenant.locale;
+
+  const [deals,        setDeals]        = useState<Deal[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState<string | null>(null);
+  const [evidenceDeal, setEvidenceDeal] = useState<Deal | null>(null);
 
   const fetchDeals = useCallback(async () => {
     setLoading(true);
@@ -352,9 +307,7 @@ export default function PipelinePage() {
   }, [deals]);
 
   const handleDeclaredChange = useCallback(async (id: string, pct: number) => {
-    setDeals((prev) =>
-      prev.map((d) => d.id === id ? { ...d, declaredProbability: pct } : d)
-    );
+    setDeals((prev) => prev.map((d) => d.id === id ? { ...d, declaredProbability: pct } : d));
     try {
       await api.patch(`/api/v1/deals/${id}`, { declaredProbability: pct });
     } catch {
@@ -362,14 +315,11 @@ export default function PipelinePage() {
     }
   }, []);
 
-  // Group by stage
   const byStage = STAGE_ORDER.reduce<Record<DealStage, Deal[]>>(
     (acc, s) => ({ ...acc, [s]: [] }),
     {} as Record<DealStage, Deal[]>
   );
-  for (const deal of deals) {
-    byStage[deal.stage]?.push(deal);
-  }
+  for (const deal of deals) { byStage[deal.stage]?.push(deal); }
 
   const wonValue = deals
     .filter((d) => d.stage === "closed_won")
@@ -377,7 +327,6 @@ export default function PipelinePage() {
 
   return (
     <div className="flex h-full flex-col gap-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Briefcase className="h-5 w-5 text-primary" />
@@ -386,39 +335,31 @@ export default function PipelinePage() {
         <div className="flex items-center gap-3">
           {wonValue > 0 && (
             <span className="text-sm text-muted-foreground">
-              Won: <strong className="text-green-700">{formatCurrency(wonValue, "USD", true)}</strong>
+              Won: <strong className="text-green-700">{formatCurrency(wonValue, currency, true, locale)}</strong>
             </span>
           )}
-          <button
-            onClick={fetchDeals}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-          >
+          <button onClick={fetchDeals} disabled={loading}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Forecast summary (replaces simple 3-stat bar) */}
-      <ForecastBar deals={deals} />
+      <ForecastBar deals={deals} currency={currency} locale={locale} />
 
-      {/* Board */}
       {error ? (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <AlertCircle className="h-4 w-4" />
-          {error}
+          <AlertCircle className="h-4 w-4" />{error}
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto pb-4">
           <div className="flex gap-4 min-w-max">
             {STAGES.map((stage) => (
               <KanbanColumn
-                key={stage.key}
-                stage={stage}
-                deals={byStage[stage.key]}
-                onMove={handleMove}
-                onScoreClick={setEvidenceDeal}
+                key={stage.key} stage={stage} deals={byStage[stage.key]}
+                currency={currency} locale={locale}
+                onMove={handleMove} onScoreClick={setEvidenceDeal}
                 onDeclaredChange={handleDeclaredChange}
               />
             ))}
@@ -426,7 +367,6 @@ export default function PipelinePage() {
         </div>
       )}
 
-      {/* Evidence panel — slides in when score badge clicked */}
       {evidenceDeal && (
         <EvidencePanel
           dealId={evidenceDeal.id}

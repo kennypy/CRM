@@ -88,7 +88,7 @@ export async function createTenantWithAdmin(input: {
   try {
     await client.query("BEGIN");
 
-    // Create tenant
+    // Create tenant — default_currency / locale / timezone use column defaults (USD / en-US / UTC)
     const { rows: [tenant] } = await client.query(
       `INSERT INTO tenants (name, slug, plan, data_region, settings)
        VALUES ($1, $2, 'starter', 'us', $3)
@@ -102,8 +102,6 @@ export async function createTenantWithAdmin(input: {
           aiEventsUsedThisMonth: 0,
           confidenceThreshold: 0.75,
           autoApproveThreshold: 0.90,
-          timezone: "UTC",
-          currency: "USD",
           features: { commandBar: true, realityScore: true, reviewQueue: true },
         }),
       ]

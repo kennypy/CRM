@@ -20,6 +20,7 @@ const CreateDealSchema = z.object({
   name:                z.string().min(1),
   stage:               z.enum(DealStages).default("lead"),
   value:               z.number().min(0),
+  /** ISO 4217 — caller should pass tenant.defaultCurrency; omitting falls back to "USD" only as a last resort. */
   currency:            z.string().default("USD"),
   closeDate:           z.string().optional(),
   companyId:           z.string().uuid().optional(),

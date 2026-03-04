@@ -4,14 +4,15 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { getStoredUser } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { useTenant } from "@/lib/tenant-context";
 import {
   Settings, Users, Plug, CreditCard, Shield,
   Plus, Trash2, Mail, CheckCircle2, AlertCircle,
-  Edit2, Globe, Clock,
+  Globe, Lock, Key, Monitor, LogOut,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface TeamUser {
   id: string;
@@ -24,20 +25,20 @@ interface TeamUser {
 }
 
 const DEMO_USERS: TeamUser[] = [
-  { id: "1", firstName: "Sarah",   lastName: "Kim",       email: "sarah@acme.com",   role: "admin",   lastLoginAt: "2h ago",   status: "active" },
-  { id: "2", firstName: "Marcus",  lastName: "Chen",      email: "marcus@acme.com",  role: "manager", lastLoginAt: "1d ago",   status: "active" },
-  { id: "3", firstName: "Priya",   lastName: "Sharma",    email: "priya@acme.com",   role: "rep",     lastLoginAt: "3h ago",   status: "active" },
-  { id: "4", firstName: "Alex",    lastName: "Johnson",   email: "alex@acme.com",    role: "rep",     lastLoginAt: "5h ago",   status: "active" },
-  { id: "5", firstName: "Jamie",   lastName: "Rodriguez", email: "jamie@acme.com",   role: "rep",     lastLoginAt: undefined,  status: "invited" },
+  { id: "1", firstName: "Sarah",   lastName: "Kim",       email: "sarah@acme.com",   role: "admin",   lastLoginAt: "2h ago",  status: "active"  },
+  { id: "2", firstName: "Marcus",  lastName: "Chen",      email: "marcus@acme.com",  role: "manager", lastLoginAt: "1d ago",  status: "active"  },
+  { id: "3", firstName: "Priya",   lastName: "Sharma",    email: "priya@acme.com",   role: "rep",     lastLoginAt: "3h ago",  status: "active"  },
+  { id: "4", firstName: "Alex",    lastName: "Johnson",   email: "alex@acme.com",    role: "rep",     lastLoginAt: "5h ago",  status: "active"  },
+  { id: "5", firstName: "Jamie",   lastName: "Rodriguez", email: "jamie@acme.com",   role: "rep",     lastLoginAt: undefined, status: "invited" },
 ];
 
 const INTEGRATIONS = [
-  { id: "gmail",    name: "Gmail",                icon: "📧", status: "connected", desc: "Email ingestion active" },
-  { id: "gcal",     name: "Google Calendar",       icon: "📅", status: "connected", desc: "Meetings auto-captured" },
-  { id: "outlook",  name: "Outlook / MS365",       icon: "📬", status: "available", desc: "Connect to ingest Outlook mail" },
-  { id: "slack",    name: "Slack",                 icon: "💬", status: "available", desc: "Deal alerts & notifications" },
-  { id: "zoom",     name: "Zoom",                  icon: "🎥", status: "available", desc: "Auto-transcribe meetings" },
-  { id: "stripe",   name: "Stripe",                icon: "💳", status: "available", desc: "Revenue data sync" },
+  { id: "gmail",   name: "Gmail",            icon: "📧", status: "connected", account: "admin@nexcrm.dev",         desc: "Email ingestion active" },
+  { id: "gcal",    name: "Google Calendar",  icon: "📅", status: "connected", account: "admin@nexcrm.dev",         desc: "Meetings auto-captured" },
+  { id: "outlook", name: "Outlook / MS365",  icon: "📬", status: "available", account: null,                       desc: "Connect to ingest Outlook mail" },
+  { id: "slack",   name: "Slack",            icon: "💬", status: "available", account: null,                       desc: "Deal alerts & notifications" },
+  { id: "zoom",    name: "Zoom",             icon: "🎥", status: "available", account: null,                       desc: "Auto-transcribe meetings" },
+  { id: "stripe",  name: "Stripe",           icon: "💳", status: "available", account: null,                       desc: "Revenue data sync" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -51,17 +52,55 @@ const ROLE_COLORS: Record<string, string> = {
   read_only:   "bg-gray-100 text-gray-600",
 };
 
+const SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "SGD", "JPY", "CHF", "INR", "BRL"];
+const SUPPORTED_TIMEZONES  = [
+  "UTC", "America/New_York", "America/Chicago", "America/Los_Angeles",
+  "Europe/London", "Europe/Berlin", "Europe/Paris", "Asia/Singapore",
+  "Asia/Tokyo", "Australia/Sydney",
+];
+
 type Tab = "general" | "users" | "integrations" | "billing" | "security";
 
-// ── Tab: General ──────────────────────────────────────────────────────────────
+// ── Tab: General ───────────────────────────────────────────────────────────────
 
 function GeneralTab({ user }: { user: StoredUser | null }) {
-  const [orgName, setOrgName]       = useState(user?.tenantName ?? "");
-  const [timezone, setTimezone]     = useState("America/New_York");
-  const [currency, setCurrency]     = useState("USD");
-  const [saved, setSaved]           = useState(false);
+  const { tenant, refresh } = useTenant();
 
-  const save = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const [orgName,  setOrgName]  = useState(user?.tenantName ?? "");
+  const [timezone, setTimezone] = useState(tenant.timezone);
+  const [currency, setCurrency] = useState(tenant.defaultCurrency);
+  const [saved,    setSaved]    = useState(false);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+
+  // Sync form fields when tenant loads (may arrive after mount)
+  useEffect(() => {
+    setTimezone(tenant.timezone);
+    setCurrency(tenant.defaultCurrency);
+  }, [tenant.timezone, tenant.defaultCurrency]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await api.patch("/api/v1/tenant", {
+        defaultCurrency: currency,
+        timezone,
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError(json?.error?.message ?? "Failed to save");
+        return;
+      }
+      await refresh();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-lg">
@@ -73,45 +112,59 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
             <input value={orgName} onChange={(e) => setOrgName(e.target.value)}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
+
           <div>
-            <label className="mb-1.5 block text-sm font-medium flex items-center gap-2"><Globe className="h-4 w-4" />Timezone</label>
+            <label className="mb-1.5 block text-sm font-medium flex items-center gap-2">
+              <Globe className="h-4 w-4" />Timezone
+            </label>
             <select value={timezone} onChange={(e) => setTimezone(e.target.value)}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
-              <option value="America/New_York">Eastern Time (ET)</option>
-              <option value="America/Chicago">Central Time (CT)</option>
-              <option value="America/Los_Angeles">Pacific Time (PT)</option>
-              <option value="Europe/London">London (GMT)</option>
-              <option value="Europe/Berlin">Central Europe (CET)</option>
-              <option value="Asia/Singapore">Singapore (SGT)</option>
+              {SUPPORTED_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
             </select>
           </div>
+
           <div>
             <label className="mb-1.5 block text-sm font-medium">Default currency</label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              All deals default to this currency. Changing it updates new deals only — existing deal values are not converted.
+            </p>
             <select value={currency} onChange={(e) => setCurrency(e.target.value)}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
-              {["USD", "EUR", "GBP", "CAD", "AUD", "SGD"].map((c) => <option key={c}>{c}</option>)}
+              {SUPPORTED_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />{error}
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
-        <button onClick={save} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-          Save changes
+        <button onClick={save} disabled={saving}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+          {saving ? "Saving…" : "Save changes"}
         </button>
-        {saved && <span className="flex items-center gap-1 text-sm text-green-600"><CheckCircle2 className="h-4 w-4" /> Saved!</span>}
+        {saved && (
+          <span className="flex items-center gap-1 text-sm text-green-600">
+            <CheckCircle2 className="h-4 w-4" /> Saved!
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-// ── Tab: Users ────────────────────────────────────────────────────────────────
+// ── Tab: Users ─────────────────────────────────────────────────────────────────
 
 function UsersTab() {
-  const [users, setUsers]         = useState<TeamUser[]>(DEMO_USERS);
+  const [users, setUsers]           = useState<TeamUser[]>(DEMO_USERS);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole]   = useState<TeamUser["role"]>("rep");
-  const [showInvite, setShowInvite]   = useState(false);
-  const [inviting, setInviting]       = useState(false);
+  const [inviteRole,  setInviteRole]  = useState<TeamUser["role"]>("rep");
+  const [showInvite,  setShowInvite]  = useState(false);
+  const [inviting,    setInviting]    = useState(false);
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return;
@@ -196,9 +249,7 @@ function UsersTab() {
                     {ROLE_LABELS[u.role]}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">
-                  {u.lastLoginAt ?? "Never"}
-                </td>
+                <td className="px-4 py-3 text-muted-foreground text-xs">{u.lastLoginAt ?? "Never"}</td>
                 <td className="px-4 py-3">
                   {u.status === "active"
                     ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 className="h-3 w-3" /> Active</span>
@@ -219,12 +270,20 @@ function UsersTab() {
   );
 }
 
-// ── Tab: Integrations ─────────────────────────────────────────────────────────
+// ── Tab: Integrations ──────────────────────────────────────────────────────────
 
 function IntegrationsTab() {
+  const [integrations, setIntegrations] = useState(INTEGRATIONS);
+
+  const disconnect = (id: string) => {
+    setIntegrations((prev) =>
+      prev.map((i) => i.id === id ? { ...i, status: "available", account: null } : i)
+    );
+  };
+
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      {INTEGRATIONS.map((intg) => (
+      {integrations.map((intg) => (
         <div key={intg.id} className="rounded-xl border bg-card p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -232,12 +291,23 @@ function IntegrationsTab() {
               <div>
                 <p className="font-medium text-sm">{intg.name}</p>
                 <p className="text-xs text-muted-foreground">{intg.desc}</p>
+                {intg.status === "connected" && intg.account && (
+                  <p className="mt-0.5 text-xs text-muted-foreground/70">{intg.account}</p>
+                )}
               </div>
             </div>
             {intg.status === "connected" ? (
-              <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700 shrink-0">
-                <CheckCircle2 className="h-3 w-3" /> Connected
-              </span>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+                  <CheckCircle2 className="h-3 w-3" /> Connected
+                </span>
+                <button
+                  onClick={() => disconnect(intg.id)}
+                  className="text-xs text-muted-foreground hover:text-red-600 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
             ) : (
               <button className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted shrink-0">
                 Connect
@@ -250,12 +320,11 @@ function IntegrationsTab() {
   );
 }
 
-// ── Tab: Billing ──────────────────────────────────────────────────────────────
+// ── Tab: Billing ───────────────────────────────────────────────────────────────
 
 function BillingTab() {
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* Current plan */}
       <div className="rounded-xl border bg-gradient-to-r from-primary/5 to-accent/5 p-6">
         <div className="flex items-start justify-between">
           <div>
@@ -270,7 +339,7 @@ function BillingTab() {
         <div className="mt-4 grid grid-cols-3 gap-4">
           {[
             { label: "AI extractions", used: "8,432", limit: "Unlimited" },
-            { label: "Contacts",       used: "1,247",  limit: "Unlimited" },
+            { label: "Contacts",       used: "1,247", limit: "Unlimited" },
             { label: "Storage",        used: "2.3 GB", limit: "50 GB" },
           ].map(({ label, used, limit }) => (
             <div key={label} className="rounded-lg bg-background/60 p-3">
@@ -282,7 +351,6 @@ function BillingTab() {
         </div>
       </div>
 
-      {/* Payment method */}
       <div className="rounded-xl border bg-card p-5">
         <h3 className="font-semibold mb-3">Payment method</h3>
         <div className="flex items-center justify-between">
@@ -297,24 +365,165 @@ function BillingTab() {
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Tab: Security ──────────────────────────────────────────────────────────────
+
+function SecurityTab() {
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [pwSaved, setPwSaved] = useState(false);
+  const [twoFa,   setTwoFa]  = useState(false);
+
+  const DEMO_SESSIONS = [
+    { id: "s1", device: "Chrome · Windows",      ip: "192.168.1.10",  lastActive: "Active now",  current: true  },
+    { id: "s2", device: "Safari · macOS",         ip: "81.103.45.21",  lastActive: "2 hours ago", current: false },
+    { id: "s3", device: "NexCRM Mobile · iOS",    ip: "81.103.45.21",  lastActive: "1 day ago",   current: false },
+  ];
+
+  const DEMO_KEYS = [
+    { id: "k1", name: "CI/CD Integration",  created: "2026-01-12", lastUsed: "3 days ago",  prefix: "nxc_ci_••••••" },
+    { id: "k2", name: "Internal Reporting", created: "2026-02-01", lastUsed: "Today",        prefix: "nxc_rp_••••••" },
+  ];
+
+  const [sessions, setSessions] = useState(DEMO_SESSIONS);
+  const [apiKeys,  setApiKeys]  = useState(DEMO_KEYS);
+
+  const savePassword = () => {
+    if (!pwForm.current || !pwForm.next || pwForm.next !== pwForm.confirm) return;
+    setPwSaved(true);
+    setPwForm({ current: "", next: "", confirm: "" });
+    setTimeout(() => setPwSaved(false), 2500);
+  };
+
+  return (
+    <div className="space-y-8 max-w-lg">
+      {/* Change password */}
+      <section>
+        <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+          <Lock className="h-4 w-4" /> Change Password
+        </h3>
+        <div className="space-y-3">
+          {(["current", "next", "confirm"] as const).map((field) => (
+            <div key={field}>
+              <label className="mb-1.5 block text-sm font-medium capitalize">
+                {field === "current" ? "Current password" : field === "next" ? "New password" : "Confirm new password"}
+              </label>
+              <input
+                type="password"
+                value={pwForm[field]}
+                onChange={(e) => setPwForm((f) => ({ ...f, [field]: e.target.value }))}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          ))}
+          <div className="flex items-center gap-3 pt-1">
+            <button onClick={savePassword}
+              disabled={!pwForm.current || !pwForm.next || pwForm.next !== pwForm.confirm}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
+              Update password
+            </button>
+            {pwSaved && (
+              <span className="flex items-center gap-1 text-sm text-green-600">
+                <CheckCircle2 className="h-4 w-4" /> Password updated
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* 2FA */}
+      <section>
+        <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+          <Shield className="h-4 w-4" /> Two-Factor Authentication
+        </h3>
+        <div className="flex items-center justify-between rounded-lg border bg-card p-4">
+          <div>
+            <p className="text-sm font-medium">Authenticator app (TOTP)</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {twoFa ? "2FA is enabled — your account is protected." : "Add an extra layer of protection to your account."}
+            </p>
+          </div>
+          <button
+            onClick={() => setTwoFa((v) => !v)}
+            className={cn("rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              twoFa ? "bg-red-50 text-red-700 hover:bg-red-100 border border-red-200" : "bg-primary text-primary-foreground hover:opacity-90"
+            )}>
+            {twoFa ? "Disable 2FA" : "Enable 2FA"}
+          </button>
+        </div>
+      </section>
+
+      {/* Active sessions */}
+      <section>
+        <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+          <Monitor className="h-4 w-4" /> Active Sessions
+        </h3>
+        <div className="space-y-2">
+          {sessions.map((s) => (
+            <div key={s.id} className="flex items-center justify-between rounded-lg border bg-card p-3">
+              <div>
+                <p className="text-sm font-medium">{s.device}</p>
+                <p className="text-xs text-muted-foreground">{s.ip} · {s.lastActive}</p>
+              </div>
+              {s.current ? (
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Current</span>
+              ) : (
+                <button onClick={() => setSessions((prev) => prev.filter((x) => x.id !== s.id))}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-600 transition-colors">
+                  <LogOut className="h-3 w-3" /> Revoke
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* API keys */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <Key className="h-4 w-4" /> API Keys
+          </h3>
+          <button className="text-xs text-primary hover:underline">+ New key</button>
+        </div>
+        <div className="space-y-2">
+          {apiKeys.map((k) => (
+            <div key={k.id} className="flex items-center justify-between rounded-lg border bg-card p-3">
+              <div>
+                <p className="text-sm font-medium">{k.name}</p>
+                <p className="text-xs text-muted-foreground font-mono">{k.prefix}</p>
+                <p className="text-xs text-muted-foreground">Created {k.created} · Last used {k.lastUsed}</p>
+              </div>
+              <button onClick={() => setApiKeys((prev) => prev.filter((x) => x.id !== k.id))}
+                className="text-muted-foreground hover:text-red-600 transition-colors">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          {apiKeys.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-6">No API keys. Create one above.</p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: "general",      label: "General",      icon: Settings  },
-  { id: "users",        label: "Users",         icon: Users     },
-  { id: "integrations", label: "Integrations",  icon: Plug      },
-  { id: "billing",      label: "Billing",       icon: CreditCard },
-  { id: "security",     label: "Security",      icon: Shield    },
+  { id: "general",      label: "General",     icon: Settings  },
+  { id: "users",        label: "Users",        icon: Users     },
+  { id: "integrations", label: "Integrations", icon: Plug      },
+  { id: "billing",      label: "Billing",      icon: CreditCard },
+  { id: "security",     label: "Security",     icon: Shield    },
 ];
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<Tab>("general");
+  const [tab,  setTab]  = useState<Tab>("general");
   const [user, setUser] = useState<StoredUser | null>(null);
   useEffect(() => { setUser(getStoredUser()); }, []);
 
   return (
     <div className="flex h-full gap-6">
-      {/* Sidebar tabs */}
       <aside className="w-48 shrink-0">
         <nav className="space-y-1">
           {TABS.map(({ id, label, icon: Icon }) => (
@@ -335,7 +544,6 @@ export default function SettingsPage() {
         </nav>
       </aside>
 
-      {/* Content */}
       <div className="flex-1 overflow-auto">
         <div className="mb-6">
           <h1 className="text-xl font-semibold capitalize">{TABS.find((t) => t.id === tab)?.label}</h1>
@@ -344,11 +552,7 @@ export default function SettingsPage() {
         {tab === "users"        && <UsersTab />}
         {tab === "integrations" && <IntegrationsTab />}
         {tab === "billing"      && <BillingTab />}
-        {tab === "security"     && (
-          <div className="space-y-4 max-w-lg text-sm text-muted-foreground">
-            <p>Password management, 2FA, and session controls are coming in Phase 2.</p>
-          </div>
-        )}
+        {tab === "security"     && <SecurityTab />}
       </div>
     </div>
   );

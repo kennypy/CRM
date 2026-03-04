@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { formatCurrency, cn } from "@/lib/utils";
+import { useTenant } from "@/lib/tenant-context";
 import { BarChart3, TrendingUp, TrendingDown, Users, Briefcase, Activity, Award } from "lucide-react";
-
-// ── Demo data ────────────────────────────────────────────────────────────────
 
 const PIPELINE_BY_STAGE = [
   { stage: "Discovery",    deals: 12, value: 540000,  avg_days: 8  },
@@ -25,19 +24,19 @@ const MONTHLY_REVENUE = [
 ];
 
 const TOP_REPS = [
-  { name: "Sarah Kim",      won: 580000, deals: 6,  winRate: 72 },
-  { name: "Marcus Chen",    won: 420000, deals: 5,  winRate: 63 },
-  { name: "Priya Sharma",   won: 380000, deals: 4,  winRate: 57 },
-  { name: "Alex Johnson",   won: 310000, deals: 4,  winRate: 50 },
-  { name: "Jamie Rodriguez",won: 210000, deals: 3,  winRate: 43 },
+  { name: "Sarah Kim",       won: 580000, deals: 6, winRate: 72 },
+  { name: "Marcus Chen",     won: 420000, deals: 5, winRate: 63 },
+  { name: "Priya Sharma",    won: 380000, deals: 4, winRate: 57 },
+  { name: "Alex Johnson",    won: 310000, deals: 4, winRate: 50 },
+  { name: "Jamie Rodriguez", won: 210000, deals: 3, winRate: 43 },
 ];
 
 const WIN_LOSS_BY_SOURCE = [
-  { source: "Inbound referral",  won: 68, lost: 32 },
-  { source: "Outbound email",    won: 41, lost: 59 },
-  { source: "Event / webinar",   won: 55, lost: 45 },
-  { source: "Partner channel",   won: 72, lost: 28 },
-  { source: "Auto-captured",     won: 48, lost: 52 },
+  { source: "Inbound referral", won: 68, lost: 32 },
+  { source: "Outbound email",   won: 41, lost: 59 },
+  { source: "Event / webinar",  won: 55, lost: 45 },
+  { source: "Partner channel",  won: 72, lost: 28 },
+  { source: "Auto-captured",    won: 48, lost: 52 },
 ];
 
 const ACTIVITY_VOLUME = [
@@ -48,8 +47,6 @@ const ACTIVITY_VOLUME = [
   { week: "W5", emails: 203, meetings: 31, calls: 38 },
   { week: "W6", emails: 178, meetings: 25, calls: 29 },
 ];
-
-// ── KPI card ─────────────────────────────────────────────────────────────────
 
 function KpiCard({ label, value, delta, deltaLabel, icon: Icon, color }: {
   label: string; value: string; delta: number; deltaLabel: string;
@@ -74,16 +71,18 @@ function KpiCard({ label, value, delta, deltaLabel, icon: Icon, color }: {
   );
 }
 
-// ── Simple bar chart ──────────────────────────────────────────────────────────
-
-function SimpleBar({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
+function SimpleBar({ value, max, color, label, currency, locale }: {
+  value: number; max: number; color: string; label: string; currency: string; locale: string;
+}) {
   return (
     <div className="flex items-center gap-3">
       <span className="w-24 shrink-0 text-xs text-muted-foreground truncate">{label}</span>
       <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
         <div className={cn("h-full rounded-full", color)} style={{ width: `${(value / max) * 100}%` }} />
       </div>
-      <span className="w-16 text-right text-xs font-medium tabular-nums">{formatCurrency(value, "USD", true)}</span>
+      <span className="w-16 text-right text-xs font-medium tabular-nums">
+        {formatCurrency(value, currency, true, locale)}
+      </span>
     </div>
   );
 }
@@ -91,16 +90,21 @@ function SimpleBar({ value, max, color, label }: { value: number; max: number; c
 type Period = "7d" | "30d" | "90d" | "1y";
 
 export default function ReportsPage() {
+  const { tenant } = useTenant();
+  const currency   = tenant.defaultCurrency;
+  const locale     = tenant.locale;
+
   const [period, setPeriod] = useState<Period>("30d");
 
   const maxPipelineValue = Math.max(...PIPELINE_BY_STAGE.map((s) => s.value));
   const totalWon  = PIPELINE_BY_STAGE.find((s) => s.stage === "Closed Won")?.value ?? 0;
-  const totalOpen = PIPELINE_BY_STAGE.filter((s) => !["Closed Won", "Closed Lost"].includes(s.stage)).reduce((sum, s) => sum + s.value, 0);
-  const winRate   = Math.round((18 / (18 + 9)) * 100);
+  const totalOpen = PIPELINE_BY_STAGE
+    .filter((s) => !["Closed Won", "Closed Lost"].includes(s.stage))
+    .reduce((sum, s) => sum + s.value, 0);
+  const winRate = Math.round((18 / (18 + 9)) * 100);
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-auto">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5 text-primary" />
@@ -110,27 +114,27 @@ export default function ReportsPage() {
           {(["7d", "30d", "90d", "1y"] as Period[]).map((p) => (
             <button key={p} onClick={() => setPeriod(p)}
               className={cn("rounded-md px-3 py-1 text-sm font-medium transition-colors",
-                period === p ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-            >{p}</button>
+                period === p ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              {p}
+            </button>
           ))}
         </div>
       </div>
 
-      {/* KPI row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard label="Open Pipeline"   value={formatCurrency(totalOpen, "USD", true)} delta={12}  deltaLabel="vs last period" icon={Briefcase}  color="bg-blue-100 text-blue-600" />
-        <KpiCard label="Revenue Closed"  value={formatCurrency(totalWon,  "USD", true)} delta={18}  deltaLabel="vs last period" icon={TrendingUp}  color="bg-green-100 text-green-600" />
-        <KpiCard label="Win Rate"        value={`${winRate}%`}                          delta={5}   deltaLabel="vs last period" icon={Award}       color="bg-purple-100 text-purple-600" />
-        <KpiCard label="Avg Sales Cycle" value="37 days"                                delta={-8}  deltaLabel="vs last period" icon={Activity}    color="bg-orange-100 text-orange-600" />
+        <KpiCard label="Open Pipeline"   value={formatCurrency(totalOpen, currency, true, locale)} delta={12} deltaLabel="vs last period" icon={Briefcase}  color="bg-blue-100 text-blue-600" />
+        <KpiCard label="Revenue Closed"  value={formatCurrency(totalWon,  currency, true, locale)} delta={18} deltaLabel="vs last period" icon={TrendingUp}  color="bg-green-100 text-green-600" />
+        <KpiCard label="Win Rate"        value={`${winRate}%`}                                     delta={5}  deltaLabel="vs last period" icon={Award}       color="bg-purple-100 text-purple-600" />
+        <KpiCard label="Avg Sales Cycle" value="37 days"                                           delta={-8} deltaLabel="vs last period" icon={Activity}    color="bg-orange-100 text-orange-600" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Pipeline by stage */}
         <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-4 font-semibold">Pipeline by Stage</h2>
           <div className="space-y-3">
             {PIPELINE_BY_STAGE.map((s) => (
               <SimpleBar key={s.stage} label={s.stage} value={s.value} max={maxPipelineValue}
+                currency={currency} locale={locale}
                 color={s.stage === "Closed Won" ? "bg-green-500" : s.stage === "Closed Lost" ? "bg-red-400" : "bg-primary"}
               />
             ))}
@@ -146,7 +150,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Monthly revenue */}
         <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-4 font-semibold">Monthly Revenue</h2>
           <div className="space-y-2">
@@ -159,12 +162,12 @@ export default function ReportsPage() {
                     {m.actual != null && (
                       <div className="flex items-center gap-1">
                         <div className="h-2 rounded-full bg-primary" style={{ width: `${(m.actual / maxVal) * 100}%` }} />
-                        <span className="text-xs text-muted-foreground">{formatCurrency(m.actual, "USD", true)}</span>
+                        <span className="text-xs text-muted-foreground">{formatCurrency(m.actual, currency, true, locale)}</span>
                       </div>
                     )}
                     <div className="flex items-center gap-1">
                       <div className="h-2 rounded-full bg-muted-foreground/30" style={{ width: `${(m.forecast / maxVal) * 100}%` }} />
-                      <span className="text-xs text-muted-foreground">{formatCurrency(m.forecast, "USD", true)} forecast</span>
+                      <span className="text-xs text-muted-foreground">{formatCurrency(m.forecast, currency, true, locale)} forecast</span>
                     </div>
                   </div>
                 </div>
@@ -177,7 +180,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Top reps leaderboard */}
         <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-4 font-semibold">Rep Leaderboard</h2>
           <div className="space-y-3">
@@ -195,7 +197,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-medium">{formatCurrency(rep.won, "USD", true)}</p>
+                  <p className="text-sm font-medium">{formatCurrency(rep.won, currency, true, locale)}</p>
                   <p className="text-xs text-muted-foreground">{rep.winRate}% win rate</p>
                 </div>
               </div>
@@ -203,7 +205,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Win/loss by source */}
         <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-4 font-semibold">Win Rate by Lead Source</h2>
           <div className="space-y-3">
@@ -223,14 +224,11 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Activity volume */}
       <div className="rounded-xl border bg-card p-5">
         <h2 className="mb-4 font-semibold">Activity Volume (Last 6 Weeks)</h2>
         <div className="flex items-end gap-2 h-32">
           {ACTIVITY_VOLUME.map((w) => {
             const maxTotal = 250;
-            const total = w.emails + w.meetings + w.calls;
-            const h = (total / maxTotal) * 100;
             return (
               <div key={w.week} className="flex-1 flex flex-col items-center gap-1">
                 <div className="w-full flex flex-col justify-end" style={{ height: "100px" }}>

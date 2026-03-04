@@ -1,7 +1,7 @@
 import { Pool } from "pg";
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL ?? "postgresql://nexcrm:nexcrm_dev@localhost:5432/nexcrm",
   min: parseInt(process.env.DATABASE_POOL_MIN ?? "2", 10),
   max: parseInt(process.env.DATABASE_POOL_MAX ?? "20", 10),
   idleTimeoutMillis: 30_000,
