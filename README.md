@@ -144,11 +144,11 @@ Services will be available at:
 
 ## MVP Scope (Phase 1 — Months 1–6)
 
-> **Status as of 2026-03-04 — Phase 1 feature-complete. GraphQL and Stripe billing are the only remaining items.**
+> **Status as of 2026-03-04 — Phase 1 complete.**
 
 ### Completed
 - [x] Project scaffold + monorepo (Turborepo, Docker Compose, OTel)
-- [x] Graph schema + migrations (core schema, entity-resolution indexes, Reality Score table)
+- [x] Graph schema + migrations (core schema, entity-resolution indexes, Reality Score table, Stripe billing columns)
 - [x] Auth service (JWT access/refresh tokens, Google OAuth2 PKCE, RBAC middleware)
 - [x] Core CRM entities — Contacts, Companies, Deals, Activities (REST CRUD + web UI)
 - [x] Leads and Tasks pages (added scope)
@@ -164,13 +164,11 @@ Services will be available at:
 - [x] Activity feed (`/activities`)
 - [x] AI Intelligence Brief on home dashboard (daily AI-generated summary)
 - [x] REST API — full routes for all entities via API Gateway + Graph Core
+- [x] GraphQL API — Mercurius on `/graphql`; full schema covering Contacts, Companies, Deals, Activities, Review Queue, Reality Score; queries + mutations
+- [x] Stripe billing — webhook at `/webhooks/stripe` with HMAC-SHA256 signature verification; handles subscription lifecycle and payment events; tenant plan synced from Stripe
 - [x] Basic reporting (`/reports`)
 - [x] Workflows page scaffold (`/workflows` — UI shell, Phase 2 logic)
 - [x] Mobile-responsive web
-
-### Remaining (Phase 1)
-- [ ] GraphQL API — proxy route wired, schema not implemented
-- [ ] Stripe billing integration — webhook stub exists, event handling not implemented
 
 ### Explicitly Out of Phase 1 Scope
 Native mobile app · Workflow builder logic · Marketplace · Multi-currency · Territories · Quote/CPQ · Advanced forecasting · SAML/SCIM · Zoom/Slack ingestion

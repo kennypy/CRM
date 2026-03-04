@@ -7,6 +7,7 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import jwt from "@fastify/jwt";
+import mercurius from "mercurius";
 import { authRoutes } from "./routes/auth";
 import { contactsRoutes } from "./routes/contacts";
 import { companiesRoutes } from "./routes/companies";
@@ -18,6 +19,8 @@ import { webhookRoutes } from "./routes/webhooks";
 import { integrationsRoutes } from "./routes/integrations";
 import { errorHandler } from "./middleware/error-handler";
 import { authMiddleware } from "./middleware/auth";
+import { typeDefs } from "./graphql/schema";
+import { resolvers } from "./graphql/resolvers";
 
 const server = Fastify({
   logger: {
@@ -72,6 +75,26 @@ async function bootstrap() {
   await server.register(aiRoutes, { prefix: "/api/v1/ai" });
   await server.register(graphRoutes, { prefix: "/api/v1/graph" });
   await server.register(integrationsRoutes, { prefix: "/api/v1/integrations" });
+
+  // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
+  // Protected by the authMiddleware preHandler hook registered above.
+  // Context extracts the JWT claims so resolvers have tenantId + userId.
+  await server.register(mercurius, {
+    schema: typeDefs,
+    resolvers,
+    path: "/graphql",
+    graphiql: process.env.NODE_ENV === "development",
+    context: (request) => {
+      const user = (request as any).user as
+        | { sub: string; tenantId: string; email: string; role: string }
+        | undefined;
+      return {
+        tenantId: user?.tenantId ?? "",
+        userId:   user?.sub      ?? "",
+        role:     user?.role     ?? "rep",
+      };
+    },
+  });
 
   // ── Error handling ────────────────────────────────────────────────────────
   server.setErrorHandler(errorHandler);

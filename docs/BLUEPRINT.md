@@ -542,7 +542,7 @@ Sandbox: dev environment never touches prod data.
 ### Phase 1 — Months 1–6: Pilot
 **Goal**: 10 pilot customers, core loop working, reps never open a form for routine activities.
 
-> **Status: Feature-complete as of 2026-03-04. Two items remain (GraphQL schema, Stripe billing).**
+> **Status: Complete as of 2026-03-04. All Phase 1 items delivered.**
 
 #### Built ✅
 | Item | Notes |
@@ -565,15 +565,12 @@ Sandbox: dev environment never touches prod data.
 | Activity feed | `/activities` — unified feed |
 | AI Intelligence Brief | Home dashboard daily AI-generated summary widget |
 | REST API | Full CRUD for all entities; graph query, NL, review queue, ingestion, webhook routes |
+| GraphQL API | Mercurius on `/graphql`; SDL schema for all Phase 1 entities; queries + mutations; context carries tenantId from JWT |
+| Stripe billing | `/webhooks/stripe` with HMAC-SHA256 signature verification + replay-attack tolerance window; handles `subscription.created/updated/deleted`, `invoice.payment_succeeded/failed`; tenant plan synced in DB |
+| Stripe billing migration | `004_stripe_billing.sql` — adds `stripe_customer_id`, `stripe_subscription_id`, `stripe_subscription_status`, `subscription_period_end` to tenants table |
 | Basic reporting | `/reports` page |
 | Workflows page (shell) | `/workflows` UI scaffold — logic deferred to Phase 2 |
 | Mobile-responsive web | Tailwind responsive layout throughout |
-
-#### Remaining (Phase 1) 🔲
-| Item | Current State |
-|------|--------------|
-| GraphQL API | Proxy route wired at `/graphql`; schema + resolvers not implemented |
-| Stripe billing integration | Webhook stub at `/webhooks/stripe`; signature verification + event handling not implemented |
 
 #### NOT in Phase 1 Scope
 Native mobile app · Workflow builder logic · Marketplace / plugins · Multi-currency · Territories · Quote/CPQ · Advanced forecasting models · SAML/SCIM · Zoom / Slack ingestion
