@@ -36,6 +36,18 @@ async function bootstrap() {
     process.exit(1);
   }
 
+  // Validate OAUTH_ENCRYPTION_KEY at startup — if missing, Google/Microsoft OAuth
+  // tokens would be stored in plaintext. Fail early rather than at first OAuth use.
+  const oauthKey = process.env.OAUTH_ENCRYPTION_KEY ?? "";
+  if (oauthKey.length !== 64 || !/^[0-9a-fA-F]{64}$/.test(oauthKey)) {
+    if (process.env.NODE_ENV === "production") {
+      console.error("FATAL: OAUTH_ENCRYPTION_KEY must be a 64-character hex string (32 bytes). Refusing to start.");
+      process.exit(1);
+    } else {
+      console.warn("WARNING: OAUTH_ENCRYPTION_KEY is not configured. OAuth token storage will fail at runtime.");
+    }
+  }
+
   await server.register(helmet, { contentSecurityPolicy: false });
 
   // Auth service is internal — only accept requests from the API gateway and the

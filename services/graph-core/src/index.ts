@@ -4,6 +4,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
 import { contactsRoutes } from "./routes/contacts";
 import { companiesRoutes } from "./routes/companies";
@@ -23,24 +24,46 @@ const server = Fastify({
 });
 
 async function bootstrap() {
+  // ── Startup secret validation ──────────────────────────────────────────────
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    console.error("FATAL: JWT_SECRET environment variable is not set. Refusing to start.");
+    process.exit(1);
+  }
+  if (
+    process.env.NODE_ENV === "production" &&
+    (jwtSecret.includes("dev") || jwtSecret.includes("change") || jwtSecret.length < 32)
+  ) {
+    console.error("FATAL: JWT_SECRET appears to be a placeholder. Use a cryptographically random 256-bit secret.");
+    process.exit(1);
+  }
+
+  const apiGatewayUrl = process.env.API_GATEWAY_URL;
+  if (!apiGatewayUrl && process.env.NODE_ENV === "production") {
+    console.error("FATAL: API_GATEWAY_URL must be set in production. Refusing to start.");
+    process.exit(1);
+  }
+
+  await server.register(helmet, { contentSecurityPolicy: false });
+
   await server.register(cors, {
     // Internal service — only allow API gateway
-    origin: process.env.API_GATEWAY_URL ?? "http://localhost:4000",
+    origin: apiGatewayUrl ?? "http://localhost:4000",
   });
 
   await server.register(jwt, {
-    secret: process.env.JWT_SECRET ?? "dev-secret-CHANGE-IN-PRODUCTION",
+    secret: jwtSecret,
   });
 
-  // Surface internal errors with enough detail to diagnose without leaking secrets
+  // Sanitize error messages in production to avoid leaking internal details
   server.setErrorHandler((err, request, reply) => {
     request.log.error({ err, url: request.url }, "unhandled_error");
+    const message = process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : (err.message ?? "Internal server error");
     return reply.status(500).send({
       success: false,
-      error: {
-        code:    "INTERNAL_ERROR",
-        message: err.message ?? "Internal server error",
-      },
+      error: { code: "INTERNAL_ERROR", message },
     });
   });
 

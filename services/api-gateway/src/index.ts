@@ -110,11 +110,14 @@ async function bootstrap() {
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
   // Context extracts the JWT claims so resolvers have tenantId + userId.
+  const isDev = process.env.NODE_ENV === "development";
   await server.register(mercurius, {
     schema: typeDefs,
     resolvers,
     path: "/graphql",
-    graphiql: process.env.NODE_ENV === "development",
+    graphiql: isDev,
+    // Disable introspection in production — prevents API surface mapping by attackers
+    introspection: isDev,
     context: (request) => {
       const user = (request as any).user as
         | { sub: string; tenantId: string; email: string; role: string }

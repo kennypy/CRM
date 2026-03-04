@@ -66,7 +66,12 @@ const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.readonly",
 ].join(" ");
 
-// In-memory state store (use Redis for multi-instance prod)
+// ── In-memory state store ─────────────────────────────────────────────────────
+// TODO(production): Replace both Maps with Redis-backed stores using EXPIRE and
+// atomic SETNX to support multi-instance deployments. Current in-memory approach
+// means OAuth state/sessions are lost on service restart and broken across replicas.
+// Use: SET key value EX 600 NX  (state, 10-min TTL)
+//      SET key value EX 15  NX  (session, 15-second TTL)
 const stateStore = new Map<string, { tenantId: string; createdAt: number }>();
 
 /**
@@ -83,6 +88,8 @@ const stateStore = new Map<string, { tenantId: string; createdAt: number }>();
  * Only the internal Next.js server can reach /auth/oauth-session — the auth service
  * is not publicly exposed — so intercepting the session ID in the redirect URL
  * does not give an attacker access to the tokens.
+ *
+ * TODO(production): Replace with Redis — see comment above stateStore.
  */
 const oauthSessionStore = new Map<string, {
   accessToken: string;
@@ -98,8 +105,11 @@ export async function oauthRoutes(server: FastifyInstance) {
   /**
    * GET /auth/oauth/google?tenantId=...
    * Initiates Google OAuth. tenantId is required to scope the user on callback.
+   * Rate-limited to 20 initiations per IP per 10 minutes to prevent state store exhaustion.
    */
-  server.get("/oauth/google", async (request, reply) => {
+  server.get("/oauth/google", {
+    config: { rateLimit: { max: 20, timeWindow: "10 minutes" } },
+  }, async (request, reply) => {
     const { tenantId } = request.query as { tenantId?: string };
     if (!tenantId) {
       return reply.status(400).send({ error: "tenantId query param required" });

@@ -238,27 +238,6 @@ export async function companiesRoutes(server: FastifyInstance) {
     );
     return reply.status(204).send();
   });
-}
-
-// ── Response mapper ───────────────────────────────────────────────────────────
-
-function toCompanyResponse(row: Record<string, unknown>) {
-  // Queries return flat maps — no row.c wrapper.
-  return {
-    id:             row.id,
-    tenantId:       row.tenant_id,
-    name:           row.name,
-    domain:         row.domain,
-    industry:       row.industry       || undefined,
-    headcount:      row.headcount      || undefined,
-    tier:           row.tier           || undefined,
-    website:        row.website        || undefined,
-    country:        row.country        || undefined,
-    openDeals:      row.open_deals     ?? 0,
-    openDealValue:  row.open_deal_value ?? 0,
-    createdAt:      row.created_at,
-    updatedAt:      row.updated_at,
-  };
 
   /**
    * GET /companies/by-domain/:domain
@@ -368,4 +347,25 @@ function toCompanyResponse(row: Record<string, unknown>) {
       },
     });
   });
+}
+
+// ── Response mapper ───────────────────────────────────────────────────────────
+
+function toCompanyResponse(row: Record<string, unknown>) {
+  // Queries return flat maps — no row.c wrapper.
+  return {
+    id:             row.id,
+    tenantId:       row.tenant_id,
+    name:           row.name,
+    domain:         row.domain,
+    industry:       row.industry       || undefined,
+    headcount:      row.headcount      || undefined,
+    tier:           row.tier           || undefined,
+    website:        row.website        || undefined,
+    country:        row.country        || undefined,
+    openDeals:      row.open_deals     ?? 0,
+    openDealValue:  row.open_deal_value ?? 0,
+    createdAt:      row.created_at,
+    updatedAt:      row.updated_at,
+  };
 }
