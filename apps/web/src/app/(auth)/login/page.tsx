@@ -1,22 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { setAuth } from "@/lib/auth";
+import { useTenant } from "@/lib/tenant-context";
 import { Eye, EyeOff, Zap, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
   const router       = useRouter();
   const searchParams = useSearchParams();
-  const next         = searchParams.get("next") ?? "/";
+  const { refresh }  = useTenant();
 
-  const [form, setForm]     = useState({ tenantSlug: "", email: "", password: "" });
-  const [showPw, setShowPw] = useState(false);
+  // Guard against redirect loops: never redirect back to /login
+  const rawNext = searchParams.get("next") ?? "/";
+  const next    = rawNext.startsWith("/login") || rawNext.startsWith("%2Flogin") ? "/" : rawNext;
+
+  const [form, setForm]       = useState({ tenantSlug: "", email: "", password: "" });
+  const [showPw, setShowPw]   = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +54,9 @@ export default function LoginPage() {
         tenantName: tenant?.name ?? form.tenantSlug,
       });
 
+      // Load tenant preferences now that we're authenticated
+      refresh();
+
       router.replace(next);
     } catch {
       setError("Unable to reach the server. Please try again.");
@@ -59,7 +67,6 @@ export default function LoginPage() {
 
   return (
     <div className="w-full max-w-md">
-      {/* Card */}
       <div className="rounded-2xl border bg-card p-8 shadow-xl">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-2">
@@ -70,9 +77,8 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">AI-Native Revenue OS</p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Tenant */}
+          {/* Workspace */}
           <div>
             <label className="mb-1.5 block text-sm font-medium">Workspace</label>
             <div className="flex items-center rounded-lg border border-border overflow-hidden focus-within:ring-2 focus-within:ring-primary/30">
@@ -109,11 +115,7 @@ export default function LoginPage() {
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-sm font-medium">Password</label>
-              <button
-                type="button"
-                className="text-xs text-primary hover:underline"
-                tabIndex={-1}
-              >
+              <button type="button" className="text-xs text-primary hover:underline" tabIndex={-1}>
                 Forgot password?
               </button>
             </div>
@@ -138,7 +140,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Error */}
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -146,7 +147,6 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
@@ -159,7 +159,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Register link */}
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Don&apos;t have a workspace?{" "}
           <Link href="/register" className="font-medium text-primary hover:underline">

@@ -4,11 +4,14 @@
  * TenantContext — loads tenant preferences once at app boot.
  *
  * Provides:
- *   - useTenant()        → { tenant, loading }
- *   - useRefreshTenant() → () => void  (call after PATCH /api/v1/tenant)
+ *   - useTenant()  → { tenant, loading, refresh }
  *
  * TenantId is sourced exclusively from the JWT verified by the API gateway;
  * the frontend never passes tenantId as a query param to /api/v1/tenant.
+ *
+ * Safety: load() checks for a stored token before calling the API so that
+ * the TenantProvider mounted on the /login page does NOT trigger a 401
+ * redirect loop.  The login page calls refresh() after a successful login.
  */
 
 import React, {
@@ -19,6 +22,7 @@ import React, {
   useCallback,
 } from "react";
 import { api } from "./api";
+import { getToken } from "./auth";
 
 export interface TenantPreferences {
   id:              string;
@@ -51,15 +55,23 @@ interface TenantContextValue {
 
 const TenantContext = createContext<TenantContextValue>({
   tenant:  DEFAULT_TENANT,
-  loading: true,
+  loading: false,
   refresh: () => {},
 });
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
   const [tenant,  setTenant]  = useState<TenantPreferences>(DEFAULT_TENANT);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
+    // Do not call the API unless the user is authenticated — avoids a 401
+    // redirect loop when TenantProvider is mounted on the /login page.
+    if (!getToken()) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
     try {
       const res = await api.get("/api/v1/tenant");
       if (res.ok) {
