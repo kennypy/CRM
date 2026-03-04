@@ -130,6 +130,9 @@ export async function authRoutes(server: FastifyInstance) {
 
     const user = await findUserByEmail(tenant.id, email);
     if (!user || !user.password_hash) {
+      // Constant-time: always run bcrypt even for missing users to prevent
+      // user enumeration via response timing (attacker measures ~300ms vs <1ms).
+      await verifyPassword(password, "$2b$12$DUMMYHASHFORTIMINGPROTECTION0000000000000000000000000");
       return reply.status(401).send({
         success: false,
         error: { code: "INVALID_CREDENTIALS", message: "Invalid email, password, or organisation" },

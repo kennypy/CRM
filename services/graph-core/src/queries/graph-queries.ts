@@ -39,27 +39,31 @@ export async function getStallingDeals(tenantId: string, daysSilent = 7) {
 /**
  * Get ego network: all nodes within N hops of a given entity.
  * depth is a validated integer — Cypher range syntax [*1..N] requires a literal.
+ * SECURITY: both center and neighbor are scoped to tenantId to prevent
+ * cross-tenant graph traversal (a node in tenant A must not reach tenant B).
  */
-export async function getEgoNetwork(nodeId: string, depth = 2) {
+export async function getEgoNetwork(nodeId: string, tenantId: string, depth = 2) {
   return cypher(
-    `MATCH path = (center {id: $nodeId})-[*1..${depth}]-(neighbor)
+    `MATCH path = (center {id: $nodeId, tenant_id: $tenantId})-[*1..${depth}]-(neighbor {tenant_id: $tenantId})
      RETURN DISTINCT {id: neighbor.id, label: labels(neighbor)[0]}
      LIMIT 200`,
-    { nodeId }
+    { nodeId, tenantId }
   );
 }
 
 /**
  * Shortest introduction path between two people.
  * "Who can introduce me to the CTO of Acme?"
+ * SECURITY: both endpoints are scoped to tenantId — prevents cross-tenant
+ * path discovery via KNOWS edge traversal.
  */
-export async function getIntroPath(fromId: string, toId: string) {
+export async function getIntroPath(fromId: string, toId: string, tenantId: string) {
   return cypher(
     `MATCH path = shortestPath(
-       (a {id: $fromId})-[:KNOWS*..5]-(b {id: $toId})
+       (a {id: $fromId, tenant_id: $tenantId})-[:KNOWS*..5]-(b {id: $toId, tenant_id: $tenantId})
      )
      RETURN {hops: length(path)}`,
-    { fromId, toId }
+    { fromId, toId, tenantId }
   );
 }
 

@@ -103,16 +103,22 @@ export async function oauthRoutes(server: FastifyInstance) {
   const redirectUri = process.env.GMAIL_OAUTH_REDIRECT ?? "http://localhost:4001/auth/oauth/google/callback";
 
   /**
-   * GET /auth/oauth/google?tenantId=...
-   * Initiates Google OAuth. tenantId is required to scope the user on callback.
+   * GET /auth/oauth/google
+   * Initiates Google OAuth.
+   * SECURITY: Requires authentication. tenantId is read from the verified JWT,
+   * NOT from a query parameter. This prevents CSRF where an attacker initiates
+   * OAuth with ?tenantId=victim-tenant and tricks the victim into authorizing.
+   * The API gateway enforces JWT auth before proxying here.
    * Rate-limited to 20 initiations per IP per 10 minutes to prevent state store exhaustion.
    */
   server.get("/oauth/google", {
+    preHandler: [server.authenticate],
     config: { rateLimit: { max: 20, timeWindow: "10 minutes" } },
   }, async (request, reply) => {
-    const { tenantId } = request.query as { tenantId?: string };
+    const jwt = request.user as { tenantId?: string };
+    const tenantId = jwt.tenantId;
     if (!tenantId) {
-      return reply.status(400).send({ error: "tenantId query param required" });
+      return reply.status(400).send({ error: "No tenantId in JWT claims" });
     }
 
     const state = crypto.randomBytes(16).toString("hex");

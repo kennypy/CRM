@@ -58,10 +58,13 @@ export async function consumeRefreshToken(
   try {
     await client.query("BEGIN");
 
+    // FOR UPDATE acquires a row-level lock — prevents concurrent requests from
+    // consuming the same refresh token (race condition / double-spend attack).
     const { rows } = await client.query(
       `SELECT id, user_id, expires_at, revoked_at
        FROM refresh_tokens
-       WHERE token_hash = $1`,
+       WHERE token_hash = $1
+       FOR UPDATE`,
       [hash]
     );
 

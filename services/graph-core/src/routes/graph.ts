@@ -33,7 +33,7 @@ export async function graphRoutes(server: FastifyInstance) {
     const { nodeId } = request.params as { nodeId: string };
     const { tenantId, depth } = request.query as Record<string, string>;
     if (!tenantId) return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
-    const rows = await getEgoNetwork(nodeId, parseInt(depth ?? "2", 10));
+    const rows = await getEgoNetwork(nodeId, tenantId, parseInt(depth ?? "2", 10));
     return reply.send({ success: true, data: rows });
   });
 
@@ -43,11 +43,12 @@ export async function graphRoutes(server: FastifyInstance) {
    * "Who in our network knows the CTO of Acme?"
    */
   server.get("/intro-path", async (request, reply) => {
-    const { from, to } = request.query as { from: string; to: string };
+    const { from, to, tenantId } = request.query as { from: string; to: string; tenantId: string };
     if (!from || !to) {
       return reply.status(400).send({ success: false, error: { code: "MISSING_PARAMS", message: "from and to are required" } });
     }
-    const rows = await getIntroPath(from, to);
+    if (!tenantId) return reply.status(400).send({ success: false, error: { code: "MISSING_TENANT" } });
+    const rows = await getIntroPath(from, to, tenantId);
     return reply.send({ success: true, data: rows });
   });
 
