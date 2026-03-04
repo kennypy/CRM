@@ -24,16 +24,24 @@ export function createProxy(opts: ProxyOptions) {
       ? request.url.replace(opts.stripPrefix, "")
       : request.url;
 
-    // Forward tenantId as query param so graph-core can scope queries
+    // tenantId MUST come from the verified JWT — never from client-supplied headers.
+    // Accepting x-tenant-id from the client would allow tenant-isolation bypass.
+    const tenantId = jwt?.tenantId ?? "";
+    if (!tenantId) {
+      return reply.status(403).send({
+        success: false,
+        error: { code: "FORBIDDEN", message: "Tenant context missing from token" },
+      });
+    }
+
     const separator = url.includes("?") ? "&" : "?";
-    const tenantId = jwt?.tenantId ?? request.headers["x-tenant-id"] ?? "";
     const downstream = `${opts.baseUrl}${url}${separator}tenantId=${tenantId}`;
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "x-user-id": jwt?.sub ?? "",
-      "x-tenant-id": String(tenantId),
-      "x-user-role": jwt?.role ?? "",
+      "x-user-id":    jwt?.sub   ?? "",
+      "x-tenant-id":  tenantId,
+      "x-user-role":  jwt?.role  ?? "",
       ...(opts.headers ?? {}),
     };
 

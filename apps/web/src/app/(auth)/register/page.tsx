@@ -27,7 +27,7 @@ export default function RegisterPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.public.post("/auth/register", {
+      const res = await api.public.post("/api/auth/register", {
         tenantName: form.orgName,
         tenantSlug: form.tenantSlug,
         firstName:  form.firstName,
@@ -38,13 +38,13 @@ export default function RegisterPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data?.error?.message ?? "Registration failed");
+        setError((data?.error?.message ?? data?.error) ?? "Registration failed");
         return;
       }
 
       const data = await res.json();
-      const { accessToken, refreshToken, user, tenant } = data.data ?? data;
-      setAuth(accessToken, refreshToken, {
+      const { user, tenant } = data.data ?? data;
+      setAuth("", "", {
         id: user.id, email: user.email,
         firstName: user.firstName, lastName: user.lastName,
         role: user.role, tenantId: user.tenantId, tenantName: tenant?.name ?? form.orgName,

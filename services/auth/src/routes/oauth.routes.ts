@@ -20,6 +20,39 @@ import {
 } from "../users";
 import { createRefreshToken, buildJWTPayload } from "../tokens";
 
+// ── OAuth token encryption (AES-256-GCM) ──────────────────────────────────────
+// Tokens from Google / Microsoft are encrypted before being persisted to the DB.
+// The key must be a 64-character hex string (32 bytes) set via OAUTH_ENCRYPTION_KEY.
+
+function getEncryptionKey(): Buffer {
+  const hex = process.env.OAUTH_ENCRYPTION_KEY ?? "";
+  if (hex.length !== 64) {
+    throw new Error("OAUTH_ENCRYPTION_KEY must be a 64-character hex string (32 bytes)");
+  }
+  return Buffer.from(hex, "hex");
+}
+
+function encryptToken(plaintext: string): string {
+  const key  = getEncryptionKey();
+  const iv   = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const enc  = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag  = cipher.getAuthTag();
+  // Format: base64(iv):base64(tag):base64(ciphertext)
+  return [iv.toString("base64"), tag.toString("base64"), enc.toString("base64")].join(":");
+}
+
+function decryptToken(encrypted: string): string {
+  const [ivB64, tagB64, encB64] = encrypted.split(":");
+  const key    = getEncryptionKey();
+  const iv     = Buffer.from(ivB64,  "base64");
+  const tag    = Buffer.from(tagB64, "base64");
+  const enc    = Buffer.from(encB64, "base64");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(enc).toString("utf8") + decipher.final("utf8");
+}
+
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
@@ -138,20 +171,30 @@ export async function oauthRoutes(server: FastifyInstance) {
       [tenantId, userInfo.email, userInfo.given_name, userInfo.family_name, userInfo.picture ?? null]
     );
 
-    // Store OAuth tokens for ingestion service
+    // Store OAuth tokens for ingestion service — encrypt before persisting.
+    // If OAUTH_ENCRYPTION_KEY is not configured, skip storage and log a warning.
     const expiresAt = new Date(Date.now() + googleTokens.expires_in * 1000).toISOString();
-    await pool.query(
-      `INSERT INTO oauth_tokens (tenant_id, user_id, provider, access_token, refresh_token, expires_at, scopes)
-       VALUES ($1, $2, 'google', $3, $4, $5, $6)
-       ON CONFLICT (tenant_id, user_id, provider)
-       DO UPDATE SET
-         access_token  = EXCLUDED.access_token,
-         refresh_token = COALESCE(EXCLUDED.refresh_token, oauth_tokens.refresh_token),
-         expires_at    = EXCLUDED.expires_at,
-         updated_at    = NOW()`,
-      [tenantId, dbUser.id, googleTokens.access_token, googleTokens.refresh_token ?? null,
-       expiresAt, googleTokens.scope.split(" ")]
-    );
+    try {
+      const encryptedAccess  = encryptToken(googleTokens.access_token);
+      const encryptedRefresh = googleTokens.refresh_token
+        ? encryptToken(googleTokens.refresh_token)
+        : null;
+
+      await pool.query(
+        `INSERT INTO oauth_tokens (tenant_id, user_id, provider, access_token, refresh_token, expires_at, scopes)
+         VALUES ($1, $2, 'google', $3, $4, $5, $6)
+         ON CONFLICT (tenant_id, user_id, provider)
+         DO UPDATE SET
+           access_token  = EXCLUDED.access_token,
+           refresh_token = COALESCE(EXCLUDED.refresh_token, oauth_tokens.refresh_token),
+           expires_at    = EXCLUDED.expires_at,
+           updated_at    = NOW()`,
+        [tenantId, dbUser.id, encryptedAccess, encryptedRefresh,
+         expiresAt, googleTokens.scope.split(" ")]
+      );
+    } catch (err: any) {
+      server.log.error({ err: err.message }, "oauth.token_storage.failed — check OAUTH_ENCRYPTION_KEY");
+    }
 
     // Update integration status
     await pool.query(

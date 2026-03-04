@@ -22,11 +22,27 @@ const server = Fastify({
 });
 
 async function bootstrap() {
+  // ── Startup secret validation ──────────────────────────────────────────────
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    console.error("FATAL: JWT_SECRET environment variable is not set. Refusing to start.");
+    process.exit(1);
+  }
+  if (
+    process.env.NODE_ENV === "production" &&
+    (jwtSecret.includes("dev") || jwtSecret.includes("change") || jwtSecret.length < 32)
+  ) {
+    console.error("FATAL: JWT_SECRET appears to be a placeholder. Use a cryptographically random 256-bit secret.");
+    process.exit(1);
+  }
+
   await server.register(helmet, { contentSecurityPolicy: false });
 
+  // Auth service is internal — only accept requests from the API gateway and the
+  // Next.js server (via server-side Route Handlers).  Never from the public internet.
   await server.register(cors, {
     origin: [
-      process.env.APP_URL ?? "http://localhost:3000",
+      process.env.APP_URL         ?? "http://localhost:3000",
       process.env.API_GATEWAY_URL ?? "http://localhost:4000",
     ],
     credentials: true,
@@ -36,11 +52,11 @@ async function bootstrap() {
   await server.register(rateLimit, {
     max: 20,
     timeWindow: "1 minute",
-    keyGenerator: (req) => req.ip,
+    keyGenerator: (req) => req.ip ?? "unknown",
   });
 
   await server.register(jwt, {
-    secret: process.env.JWT_SECRET ?? "dev-secret-CHANGE-IN-PRODUCTION",
+    secret: jwtSecret,
     sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? "15m" },
   });
 

@@ -198,19 +198,86 @@ export async function webhookRoutes(fastify: FastifyInstance) {
 
   // POST /webhooks/zoom — Zoom webhook for meeting transcripts
   fastify.post("/zoom", async (request, reply) => {
-    // TODO: verify Zoom webhook signature + publish to Redis Stream
-    fastify.log.info({ body: request.body }, "Zoom webhook received");
+    const secret    = process.env.ZOOM_WEBHOOK_SECRET_TOKEN;
+    const rawBody   = (request as any).rawBody as Buffer | undefined;
+    const timestamp = request.headers["x-zm-request-timestamp"] as string | undefined;
+    const signature = request.headers["x-zm-signature"] as string | undefined;
+
+    if (!secret) {
+      fastify.log.warn("ZOOM_WEBHOOK_SECRET_TOKEN not configured — rejecting all Zoom webhooks");
+      return reply.status(400).send({ success: false, error: "Webhook verification not configured" });
+    }
+
+    if (!rawBody || !timestamp || !signature) {
+      return reply.status(400).send({ success: false, error: "Missing Zoom signature headers" });
+    }
+
+    // Reject events older than 5 minutes
+    if (Math.abs(Date.now() / 1000 - parseInt(timestamp, 10)) > 300) {
+      return reply.status(400).send({ success: false, error: "Webhook timestamp too old" });
+    }
+
+    const message  = `v0:${timestamp}:${rawBody.toString("utf8")}`;
+    const expected = "v0=" + createHmac("sha256", secret).update(message).digest("hex");
+    const expectedBuf = Buffer.from(expected);
+    const receivedBuf = Buffer.from(signature);
+
+    const valid = expectedBuf.length === receivedBuf.length &&
+      timingSafeEqual(expectedBuf, receivedBuf);
+
+    if (!valid) {
+      fastify.log.warn({ signature }, "zoom.webhook.invalid_signature");
+      return reply.status(400).send({ success: false, error: "Invalid Zoom signature" });
+    }
+
+    // TODO: publish to Redis Stream for async processing
+    fastify.log.info("zoom.webhook.received");
     return reply.send({ success: true });
   });
 
   // POST /webhooks/slack — Slack Events API
   fastify.post("/slack", async (request, reply) => {
-    const body = request.body as any;
-    // Slack URL verification challenge
+    const secret    = process.env.SLACK_SIGNING_SECRET;
+    const rawBody   = (request as any).rawBody as Buffer | undefined;
+    const timestamp = request.headers["x-slack-request-timestamp"] as string | undefined;
+    const signature = request.headers["x-slack-signature"] as string | undefined;
+
+    const body = request.body as Record<string, unknown>;
+
+    if (!secret) {
+      fastify.log.warn("SLACK_SIGNING_SECRET not configured — rejecting all Slack webhooks");
+      return reply.status(400).send({ success: false, error: "Webhook verification not configured" });
+    }
+
+    if (!rawBody || !timestamp || !signature) {
+      return reply.status(400).send({ success: false, error: "Missing Slack signature headers" });
+    }
+
+    // Reject replays older than 5 minutes
+    if (Math.abs(Date.now() / 1000 - parseInt(timestamp, 10)) > 300) {
+      return reply.status(400).send({ success: false, error: "Webhook timestamp too old" });
+    }
+
+    const sigBase  = `v0:${timestamp}:${rawBody.toString("utf8")}`;
+    const expected = "v0=" + createHmac("sha256", secret).update(sigBase).digest("hex");
+    const expectedBuf = Buffer.from(expected);
+    const receivedBuf = Buffer.from(signature);
+
+    const valid = expectedBuf.length === receivedBuf.length &&
+      timingSafeEqual(expectedBuf, receivedBuf);
+
+    if (!valid) {
+      fastify.log.warn({ signature }, "slack.webhook.invalid_signature");
+      return reply.status(400).send({ success: false, error: "Invalid Slack signature" });
+    }
+
+    // Slack URL verification challenge (sent during app setup — runs after auth)
     if (body?.type === "url_verification") {
       return reply.send({ challenge: body.challenge });
     }
-    // TODO: verify Slack signature + publish to Redis Stream
+
+    // TODO: publish to Redis Stream for async processing
+    fastify.log.info({ type: body?.type }, "slack.webhook.received");
     return reply.send({ success: true });
   });
 

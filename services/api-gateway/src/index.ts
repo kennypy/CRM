@@ -31,9 +31,32 @@ const server = Fastify({
       : undefined,
   },
   genReqId: () => crypto.randomUUID(),
+
+  // ── DDoS / abuse defences ──────────────────────────────────────────────────
+  // Reject bodies larger than 512 KB (prevents memory exhaustion from oversized
+  // JSON payloads). Webhook route overrides this with a smaller limit.
+  bodyLimit: 512 * 1024,
+
+  // Hard timeout per request — prevents slow-read/slow-write Slowloris attacks.
+  // The AI /nl SSE stream has its own extended timeout set via the route config.
+  connectionTimeout: 10_000,
 });
 
 async function bootstrap() {
+  // ── Startup secret validation ──────────────────────────────────────────────
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    console.error("FATAL: JWT_SECRET environment variable is not set. Refusing to start.");
+    process.exit(1);
+  }
+  if (
+    process.env.NODE_ENV === "production" &&
+    (jwtSecret.includes("dev") || jwtSecret.includes("change") || jwtSecret.length < 32)
+  ) {
+    console.error("FATAL: JWT_SECRET appears to be a placeholder. Use a cryptographically random 256-bit secret.");
+    process.exit(1);
+  }
+
   // ── Security ──────────────────────────────────────────────────────────────
   await server.register(helmet, {
     contentSecurityPolicy: false, // handled by Next.js for the web app
@@ -42,16 +65,22 @@ async function bootstrap() {
   await server.register(cors, {
     origin: process.env.APP_URL ?? "http://localhost:3000",
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
 
   await server.register(rateLimit, {
     max: 200,
     timeWindow: "1 minute",
-    keyGenerator: (req) => req.headers["x-tenant-id"] as string ?? req.ip,
+    // Key on verified JWT sub (user ID) — not a client-supplied header.
+    // Falls back to IP for unauthenticated/pre-auth requests.
+    keyGenerator: (req) => {
+      const user = (req as any).user as { sub?: string } | undefined;
+      return user?.sub ?? req.ip ?? "unknown";
+    },
   });
 
   await server.register(jwt, {
-    secret: process.env.JWT_SECRET ?? "dev-secret-change-in-production",
+    secret: jwtSecret,
     sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? "15m" },
   });
 

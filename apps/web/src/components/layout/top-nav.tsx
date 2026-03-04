@@ -106,7 +106,7 @@ function NotificationPanel({
 function ProfileDropdown({ user, onClose }: { user: StoredUser; onClose: () => void }) {
   const router = useRouter();
 
-  const handleLogout = () => { clearAuth(); router.replace("/login"); onClose(); };
+  const handleLogout = async () => { await clearAuth(); router.replace("/login"); onClose(); };
 
   const roleBadge: Record<string, string> = {
     super_admin: "bg-red-100 text-red-700",   admin:     "bg-purple-100 text-purple-700",

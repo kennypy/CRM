@@ -5,15 +5,30 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { createProxy } from "../lib/proxy";
 import { pool } from "../db";
 
 const AI_ENGINE  = process.env.AI_ENGINE_URL  ?? "http://localhost:5001";
 const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
 
+// Allowed entity types — prevents unexpected query patterns
+const ENTITY_TYPES = ["person", "company", "deal", "activity"] as const;
+const ExplainParams = z.object({
+  entityType: z.enum(ENTITY_TYPES),
+  entityId:   z.string().uuid(),
+  field:      z.string().regex(/^[a-z_]{1,64}$/, "Field must be lowercase alphanumeric/underscore"),
+});
+const ReviewRejectBody = z.object({
+  reason: z.string().max(500).optional(),
+});
+
 export async function aiRoutes(server: FastifyInstance) {
-  // Streaming NL command — proxy handles SSE pipe
-  server.post("/nl", createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
+  // Streaming NL command — tightly rate-limited: 20 calls/user/minute.
+  // Each call invokes the LLM, so this is both a cost and DDoS defence.
+  server.post("/nl", {
+    config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+  }, createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
 
   // Review queue — reads from Postgres directly (fast, no extra hop)
   server.get("/review-queue", async (request, reply) => {
@@ -67,7 +82,8 @@ export async function aiRoutes(server: FastifyInstance) {
   server.post("/review-queue/:id/reject", async (request, reply) => {
     const { id } = request.params as { id: string };
     const jwt = (request as any).user as { tenantId: string; sub: string };
-    const body = request.body as { reason?: string };
+    const bodyParsed = ReviewRejectBody.safeParse(request.body);
+    const body = bodyParsed.success ? bodyParsed.data : { reason: undefined };
 
     const { rows } = await pool.query(
       `UPDATE review_queue
@@ -88,7 +104,15 @@ export async function aiRoutes(server: FastifyInstance) {
 
   // Provenance / explain endpoint — why did AI write this field?
   server.get("/explain/:entityType/:entityId/:field", async (request, reply) => {
-    const params = request.params as Record<string, string>;
+    // Validate all route params before they reach the DB
+    const parsed = ExplainParams.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
+      });
+    }
+    const { entityType, entityId, field } = parsed.data;
     const jwt = (request as any).user as { tenantId: string };
 
     // Look up in crm_events for the most recent write to this field
@@ -98,16 +122,16 @@ export async function aiRoutes(server: FastifyInstance) {
        WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
          AND payload->>'field' = $4
        ORDER BY created_at DESC LIMIT 1`,
-      [jwt.tenantId, params.entityType, params.entityId, params.field]
+      [jwt.tenantId, entityType, entityId, field]
     );
 
     const ev = rows[0];
     return reply.send({
       success: true,
       data: {
-        entityType: params.entityType,
-        entityId:   params.entityId,
-        field:      params.field,
+        entityType,
+        entityId,
+        field,
         explanation: ev?.metadata?.evidence ?? "No provenance record found",
         confidence:  ev?.metadata?.confidence ?? null,
         source:      ev?.source ?? "unknown",

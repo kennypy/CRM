@@ -29,7 +29,9 @@ function LoginForm() {
     setError(null);
 
     try {
-      const res = await api.public.post("/auth/login", {
+      // POST to the Next.js Route Handler — it sets HttpOnly cookies server-side
+      // and returns only the user profile (no tokens in the response body).
+      const res = await api.public.post("/api/auth/login", {
         tenantSlug: form.tenantSlug,
         email:      form.email,
         password:   form.password,
@@ -37,14 +39,14 @@ function LoginForm() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data?.error?.message ?? "Invalid credentials");
+        setError((data?.error?.message ?? data?.error) ?? "Invalid credentials");
         return;
       }
 
       const data = await res.json();
-      const { accessToken, refreshToken, user, tenant } = data.data ?? data;
+      const { user, tenant } = data.data ?? data;
 
-      setAuth(accessToken, refreshToken, {
+      setAuth("", "", {
         id:         user.id,
         email:      user.email,
         firstName:  user.firstName,

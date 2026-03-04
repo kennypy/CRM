@@ -22,7 +22,7 @@ import React, {
   useCallback,
 } from "react";
 import { api } from "./api";
-import { getToken } from "./auth";
+import { isAuthenticated } from "./auth";
 
 export interface TenantPreferences {
   id:              string;
@@ -66,7 +66,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const load = useCallback(async () => {
     // Do not call the API unless the user is authenticated — avoids a 401
     // redirect loop when TenantProvider is mounted on the /login page.
-    if (!getToken()) {
+    if (!isAuthenticated()) {
       setLoading(false);
       return;
     }

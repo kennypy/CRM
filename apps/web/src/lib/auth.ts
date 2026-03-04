@@ -1,7 +1,13 @@
 /**
  * Client-side auth utilities.
- * Tokens are stored in localStorage AND a cookie (cookie is read by middleware
- * for server-side redirect; localStorage is used in client fetch calls).
+ *
+ * Tokens (access + refresh) are stored exclusively in HttpOnly, SameSite=Strict
+ * cookies set by the server-side Route Handlers in /api/auth/*.
+ * They are NOT readable from JavaScript — this eliminates XSS-based token theft.
+ *
+ * Only the user profile object is kept in localStorage (non-sensitive metadata
+ * used for UI — role badges, initials, etc.).  Actual authorisation is always
+ * enforced by the backend via JWT verification.
  */
 
 export interface StoredUser {
@@ -14,29 +20,29 @@ export interface StoredUser {
   tenantName: string;
 }
 
-const TOKEN_KEY   = "nexcrm_token";
-const REFRESH_KEY = "nexcrm_refresh_token";
-const USER_KEY    = "nexcrm_user";
+const USER_KEY = "nexcrm_user";
 
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setAuth(token: string, refreshToken: string, user: StoredUser) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(REFRESH_KEY, refreshToken);
+/**
+ * Persist user profile after a successful login / register.
+ * Tokens are set as HttpOnly cookies by the server — do not handle them here.
+ */
+export function setAuth(_accessToken: string, _refreshToken: string, user: StoredUser) {
+  if (typeof window === "undefined") return;
   localStorage.setItem(USER_KEY, JSON.stringify(user));
-  // Also write cookie so Next.js middleware can read it
-  const maxAge = 15 * 60; // 15 minutes (matches JWT expiry)
-  document.cookie = `${TOKEN_KEY}=${token}; path=/; max-age=${maxAge}; SameSite=Lax`;
 }
 
-export function clearAuth() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+/**
+ * Clear user profile and instruct the server to clear the HttpOnly token cookies.
+ * Returns a promise so callers can await the logout before navigating.
+ */
+export async function clearAuth(): Promise<void> {
+  if (typeof window === "undefined") return;
   localStorage.removeItem(USER_KEY);
-  document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`;
+  try {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+  } catch {
+    // Best-effort — cookies will expire naturally
+  }
 }
 
 export function getStoredUser(): StoredUser | null {
@@ -49,6 +55,19 @@ export function getStoredUser(): StoredUser | null {
   }
 }
 
+/**
+ * Returns true when a user profile exists in localStorage.
+ * The HttpOnly access token cookie is what actually gates API calls —
+ * this is only used for UI-level "are we logged in?" checks.
+ */
 export function isAuthenticated(): boolean {
-  return !!getToken();
+  return !!getStoredUser();
+}
+
+/**
+ * @deprecated Tokens are now in HttpOnly cookies and are not readable from JS.
+ * Returns null. Kept for backwards compatibility during migration.
+ */
+export function getToken(): null {
+  return null;
 }
