@@ -8,6 +8,8 @@ import { AddContactModal }  from "@/components/modals/add-contact-modal";
 import { EditContactModal } from "@/components/modals/edit-contact-modal";
 import { EmailDrawer }      from "@/components/email/EmailDrawer";
 import { PhoneDrawer }      from "@/components/phone/PhoneDrawer";
+import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
+import type { ColDef } from "@/components/ui/column-picker";
 import {
   Users, Search, Plus, RefreshCw, AlertCircle,
   Building2, Mail, Phone, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil,
@@ -51,10 +53,21 @@ function SourcePill({ source }: { source: string }) {
   );
 }
 
+const COL_DEFS: ColDef[] = [
+  { key: "name",         label: "Name",          required: true },
+  { key: "company",      label: "Company" },
+  { key: "title",        label: "Title" },
+  { key: "lastActivity", label: "Last Activity" },
+  { key: "influence",    label: "Influence" },
+  { key: "source",       label: "Source" },
+  { key: "actions",      label: "Actions",       required: true },
+];
+
 const PAGE_SIZE = 50;
 
 export default function ContactsPage() {
   const perms = usePermissions();
+  const { visible, toggle } = useColumnPrefs("nexcrm_cols_contacts", COL_DEFS);
 
   const [contacts, setContacts]   = useState<Contact[]>([]);
   const [total, setTotal]         = useState(0);
@@ -96,6 +109,7 @@ export default function ContactsPage() {
   useEffect(() => { fetchContacts(); }, [fetchContacts]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const visibleCols = COL_DEFS.filter((d) => visible.has(d.key));
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -111,6 +125,7 @@ export default function ContactsPage() {
           )}
         </div>
         <div className="flex gap-2">
+          <ColumnPicker defs={COL_DEFS} visible={visible} toggle={toggle} />
           <button onClick={fetchContacts} disabled={loading}
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
@@ -169,8 +184,10 @@ export default function ContactsPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
-              {["Name", "Company", "Title", "Last Activity", "Influence", "Source", ""].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{h}</th>
+              {visibleCols.map((col) => (
+                <th key={col.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  {col.key === "actions" ? "" : col.label}
+                </th>
               ))}
             </tr>
           </thead>
@@ -178,80 +195,108 @@ export default function ContactsPage() {
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
-                  {Array.from({ length: 7 }).map((_, j) => (
-                    <td key={j} className="px-4 py-3"><div className="h-4 w-3/4 rounded bg-muted" /></td>
+                  {visibleCols.map((col) => (
+                    <td key={col.key} className="px-4 py-3"><div className="h-4 w-3/4 rounded bg-muted" /></td>
                   ))}
                 </tr>
               ))
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={visibleCols.length} className="px-4 py-12 text-center text-muted-foreground">
                   {debouncedSearch ? "No contacts match your search" : "No contacts yet"}
                 </td>
               </tr>
             ) : (
               contacts.map((contact) => (
                 <tr key={contact.id} className="transition-colors hover:bg-muted/40">
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-foreground">{contact.firstName} {contact.lastName}</p>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Mail className="h-3 w-3" />
-                      <a href={`mailto:${contact.email}`} className="hover:text-primary hover:underline">
-                        {contact.email}
-                      </a>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {contact.company ? (
-                      <div className="flex items-center gap-1.5">
-                        <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-foreground">{contact.company.name}</span>
-                      </div>
-                    ) : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{contact.title ?? "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {contact.lastActivityAt ? formatRelativeTime(contact.lastActivityAt) : "Never"}
-                  </td>
-                  <td className="px-4 py-3"><InfluenceBadge score={contact.influenceScore} /></td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <SourcePill source={contact.source} />
-                      {contact.linkedinUrl && (
-                        <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer"
-                          className="text-muted-foreground hover:text-primary">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
+                  {/* Name — always visible */}
+                  {visible.has("name") && (
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-foreground">{contact.firstName} {contact.lastName}</p>
+                      {/* Email — clickable → EmailDrawer */}
                       <button
                         onClick={() => setEmailContact(contact)}
-                        className="rounded p-1 text-muted-foreground hover:bg-blue-50 hover:text-blue-600"
-                        title="Email"
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-blue-600 transition-colors"
                       >
-                        <Mail className="h-3.5 w-3.5" />
+                        <Mail className="h-3 w-3" />
+                        {contact.email}
                       </button>
+                      {/* Phone — clickable → PhoneDrawer */}
                       {contact.phone && (
                         <button
                           onClick={() => setPhoneContact(contact)}
-                          className="rounded p-1 text-muted-foreground hover:bg-green-50 hover:text-green-600"
-                          title="Call"
+                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-green-600 transition-colors"
                         >
-                          <Phone className="h-3.5 w-3.5" />
+                          <Phone className="h-3 w-3" />
+                          {contact.phone}
                         </button>
                       )}
-                      {perms.canWrite && (
-                        <button onClick={() => setEditing(contact)}
-                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                          title="Edit">
-                          <Pencil className="h-3.5 w-3.5" />
+                    </td>
+                  )}
+                  {visible.has("company") && (
+                    <td className="px-4 py-3">
+                      {contact.company ? (
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-foreground">{contact.company.name}</span>
+                        </div>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  )}
+                  {visible.has("title") && (
+                    <td className="px-4 py-3 text-muted-foreground">{contact.title ?? "—"}</td>
+                  )}
+                  {visible.has("lastActivity") && (
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {contact.lastActivityAt ? formatRelativeTime(contact.lastActivityAt) : "Never"}
+                    </td>
+                  )}
+                  {visible.has("influence") && (
+                    <td className="px-4 py-3"><InfluenceBadge score={contact.influenceScore} /></td>
+                  )}
+                  {visible.has("source") && (
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <SourcePill source={contact.source} />
+                        {contact.linkedinUrl && (
+                          <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer"
+                            className="text-muted-foreground hover:text-primary">
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                  {/* Actions — always visible */}
+                  {visible.has("actions") && (
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEmailContact(contact)}
+                          className="rounded p-1 text-muted-foreground hover:bg-blue-50 hover:text-blue-600"
+                          title="Email"
+                        >
+                          <Mail className="h-3.5 w-3.5" />
                         </button>
-                      )}
-                    </div>
-                  </td>
+                        {contact.phone && (
+                          <button
+                            onClick={() => setPhoneContact(contact)}
+                            className="rounded p-1 text-muted-foreground hover:bg-green-50 hover:text-green-600"
+                            title="Call"
+                          >
+                            <Phone className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {perms.canWrite && (
+                          <button onClick={() => setEditing(contact)}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            title="Edit">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))
             )}

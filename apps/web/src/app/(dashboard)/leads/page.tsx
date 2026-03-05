@@ -3,11 +3,23 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
+import type { ColDef } from "@/components/ui/column-picker";
 import {
   TrendingUp, Search, RefreshCw, AlertCircle, Plus,
   ChevronLeft, ChevronRight, Flame, Minus, Snowflake,
   ArrowRight, Building2, Mail, X, User, CheckCircle2,
 } from "lucide-react";
+
+const COL_DEFS: ColDef[] = [
+  { key: "name",         label: "Lead",          required: true },
+  { key: "company",      label: "Company" },
+  { key: "score",        label: "Score" },
+  { key: "tier",         label: "Tier" },
+  { key: "source",       label: "Source" },
+  { key: "lastActivity", label: "Last Activity" },
+  { key: "actions",      label: "Actions",       required: true },
+];
 
 interface Lead {
   id: string;
@@ -233,6 +245,7 @@ function ConvertLeadModal({ lead, onClose, onConverted }: {
 const PAGE_SIZE = 50;
 
 export default function LeadsPage() {
+  const { visible, toggle } = useColumnPrefs("nexcrm_cols_leads", COL_DEFS);
   const [leads, setLeads]           = useState<Lead[]>([]);
   const [total, setTotal]           = useState(0);
   const [page, setPage]             = useState(1);
@@ -301,6 +314,7 @@ export default function LeadsPage() {
           {!loading && <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{total.toLocaleString()}</span>}
         </div>
         <div className="flex gap-2">
+          <ColumnPicker defs={COL_DEFS} visible={visible} toggle={toggle} />
           <button onClick={fetchLeads} disabled={loading} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
@@ -361,8 +375,10 @@ export default function LeadsPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
-              {["Lead", "Company", "Score", "Tier", "Source", "Last Activity", ""].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{h}</th>
+              {COL_DEFS.filter((d) => visible.has(d.key)).map((col) => (
+                <th key={col.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  {col.key === "actions" ? "" : col.label}
+                </th>
               ))}
             </tr>
           </thead>
@@ -370,47 +386,61 @@ export default function LeadsPage() {
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
-                  {Array.from({ length: 7 }).map((_, j) => (
-                    <td key={j} className="px-4 py-3"><div className="h-4 w-3/4 rounded bg-muted" /></td>
+                  {COL_DEFS.filter((d) => visible.has(d.key)).map((col) => (
+                    <td key={col.key} className="px-4 py-3"><div className="h-4 w-3/4 rounded bg-muted" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={COL_DEFS.filter((d) => visible.has(d.key)).length} className="px-4 py-12 text-center text-muted-foreground">
                   {debounced ? "No leads match your search" : "No leads yet — connect an inbox to auto-capture"}
                 </td>
               </tr>
             ) : (
               filtered.map((lead) => (
                 <tr key={lead.id} className="hover:bg-muted/40 transition-colors">
-                  <td className="px-4 py-3">
-                    <p className="font-medium">{lead.firstName} {lead.lastName}</p>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Mail className="h-3 w-3" />{lead.email}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {lead.company ? (
-                      <div className="flex items-center gap-1.5 text-muted-foreground">
-                        <Building2 className="h-3.5 w-3.5" />{lead.company.name}
+                  {visible.has("name") && (
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{lead.firstName} {lead.lastName}</p>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Mail className="h-3 w-3" />{lead.email}
                       </div>
-                    ) : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-4 py-3"><ScoreBar score={lead.score} /></td>
-                  <td className="px-4 py-3"><TierBadge tier={lead.tier} /></td>
-                  <td className="px-4 py-3 capitalize text-muted-foreground">{lead.source}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {lead.lastActivityAt ? formatRelativeTime(lead.lastActivityAt) : "Never"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => setConverting(lead)}
-                      className="flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      Convert <ArrowRight className="h-3 w-3" />
-                    </button>
-                  </td>
+                    </td>
+                  )}
+                  {visible.has("company") && (
+                    <td className="px-4 py-3">
+                      {lead.company ? (
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <Building2 className="h-3.5 w-3.5" />{lead.company.name}
+                        </div>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  )}
+                  {visible.has("score") && (
+                    <td className="px-4 py-3"><ScoreBar score={lead.score} /></td>
+                  )}
+                  {visible.has("tier") && (
+                    <td className="px-4 py-3"><TierBadge tier={lead.tier} /></td>
+                  )}
+                  {visible.has("source") && (
+                    <td className="px-4 py-3 capitalize text-muted-foreground">{lead.source}</td>
+                  )}
+                  {visible.has("lastActivity") && (
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {lead.lastActivityAt ? formatRelativeTime(lead.lastActivityAt) : "Never"}
+                    </td>
+                  )}
+                  {visible.has("actions") && (
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setConverting(lead)}
+                        className="flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        Convert <ArrowRight className="h-3 w-3" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))
             )}

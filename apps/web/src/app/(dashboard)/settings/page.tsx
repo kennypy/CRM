@@ -9,7 +9,7 @@ import { useTenant } from "@/lib/tenant-context";
 import {
   Settings, Users, Plug, CreditCard, Shield, User,
   Plus, Trash2, Mail, CheckCircle2, AlertCircle,
-  Globe, Lock, Key, Monitor, LogOut, Building2,
+  Globe, Lock, Key, Monitor, LogOut, Building2, Phone,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 
@@ -54,7 +54,7 @@ const SUPPORTED_TIMEZONES  = [
   "Asia/Tokyo", "Australia/Sydney",
 ];
 
-type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "security";
+type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "security" | "communications";
 
 // ── Tab: Profile ───────────────────────────────────────────────────────────────
 
@@ -460,6 +460,195 @@ function SecurityTab() {
   );
 }
 
+// ── Tab: Communications ────────────────────────────────────────────────────────
+
+const STORAGE_KEY_COMMS = "nexcrm_comms_config";
+
+function loadCommsConfig() {
+  try {
+    const stored = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_COMMS) : null;
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  return null;
+}
+
+function CommunicationsTab() {
+  const [emailCfg, setEmailCfg] = useState({
+    provider: "smtp",
+    host: "",
+    port: "587",
+    username: "",
+    password: "",
+    fromName: "",
+    fromEmail: "",
+    tls: true,
+  });
+
+  const [diallerCfg, setDiallerCfg] = useState({
+    provider: "twilio",
+    twilioSid: "",
+    twilioToken: "",
+    twilioFrom: "",
+    voipUrl: "",
+  });
+
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const cfg = loadCommsConfig();
+    if (cfg?.email) setEmailCfg((prev) => ({ ...prev, ...cfg.email }));
+    if (cfg?.dialler) setDiallerCfg((prev) => ({ ...prev, ...cfg.dialler }));
+  }, []);
+
+  const setEmail = (k: keyof typeof emailCfg) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setEmailCfg((prev) => ({ ...prev, [k]: e.target.value }));
+
+  const setDialler = (k: keyof typeof diallerCfg) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setDiallerCfg((prev) => ({ ...prev, [k]: e.target.value }));
+
+  const save = () => {
+    try {
+      localStorage.setItem(STORAGE_KEY_COMMS, JSON.stringify({ email: emailCfg, dialler: diallerCfg }));
+    } catch {}
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+  const labelCls = "mb-1.5 block text-sm font-medium";
+
+  return (
+    <div className="space-y-8 max-w-lg">
+      {/* Email config */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Mail className="h-4 w-4 text-primary" />
+          <h3 className="text-base font-semibold">Email Configuration</h3>
+        </div>
+        <div className="rounded-xl border bg-card p-5 space-y-4">
+          <div>
+            <label className={labelCls}>Provider</label>
+            <select value={emailCfg.provider} onChange={setEmail("provider")} className={inputCls}>
+              <option value="smtp">SMTP (custom)</option>
+              <option value="gmail">Gmail / Google Workspace</option>
+              <option value="outlook">Outlook / Microsoft 365</option>
+              <option value="sendgrid">SendGrid</option>
+            </select>
+          </div>
+          {emailCfg.provider === "smtp" && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className={labelCls}>SMTP host</label>
+                  <input value={emailCfg.host} onChange={setEmail("host")} placeholder="smtp.example.com" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Port</label>
+                  <input value={emailCfg.port} onChange={setEmail("port")} placeholder="587" className={inputCls} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Username</label>
+                  <input value={emailCfg.username} onChange={setEmail("username")} placeholder="user@example.com" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Password</label>
+                  <input type="password" value={emailCfg.password} onChange={setEmail("password")} placeholder="••••••••" className={inputCls} />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <input id="tls" type="checkbox" checked={emailCfg.tls}
+                  onChange={(e) => setEmailCfg((prev) => ({ ...prev, tls: e.target.checked }))}
+                  className="h-4 w-4 rounded border-border accent-primary" />
+                <label htmlFor="tls" className="text-sm">Use TLS / STARTTLS</label>
+              </div>
+            </>
+          )}
+          {(emailCfg.provider === "gmail" || emailCfg.provider === "outlook") && (
+            <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-700">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <p>Connect via OAuth in the <strong>Integrations</strong> tab — no credentials needed here.</p>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>From name</label>
+              <input value={emailCfg.fromName} onChange={setEmail("fromName")} placeholder="ACME Sales" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>From email</label>
+              <input type="email" value={emailCfg.fromEmail} onChange={setEmail("fromEmail")} placeholder="sales@acme.com" className={inputCls} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Dialler config */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Phone className="h-4 w-4 text-primary" />
+          <h3 className="text-base font-semibold">Dialler Configuration</h3>
+        </div>
+        <div className="rounded-xl border bg-card p-5 space-y-4">
+          <div>
+            <label className={labelCls}>Dialler provider</label>
+            <select value={diallerCfg.provider} onChange={setDialler("provider")} className={inputCls}>
+              <option value="twilio">Twilio (built-in)</option>
+              <option value="voip">Custom VOIP / SIP URL</option>
+              <option value="native">Browser native (tel: links)</option>
+            </select>
+          </div>
+
+          {diallerCfg.provider === "twilio" && (
+            <>
+              <div>
+                <label className={labelCls}>Account SID</label>
+                <input value={diallerCfg.twilioSid} onChange={setDialler("twilioSid")} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Auth token</label>
+                <input type="password" value={diallerCfg.twilioToken} onChange={setDialler("twilioToken")} placeholder="••••••••••••••••••••••••••••••••" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>From number</label>
+                <input value={diallerCfg.twilioFrom} onChange={setDialler("twilioFrom")} placeholder="+15551234567" className={inputCls} />
+                <p className="mt-1 text-xs text-muted-foreground">Must be a Twilio-verified number in E.164 format.</p>
+              </div>
+            </>
+          )}
+
+          {diallerCfg.provider === "voip" && (
+            <div>
+              <label className={labelCls}>VOIP / embedded dialler URL</label>
+              <input value={diallerCfg.voipUrl} onChange={setDialler("voipUrl")} placeholder="https://dialler.yourpbx.com/embed" className={inputCls} />
+              <p className="mt-1 text-xs text-muted-foreground">The URL will be loaded in an iframe when you open the phone panel.</p>
+            </div>
+          )}
+
+          {diallerCfg.provider === "native" && (
+            <div className="flex items-center gap-2 rounded-lg border border-muted bg-muted/30 p-3 text-xs text-muted-foreground">
+              Phone numbers will open as <code className="font-mono">tel:</code> links using your system&apos;s default app. No configuration needed.
+            </div>
+          )}
+        </div>
+      </section>
+
+      <div className="flex items-center gap-3">
+        <button onClick={save}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
+          Save changes
+        </button>
+        {saved && (
+          <span className="flex items-center gap-1 text-sm text-green-600">
+            <CheckCircle2 className="h-4 w-4" /> Saved!
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }>; adminOnly?: boolean }[] = [
@@ -467,8 +656,9 @@ const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }>; ad
   { id: "security",     label: "Security",     icon: Shield   },
   { id: "general",      label: "Company",      icon: Building2, adminOnly: true },
   { id: "users",        label: "Users",        icon: Users,     adminOnly: true },
-  { id: "integrations", label: "Integrations", icon: Plug,      adminOnly: true },
-  { id: "billing",      label: "Billing",      icon: CreditCard, adminOnly: true },
+  { id: "integrations",   label: "Integrations",   icon: Plug,      adminOnly: true },
+  { id: "communications", label: "Communications", icon: Phone,     adminOnly: true },
+  { id: "billing",        label: "Billing",        icon: CreditCard, adminOnly: true },
 ];
 
 const VALID_TABS = new Set(TABS.map((t) => t.id));
@@ -524,8 +714,9 @@ function SettingsInner() {
         {tab === "security"     && <SecurityTab />}
         {tab === "general"      && <GeneralTab user={user} />}
         {tab === "users"        && <UsersTab />}
-        {tab === "integrations" && <IntegrationsTab />}
-        {tab === "billing"      && <BillingTab />}
+        {tab === "integrations"   && <IntegrationsTab />}
+        {tab === "communications" && <CommunicationsTab />}
+        {tab === "billing"        && <BillingTab />}
       </div>
     </div>
   );

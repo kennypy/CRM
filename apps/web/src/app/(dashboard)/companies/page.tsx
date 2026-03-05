@@ -7,10 +7,24 @@ import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { AddCompanyModal } from "@/components/modals/add-company-modal";
 import { EditCompanyModal } from "@/components/modals/edit-company-modal";
+import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
+import type { ColDef } from "@/components/ui/column-picker";
 import {
   Building2, Search, Plus, RefreshCw, AlertCircle,
   Globe, ChevronLeft, ChevronRight, Briefcase, Zap, Pencil,
 } from "lucide-react";
+
+const COL_DEFS: ColDef[] = [
+  { key: "name",         label: "Company",       required: true },
+  { key: "domain",       label: "Domain" },
+  { key: "industry",     label: "Industry" },
+  { key: "employees",    label: "Employees" },
+  { key: "tier",         label: "Tier" },
+  { key: "openDeals",    label: "Open Deals" },
+  { key: "lastActivity", label: "Last Activity" },
+  { key: "source",       label: "Source" },
+  { key: "actions",      label: "Actions",       required: true },
+];
 
 interface Company {
   id: string;
@@ -58,6 +72,7 @@ const PAGE_SIZE = 50;
 export default function CompaniesPage() {
   const router = useRouter();
   const perms  = usePermissions();
+  const { visible, toggle } = useColumnPrefs("nexcrm_cols_companies", COL_DEFS);
 
   const [companies, setCompanies]   = useState<Company[]>([]);
   const [total, setTotal]           = useState(0);
@@ -118,6 +133,7 @@ export default function CompaniesPage() {
           )}
         </div>
         <div className="flex gap-2">
+          <ColumnPicker defs={COL_DEFS} visible={visible} toggle={toggle} />
           <button onClick={fetchCompanies} disabled={loading}
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
@@ -159,8 +175,10 @@ export default function CompaniesPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
-              {["Company", "Domain", "Industry", "Employees", "Tier", "Open Deals", "Last Activity", "Source", ""].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{h}</th>
+              {COL_DEFS.filter((d) => visible.has(d.key)).map((col) => (
+                <th key={col.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  {col.key === "actions" ? "" : col.label}
+                </th>
               ))}
             </tr>
           </thead>
@@ -168,14 +186,14 @@ export default function CompaniesPage() {
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
-                  {Array.from({ length: 9 }).map((_, j) => (
-                    <td key={j} className="px-4 py-3"><div className="h-4 w-3/4 rounded bg-muted" /></td>
+                  {COL_DEFS.filter((d) => visible.has(d.key)).map((col) => (
+                    <td key={col.key} className="px-4 py-3"><div className="h-4 w-3/4 rounded bg-muted" /></td>
                   ))}
                 </tr>
               ))
             ) : companies.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={COL_DEFS.filter((d) => visible.has(d.key)).length} className="px-4 py-12 text-center text-muted-foreground">
                   {debouncedSearch ? "No companies match your search" : "No companies yet"}
                 </td>
               </tr>
@@ -186,47 +204,65 @@ export default function CompaniesPage() {
                   onClick={() => router.push(`/companies/${co.id}`)}
                   className="cursor-pointer transition-colors hover:bg-muted/40"
                 >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted font-semibold text-xs uppercase text-muted-foreground">
-                        {co.name.charAt(0)}
+                  {visible.has("name") && (
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted font-semibold text-xs uppercase text-muted-foreground">
+                          {co.name.charAt(0)}
+                        </div>
+                        <span className="font-medium text-foreground">{co.name}</span>
                       </div>
-                      <span className="font-medium text-foreground">{co.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {co.domain ? (
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <Globe className="h-3 w-3" />
-                        <span>{co.domain}</span>
-                      </div>
-                    ) : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground capitalize">{co.industry ?? "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground tabular-nums">{formatEmployees(co.headcount ?? co.employeeCount)}</td>
-                  <td className="px-4 py-3"><PlanBadge plan={co.tier} /></td>
-                  <td className="px-4 py-3">
-                    {co.openDeals != null && co.openDeals > 0 ? (
-                      <span className="flex items-center gap-1 text-foreground">
-                        <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />{co.openDeals}
-                      </span>
-                    ) : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {co.lastActivityAt ? formatRelativeTime(co.lastActivityAt) : "Never"}
-                  </td>
-                  <td className="px-4 py-3"><SourcePill source={co.source} /></td>
-                  <td className="px-4 py-3">
-                    {perms.canWrite && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setEditing(co); }}
-                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        title="Edit"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </td>
+                    </td>
+                  )}
+                  {visible.has("domain") && (
+                    <td className="px-4 py-3">
+                      {co.domain ? (
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <Globe className="h-3 w-3" />
+                          <span>{co.domain}</span>
+                        </div>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  )}
+                  {visible.has("industry") && (
+                    <td className="px-4 py-3 text-muted-foreground capitalize">{co.industry ?? "—"}</td>
+                  )}
+                  {visible.has("employees") && (
+                    <td className="px-4 py-3 text-muted-foreground tabular-nums">{formatEmployees(co.headcount ?? co.employeeCount)}</td>
+                  )}
+                  {visible.has("tier") && (
+                    <td className="px-4 py-3"><PlanBadge plan={co.tier} /></td>
+                  )}
+                  {visible.has("openDeals") && (
+                    <td className="px-4 py-3">
+                      {co.openDeals != null && co.openDeals > 0 ? (
+                        <span className="flex items-center gap-1 text-foreground">
+                          <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />{co.openDeals}
+                        </span>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  )}
+                  {visible.has("lastActivity") && (
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {co.lastActivityAt ? formatRelativeTime(co.lastActivityAt) : "Never"}
+                    </td>
+                  )}
+                  {visible.has("source") && (
+                    <td className="px-4 py-3"><SourcePill source={co.source} /></td>
+                  )}
+                  {visible.has("actions") && (
+                    <td className="px-4 py-3">
+                      {perms.canWrite && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditing(co); }}
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))
             )}
