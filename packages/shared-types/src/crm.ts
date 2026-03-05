@@ -10,10 +10,14 @@ export interface Contact {
   fullName: string;
   email: string;
   title?: string;
+  phone?: string;
   seniority?: string;
+  isLead?: boolean;
+  source?: string;
   company?: { id: string; name: string; domain: string };
   influenceScore?: number;
   lastActivityAt?: string;
+  dealMemberships?: unknown[];
   createdAt: string;
   updatedAt: string;
 }
@@ -50,7 +54,8 @@ export interface Deal {
   realityScore?: number;
   realityExplanation?: string;
   riskFlags?: string[];
-  owner: { id: string; name: string };
+  ownerId?: string;
+  owner?: { id: string; name: string };
   company?: { id: string; name: string };
   buyingGroupSize?: number;
   lastActivityAt?: string;
@@ -63,6 +68,7 @@ export interface Activity {
   id: string;
   tenantId: string;
   type: "email" | "call" | "meeting" | "note" | "document";
+  direction?: "inbound" | "outbound" | "internal" | null;
   subject?: string;
   summary?: string;
   sentiment?: number;

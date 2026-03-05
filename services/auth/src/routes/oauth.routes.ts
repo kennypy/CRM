@@ -205,7 +205,7 @@ export async function oauthRoutes(server: FastifyInstance) {
          avatar_url = COALESCE(EXCLUDED.avatar_url, users.avatar_url),
          updated_at = NOW()
        RETURNING *`,
-      [tenantId, userInfo.email, userInfo.given_name, userInfo.family_name, userInfo.picture ?? null]
+      [tenantId, userInfo.email.toLowerCase(), userInfo.given_name, userInfo.family_name, userInfo.picture ?? null]
     );
 
     // Store OAuth tokens for ingestion service — encrypt before persisting.

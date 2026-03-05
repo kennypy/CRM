@@ -18,6 +18,7 @@ import { graphRoutes } from "./routes/graph";
 import { webhookRoutes } from "./routes/webhooks";
 import { integrationsRoutes } from "./routes/integrations";
 import { tenantRoutes } from "./routes/tenant";
+import { tasksRoutes } from "./routes/tasks";
 import { errorHandler } from "./middleware/error-handler";
 import { authMiddleware } from "./middleware/auth";
 import { typeDefs } from "./graphql/schema";
@@ -106,6 +107,7 @@ async function bootstrap() {
   await server.register(graphRoutes, { prefix: "/api/v1/graph" });
   await server.register(integrationsRoutes, { prefix: "/api/v1/integrations" });
   await server.register(tenantRoutes,       { prefix: "/api/v1/tenant" });
+  await server.register(tasksRoutes,        { prefix: "/api/v1/tasks" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
@@ -125,7 +127,7 @@ async function bootstrap() {
       return {
         tenantId: user?.tenantId ?? "",
         userId:   user?.sub      ?? "",
-        role:     user?.role     ?? "rep",
+        role:     user?.role     ?? "read_only",
       };
     },
   });

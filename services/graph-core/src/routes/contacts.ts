@@ -23,12 +23,15 @@ const CreateContactSchema = z.object({
   phone:     z.string().max(30).optional(),
   seniority: z.enum(SeniorityValues).optional(),
   companyId: z.string().uuid().optional(),
+  isLead:    z.boolean().optional(),
+  source:    z.string().max(50).optional(),
 });
 
 const GetContactsQuery = z.object({
   tenantId:  z.string().min(1),
   search:    z.string().optional(),
   companyId: z.string().uuid().optional(),
+  isLead:    z.enum(["true", "false"]).optional(),
   limit:     z.coerce.number().int().min(1).max(100).default(20),
 });
 
@@ -60,7 +63,7 @@ export async function contactsRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
       });
     }
-    const { tenantId, search, companyId, limit } = parsed.data;
+    const { tenantId, search, companyId, isLead, limit } = parsed.data;
     const params: Record<string, unknown> = { tenantId };
 
     let cyph = `MATCH (p:Person {tenant_id: $tenantId})\n`;
@@ -71,6 +74,8 @@ export async function contactsRoutes(server: FastifyInstance) {
     }
 
     const where: string[] = [];
+    if (isLead === "true")  where.push("p.is_lead = true");
+    if (isLead === "false") where.push("(p.is_lead IS NULL OR p.is_lead = false)");
     if (search) {
       where.push(
         "(p.first_name CONTAINS $search OR p.last_name CONTAINS $search OR p.email CONTAINS $search)"
@@ -117,7 +122,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     }
     const tenantId = tq.data.tenantId;
 
-    const { firstName, lastName, email, title, phone, seniority, companyId } = body.data;
+    const { firstName, lastName, email, title, phone, seniority, companyId, isLead, source } = body.data;
     const id  = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -147,7 +152,8 @@ export async function contactsRoutes(server: FastifyInstance) {
         title:      $title,
         phone:      $phone,
         seniority:  $seniority,
-        source:     'user',
+        is_lead:    $isLead,
+        source:     $source,
         created_at: $now,
         updated_at: $now
       }) RETURN {id: p.id}`,
@@ -156,6 +162,8 @@ export async function contactsRoutes(server: FastifyInstance) {
         title:     title     ?? "",
         phone:     phone     ?? "",
         seniority: seniority ?? "",
+        isLead:    isLead    ?? false,
+        source:    source    ?? "user",
         now,
       }
     );
@@ -268,6 +276,8 @@ export async function contactsRoutes(server: FastifyInstance) {
     if (fields.title)     { setParts.push("p.title      = $title");     params.title     = fields.title; }
     if (fields.phone)     { setParts.push("p.phone      = $phone");     params.phone     = fields.phone; }
     if (fields.seniority) { setParts.push("p.seniority  = $seniority"); params.seniority = fields.seniority; }
+    if (fields.isLead !== undefined) { setParts.push("p.is_lead = $isLead"); params.isLead = fields.isLead; }
+    if (fields.source) { setParts.push("p.source = $source"); params.source = fields.source; }
 
     await cypher(
       `MATCH (p:Person {id: $id, tenant_id: $tenantId})
@@ -306,6 +316,28 @@ export async function contactsRoutes(server: FastifyInstance) {
     await emitEvent(tenantId, "contact.deleted", "person", id, "user", {});
     return reply.status(204).send();
   });
+
+  /**
+   * GET /contacts/:id/network — ego network for a contact
+   */
+  server.get("/:id/network", async (request, reply) => {
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
+    }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
+
+    const rows = await cypher(
+      `MATCH path = (center {id: $nodeId, tenant_id: $tenantId})-[*1..2]-(neighbor {tenant_id: $tenantId})
+       RETURN DISTINCT {id: neighbor.id, label: labels(neighbor)[0]}
+       LIMIT 200`,
+      { nodeId: id, tenantId }
+    );
+
+    return reply.send({ success: true, data: rows });
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -322,6 +354,7 @@ function toContactResponse(row: Record<string, unknown>) {
     title:           row.title          || undefined,
     phone:           row.phone          || undefined,
     seniority:       row.seniority      || undefined,
+    isLead:          row.is_lead === true,
     source:          (row.source as string) || "user",
     influenceScore:  row.influence_score,
     lastActivityAt:  row.last_activity_at,

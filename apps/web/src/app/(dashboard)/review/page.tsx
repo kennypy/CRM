@@ -173,8 +173,8 @@ export default function ReviewQueuePage() {
       prev.map((item) => item.id === id ? { ...item, status: decision, _decideError: false } : item)
     );
     try {
-      // Backend expects { status } not { decision }
-      const res = await api.patch(`/api/v1/ai/review-queue/${id}`, { status: decision });
+      const endpoint = decision === "approved" ? "approve" : "reject";
+      const res = await api.post(`/api/v1/ai/review-queue/${id}/${endpoint}`, {});
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
       // Revert and surface inline error on the card

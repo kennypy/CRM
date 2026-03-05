@@ -240,7 +240,10 @@ export async function computeRealityScore(
      RETURN {industry: c.industry, headcount: c.headcount} LIMIT 1`,
     { dealId, tenantId }
   );
-  const company = compRows[0] ?? null;
+  const compRaw = compRows[0] ?? null;
+  const company = compRaw
+    ? { industry: compRaw.industry ?? undefined, headcount: compRaw.headcount ?? undefined }
+    : null;
 
   // 3. Stakeholders
   const stkhRows = await cypher<{ role: string; sentiment: number }>(

@@ -11,6 +11,7 @@ import { companiesRoutes } from "./routes/companies";
 import { dealsRoutes } from "./routes/deals";
 import { graphRoutes } from "./routes/graph";
 import { activitiesRoutes } from "./routes/activities";
+import { tasksRoutes } from "./routes/tasks";
 
 const server = Fastify({
   logger: {
@@ -56,11 +57,11 @@ async function bootstrap() {
   });
 
   // Sanitize error messages in production to avoid leaking internal details
-  server.setErrorHandler((err, request, reply) => {
+  server.setErrorHandler((err: unknown, request, reply) => {
     request.log.error({ err, url: request.url }, "unhandled_error");
     const message = process.env.NODE_ENV === "production"
       ? "Internal server error"
-      : (err.message ?? "Internal server error");
+      : (err instanceof Error ? err.message : String(err));
     return reply.status(500).send({
       success: false,
       error: { code: "INTERNAL_ERROR", message },
@@ -79,6 +80,7 @@ async function bootstrap() {
   await server.register(dealsRoutes,      { prefix: "/deals" });
   await server.register(graphRoutes,      { prefix: "/graph" });
   await server.register(activitiesRoutes, { prefix: "/activities" });
+  await server.register(tasksRoutes,      { prefix: "/tasks" });
 
   const port = parseInt(process.env.GRAPH_CORE_PORT ?? "4002", 10);
   const host = process.env.HOST ?? "0.0.0.0";

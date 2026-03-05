@@ -315,7 +315,7 @@ export async function companiesRoutes(server: FastifyInstance) {
     );
 
     const dealRows = await cypher(
-      `MATCH (d:Deal {tenant_id: $tenantId})-[:INVOLVED_IN]->(c:Company {id: $id})
+      `MATCH (c:Company {id: $id, tenant_id: $tenantId})<-[:INVOLVED_IN]-(d:Deal {tenant_id: $tenantId})
        RETURN {
          id: d.id, name: d.name, value: d.value, currency: d.currency,
          stage: d.stage, probability: d.probability, close_date: d.close_date,

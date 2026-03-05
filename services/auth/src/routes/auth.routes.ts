@@ -4,7 +4,6 @@ import {
   findUserByEmail,
   findUserById,
   findTenantBySlug,
-  findTenantById,
   verifyPassword,
   createTenantWithAdmin,
   touchLastLogin,
@@ -197,7 +196,6 @@ export async function authRoutes(server: FastifyInstance) {
       });
     }
 
-    const tenant = await findTenantById(user.tenant_id);
     const scopes = scopesForRole(user.role);
     const accessToken = await server.jwt.sign(
       buildJWTPayload({ id: user.id, tenantId: user.tenant_id, email: user.email, role: user.role, scopes })

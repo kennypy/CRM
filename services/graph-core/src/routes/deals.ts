@@ -295,6 +295,36 @@ export async function dealsRoutes(server: FastifyInstance) {
     return reply.status(204).send();
   });
 
+  /**
+   * GET /deals/:id/timeline — activities related to this deal
+   */
+  server.get("/:id/timeline", async (request, reply) => {
+    const paramParsed = IdParam.safeParse(request.params);
+    const queryParsed = TenantQuery.safeParse(request.query);
+    if (!paramParsed.success || !queryParsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
+    }
+    const { id } = paramParsed.data;
+    const { tenantId } = queryParsed.data;
+
+    const rows = await cypher(
+      `MATCH (a:Activity)-[:RELATED_TO]->(d:Deal {id: $dealId, tenant_id: $tenantId})
+       OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(a)
+       WITH a, collect(DISTINCT {id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email}) AS parts
+       RETURN {
+         id: a.id, type: a.type, direction: a.direction, subject: a.subject,
+         summary: a.summary, sentiment: a.sentiment,
+         occurred_at: a.occurred_at, source: a.source,
+         participants: parts
+       }
+       ORDER BY a.occurred_at DESC
+       LIMIT 50`,
+      { dealId: id, tenantId }
+    );
+
+    return reply.send({ success: true, data: rows });
+  });
+
   // ── Reality Score: deterministic computation from graph signals ─────────────
   server.get("/:id/reality-score", async (request, reply) => {
     const paramParsed = IdParam.safeParse(request.params);

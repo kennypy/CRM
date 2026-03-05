@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createProxy } from "../lib/proxy";
 import { pool } from "../db";
+import { requireRep } from "../middleware/rbac";
 
 const AI_ENGINE  = process.env.AI_ENGINE_URL  ?? "http://localhost:5001";
 const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
@@ -56,7 +57,7 @@ export async function aiRoutes(server: FastifyInstance) {
   });
 
   // Approve a review item — apply the proposed changes to the graph
-  server.post("/review-queue/:id/approve", async (request, reply) => {
+  server.post("/review-queue/:id/approve", { preHandler: [requireRep] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const jwt = (request as any).user as { tenantId: string; sub: string };
 
@@ -79,7 +80,7 @@ export async function aiRoutes(server: FastifyInstance) {
   });
 
   // Reject a review item — feedback loop for extraction quality
-  server.post("/review-queue/:id/reject", async (request, reply) => {
+  server.post("/review-queue/:id/reject", { preHandler: [requireRep] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const jwt = (request as any).user as { tenantId: string; sub: string };
     const bodyParsed = ReviewRejectBody.safeParse(request.body);

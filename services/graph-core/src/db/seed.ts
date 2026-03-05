@@ -259,12 +259,12 @@ async function main() {
       await upsertEdge("Person", IDS.david, "KNOWS", "Person", IDS.sarah,  { strength: 0.5, source: "conference" });
 
       // ── Activity nodes + RELATED_TO edges — Acme ──────────────────────────
-      const acmeActivities: [string, string, number, number][] = [
-        [IDS.actA1, "meeting", 0.4,  3],   // meeting  3d  inbound cadence
-        [IDS.actA2, "meeting", 0.3, 10],   // meeting 10d
-        [IDS.actA3, "call",    0.2, 14],   // call    14d
-        [IDS.actA4, "email",   0.3,  4],   // email   4d  (inbound: positive sentiment)
-        [IDS.actA5, "email",  -0.1,  5],   // email   5d  (outbound: slightly negative)
+      const acmeActivities: [string, string, number, number, string | null][] = [
+        [IDS.actA1, "meeting", 0.4,  3,  null],       // meeting  3d
+        [IDS.actA2, "meeting", 0.3, 10,  null],       // meeting 10d
+        [IDS.actA3, "call",    0.2, 14,  null],       // call    14d
+        [IDS.actA4, "email",   0.3,  4,  "inbound"],  // email   4d  inbound
+        [IDS.actA5, "email",  -0.1,  5,  "outbound"], // email   5d  outbound
       ];
       const subjects: Record<string, string> = {
         [IDS.actA1]: "Contract review call",
@@ -280,36 +280,36 @@ async function main() {
         [IDS.actG1]: "Introduction and overview",
         [IDS.actG2]: "Initial qualification call",
       };
-      for (const [id, type, sentiment, days] of acmeActivities) {
+      for (const [id, type, sentiment, days, direction] of acmeActivities) {
         await upsertNode("Activity", id, {
-          type, sentiment, subject: subjects[id], occurred_at: daysAgo(days),
+          type, sentiment, direction, subject: subjects[id], occurred_at: daysAgo(days),
         });
         await upsertEdge("Activity", id, "RELATED_TO", "Deal", IDS.dealAcme, {});
       }
 
       // ── Activity nodes + RELATED_TO edges — TechStart ─────────────────────
-      const techActivities: [string, string, number, number][] = [
-        [IDS.actT1, "meeting", 0.8, 2],
-        [IDS.actT2, "meeting", 0.7, 8],
-        [IDS.actT3, "call",    0.6, 5],
-        [IDS.actT4, "email",   0.7, 1],   // inbound
-        [IDS.actT5, "email",   0.1, 4],   // outbound
+      const techActivities: [string, string, number, number, string | null][] = [
+        [IDS.actT1, "meeting", 0.8, 2, null],
+        [IDS.actT2, "meeting", 0.7, 8, null],
+        [IDS.actT3, "call",    0.6, 5, null],
+        [IDS.actT4, "email",   0.7, 1, "inbound"],
+        [IDS.actT5, "email",   0.1, 4, "outbound"],
       ];
-      for (const [id, type, sentiment, days] of techActivities) {
+      for (const [id, type, sentiment, days, direction] of techActivities) {
         await upsertNode("Activity", id, {
-          type, sentiment, subject: subjects[id], occurred_at: daysAgo(days),
+          type, sentiment, direction, subject: subjects[id], occurred_at: daysAgo(days),
         });
         await upsertEdge("Activity", id, "RELATED_TO", "Deal", IDS.dealTech, {});
       }
 
       // ── Activity nodes + RELATED_TO edges — Globex ────────────────────────
-      const globActivities: [string, string, number, number][] = [
-        [IDS.actG1, "email", 0.1, 18],   // outbound
-        [IDS.actG2, "call",  0.3, 25],
+      const globActivities: [string, string, number, number, string | null][] = [
+        [IDS.actG1, "email", 0.1, 18, "outbound"],
+        [IDS.actG2, "call",  0.3, 25, null],
       ];
-      for (const [id, type, sentiment, days] of globActivities) {
+      for (const [id, type, sentiment, days, direction] of globActivities) {
         await upsertNode("Activity", id, {
-          type, sentiment, subject: subjects[id], occurred_at: daysAgo(days),
+          type, sentiment, direction, subject: subjects[id], occurred_at: daysAgo(days),
         });
         await upsertEdge("Activity", id, "RELATED_TO", "Deal", IDS.dealGlob, {});
       }

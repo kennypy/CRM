@@ -23,7 +23,7 @@ export function accessCookieHeader(token: string): string {
  * every request — only when the client explicitly refreshes.
  */
 export function refreshCookieHeader(token: string): string {
-  const path = `HttpOnly; Path=/api/auth/refresh; SameSite=Strict${IS_PROD ? "; Secure" : ""}`;
+  const path = `HttpOnly; Path=/api; SameSite=Strict${IS_PROD ? "; Secure" : ""}`;
   return `${REFRESH_COOKIE}=${token}; Max-Age=2592000; ${path}`;
 }
 
@@ -31,6 +31,6 @@ export function refreshCookieHeader(token: string): string {
 export function clearCookieHeaders(): string[] {
   return [
     `${ACCESS_COOKIE}=; Max-Age=0; ${BASE}`,
-    `${REFRESH_COOKIE}=; Max-Age=0; HttpOnly; Path=/api/auth/refresh; SameSite=Strict${IS_PROD ? "; Secure" : ""}`,
+    `${REFRESH_COOKIE}=; Max-Age=0; HttpOnly; Path=/api; SameSite=Strict${IS_PROD ? "; Secure" : ""}`,
   ];
 }

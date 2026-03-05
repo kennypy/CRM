@@ -9,7 +9,6 @@
  */
 
 const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
-const API_GW     = `http://localhost:${process.env.PORT ?? 4000}`;
 
 interface GQLContext {
   tenantId: string;
@@ -177,7 +176,7 @@ const Query = {
 
     // Review queue lives in the api-gateway's own DB query (not graph-core)
     // Replicate the same SQL logic directly here via the pool
-    const { pool } = await import("../db.js");
+    const { pool } = await import("../db");
     const { rows } = await pool.query(
       `SELECT * FROM review_queue
        WHERE tenant_id = $1 AND status = $2
@@ -255,7 +254,7 @@ const Mutation = {
     { id }: { id: string },
     ctx: GQLContext
   ) {
-    const { pool } = await import("../db.js");
+    const { pool } = await import("../db");
     const { rows } = await pool.query(
       `UPDATE review_queue
        SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()
@@ -271,7 +270,7 @@ const Mutation = {
     { id, reason }: { id: string; reason?: string },
     ctx: GQLContext
   ) {
-    const { pool } = await import("../db.js");
+    const { pool } = await import("../db");
     const { rows } = await pool.query(
       `UPDATE review_queue
        SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(), rejection_reason = $2

@@ -125,6 +125,7 @@ export interface ActivityNode extends GraphNode {
   label: "Activity";
   properties: {
     type: ActivityType;
+    direction?: "inbound" | "outbound" | "internal";
     subject?: string;
     summary?: string;          // AI-generated summary
     sentiment?: number;        // -1 to 1
