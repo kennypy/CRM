@@ -69,10 +69,7 @@ CREATE TABLE IF NOT EXISTS activity_participants (
   email         TEXT        NOT NULL,
   role          TEXT        NOT NULL DEFAULT 'participant',
   PRIMARY KEY (activity_id, occurred_at, email)
-);
-
--- Partition activity_participants identically so JOINs stay within the same partition
-ALTER TABLE activity_participants PARTITION BY RANGE (occurred_at);
+) PARTITION BY RANGE (occurred_at);
 
 DO $$
 DECLARE
