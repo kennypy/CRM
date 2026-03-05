@@ -7,7 +7,7 @@ import {
   Zap, Home, Briefcase, Users, Building2, Activity,
   TrendingUp, CheckSquare, BarChart3, Layers, AlertCircle,
   Settings, Bell, ChevronDown, LogOut, User, Search,
-  MoreHorizontal, Shield, CreditCard, X,
+  MoreHorizontal, Shield, CreditCard, X, Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
@@ -15,19 +15,20 @@ import { useCommandBarStore } from "@/stores/command-bar-store";
 import type { StoredUser } from "@/lib/auth";
 
 const PRIMARY_NAV = [
-  { href: "/",          icon: Home,       label: "Home"       },
-  { href: "/pipeline",  icon: Briefcase,  label: "Pipeline"   },
-  { href: "/contacts",  icon: Users,      label: "Contacts"   },
-  { href: "/companies", icon: Building2,  label: "Companies"  },
-  { href: "/leads",     icon: TrendingUp, label: "Leads"      },
-  { href: "/activities",icon: Activity,   label: "Activities" },
+  { href: "/",           icon: Home,       label: "Home"          },
+  { href: "/pipeline",   icon: Briefcase,  label: "Opportunities" },
+  { href: "/contacts",   icon: Users,      label: "Contacts"      },
+  { href: "/companies",  icon: Building2,  label: "Companies"     },
+  { href: "/leads",      icon: TrendingUp, label: "Leads"         },
+  { href: "/activities", icon: Activity,   label: "Activities"    },
 ];
 
 const MORE_NAV = [
-  { href: "/tasks",     icon: CheckSquare, label: "Tasks"       },
-  { href: "/reports",   icon: BarChart3,   label: "Reports"     },
-  { href: "/review",    icon: AlertCircle, label: "Review Queue"},
-  { href: "/workflows", icon: Layers,      label: "Workflows"   },
+  { href: "/tasks",     icon: CheckSquare, label: "Tasks"        },
+  { href: "/sequences", icon: Mail,        label: "Sequences"    },
+  { href: "/reports",   icon: BarChart3,   label: "Reports"      },
+  { href: "/review",    icon: AlertCircle, label: "Review Queue" },
+  { href: "/workflows", icon: Layers,      label: "Workflows"    },
 ];
 
 interface Notification {

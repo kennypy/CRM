@@ -7,6 +7,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/rbac";
 
@@ -14,6 +15,22 @@ const UpdateMeSchema = z.object({
   firstName:  z.string().min(1).max(100).optional(),
   lastName:   z.string().min(0).max(100).optional(),
   avatarUrl:  z.string().url().optional().or(z.literal("")),
+});
+
+const CreateUserSchema = z.object({
+  firstName: z.string().min(1).max(100),
+  lastName:  z.string().min(0).max(100).default(""),
+  email:     z.string().email(),
+  password:  z.string().min(8, "Password must be at least 8 characters"),
+  role:      z.enum(["admin", "manager", "rep", "read_only"]),
+});
+
+const UpdateUserSchema = z.object({
+  firstName: z.string().min(1).max(100).optional(),
+  lastName:  z.string().min(0).max(100).optional(),
+  email:     z.string().email().optional(),
+  role:      z.enum(["admin", "manager", "rep", "read_only"]).optional(),
+  password:  z.string().min(8).optional(),
 });
 
 const InviteSchema = z.object({
@@ -109,6 +126,87 @@ export async function usersRoutes(server: FastifyInstance) {
     }
 
     return reply.status(204).send();
+  });
+
+  // ── POST /api/v1/users ───────────────────────────────────────────────────
+  // Admin creates a fully active user (with password). The user can log in immediately.
+  server.post("/", { preHandler: [requireAdmin] }, async (request, reply) => {
+    const parsed = CreateUserSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
+      });
+    }
+
+    const { firstName, lastName, email, password, role } = parsed.data;
+    const { tenantId } = request.user;
+
+    const existing = await pool.query(
+      `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
+      [tenantId, email.toLowerCase()]
+    );
+    if (existing.rows.length) {
+      return reply.status(409).send({
+        success: false,
+        error: { code: "USER_EXISTS", message: "A user with this email already exists in your workspace" },
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const { rows } = await pool.query(
+      `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at`,
+      [tenantId, email.toLowerCase(), passwordHash, firstName, lastName, role]
+    );
+
+    return reply.status(201).send({ success: true, data: toUser(rows[0]) });
+  });
+
+  // ── PATCH /api/v1/users/:id ───────────────────────────────────────────────
+  // Admin edits another user's details (name, email, role, optionally password).
+  server.patch("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { tenantId } = request.user;
+
+    const parsed = UpdateUserSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
+      });
+    }
+
+    const { firstName, lastName, email, role, password } = parsed.data;
+    const sets: string[] = ["updated_at = NOW()"];
+    const vals: unknown[] = [id, tenantId];
+
+    if (firstName !== undefined) { vals.push(firstName); sets.push(`first_name = $${vals.length}`); }
+    if (lastName  !== undefined) { vals.push(lastName);  sets.push(`last_name  = $${vals.length}`); }
+    if (email     !== undefined) { vals.push(email.toLowerCase()); sets.push(`email = $${vals.length}`); }
+    if (role      !== undefined) { vals.push(role); sets.push(`role = $${vals.length}`); }
+    if (password  !== undefined) {
+      const hash = await bcrypt.hash(password, 12);
+      vals.push(hash); sets.push(`password_hash = $${vals.length}`);
+    }
+
+    if (sets.length === 1) {
+      return reply.status(400).send({ success: false, error: { code: "NOTHING_TO_UPDATE" } });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE users SET ${sets.join(", ")}
+       WHERE id = $1 AND tenant_id = $2
+       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at`,
+      vals
+    );
+
+    if (!rows.length) {
+      return reply.status(404).send({ success: false, error: { code: "USER_NOT_FOUND" } });
+    }
+
+    return reply.send({ success: true, data: toUser(rows[0]) });
   });
 
   // ── POST /api/v1/users/invite ─────────────────────────────────────────────

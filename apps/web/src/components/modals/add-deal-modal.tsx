@@ -81,7 +81,7 @@ export function AddDealModal({ companyId, companyName, defaultCurrency = "USD", 
       const res = await api.post("/api/v1/deals", body);
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        setError(j?.error?.message ?? "Failed to create deal");
+        setError(j?.error?.message ?? "Failed to create opportunity");
         return;
       }
       setDone(true);
@@ -115,7 +115,7 @@ export function AddDealModal({ companyId, companyName, defaultCurrency = "USD", 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Deal name */}
           <div>
-            <label className={labelCls}>Deal / Opportunity name *</label>
+            <label className={labelCls}>Opportunity name *</label>
             <input value={name} onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Acme Corp — Enterprise licence"
               className={inputCls} required />
@@ -224,7 +224,7 @@ export function AddDealModal({ companyId, companyName, defaultCurrency = "USD", 
           )}
           {done && (
             <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-              <CheckCircle2 className="h-4 w-4" /> Deal created!
+              <CheckCircle2 className="h-4 w-4" /> Opportunity created!
             </div>
           )}
 
@@ -236,7 +236,7 @@ export function AddDealModal({ companyId, companyName, defaultCurrency = "USD", 
             <button type="submit" disabled={loading || !name.trim()}
               className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                 (loading || !name.trim()) ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-              {loading ? "Creating…" : "Create Deal"}
+              {loading ? "Creating…" : "Create Opportunity"}
             </button>
           </div>
         </form>

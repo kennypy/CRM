@@ -154,10 +154,76 @@ const ACTIVITY_DATA: Record<string, { label: string; emails: number; meetings: n
   ],
 };
 
+// ── Results Table Demo Data ────────────────────────────────────────────────────
+
+const DEMO_OPPORTUNITIES = [
+  { name: "Acme Corp — Enterprise",    stage: "Negotiation", value: 120000, currency: "GBP", rep: "Sarah Kim",       company: "Acme Corp",     closeDate: "2026-03-31", source: "Inbound referral" },
+  { name: "TechStart — Growth Plan",   stage: "Proposal",    value: 48000,  currency: "GBP", rep: "Marcus Chen",     company: "TechStart",     closeDate: "2026-04-15", source: "Outbound email" },
+  { name: "Globex — API Platform",     stage: "Discovery",   value: 85000,  currency: "GBP", rep: "Priya Sharma",    company: "Globex",        closeDate: "2026-05-01", source: "Partner channel" },
+  { name: "Initech — Pro Seats",       stage: "Closed Won",  value: 64000,  currency: "GBP", rep: "Sarah Kim",       company: "Initech",       closeDate: "2026-02-28", source: "Referral" },
+  { name: "Umbrella — Data Pack",      stage: "Closed Won",  value: 31000,  currency: "GBP", rep: "Alex Johnson",    company: "Umbrella Corp", closeDate: "2026-02-20", source: "Inbound referral" },
+  { name: "Massive Dyn — Custom Integ",stage: "Proposal",    value: 210000, currency: "GBP", rep: "Marcus Chen",     company: "Massive Dyn.",  closeDate: "2026-04-30", source: "Event / webinar" },
+  { name: "Soylent — Starter",         stage: "Closed Lost", value: 12000,  currency: "GBP", rep: "Jamie Rodriguez", company: "Soylent Corp",  closeDate: "2026-02-10", source: "Cold outreach" },
+  { name: "Cyberdyne — Team",          stage: "Negotiation", value: 95000,  currency: "GBP", rep: "Priya Sharma",    company: "Cyberdyne",     closeDate: "2026-03-25", source: "Partner channel" },
+];
+
+const DEMO_ACTIVITIES = [
+  { date: "2026-03-04", type: "Email",   subject: "Follow-up: Acme proposal",     contact: "John Smith",    company: "Acme Corp",  rep: "Sarah Kim",       direction: "Outbound" },
+  { date: "2026-03-04", type: "Call",    subject: "Discovery call — TechStart",   contact: "Lisa Park",     company: "TechStart",  rep: "Marcus Chen",     direction: "Outbound" },
+  { date: "2026-03-03", type: "Meeting", subject: "QBR — Globex",                 contact: "Tom Harris",    company: "Globex",     rep: "Priya Sharma",    direction: "Outbound" },
+  { date: "2026-03-03", type: "Email",   subject: "Intro — Massive Dyn.",         contact: "Ana Souza",     company: "Massive Dyn",rep: "Marcus Chen",     direction: "Outbound" },
+  { date: "2026-03-02", type: "Call",    subject: "Pricing question",             contact: "James Lee",     company: "Initech",    rep: "Alex Johnson",    direction: "Inbound"  },
+  { date: "2026-03-02", type: "Email",   subject: "Contract docs sent",           contact: "Nina Watts",    company: "Cyberdyne",  rep: "Priya Sharma",    direction: "Outbound" },
+  { date: "2026-03-01", type: "Task",    subject: "Prepare renewal proposal",     contact: "—",             company: "Umbrella",   rep: "Sarah Kim",       direction: "—"        },
+  { date: "2026-03-01", type: "Meeting", subject: "Exec alignment call",          contact: "Eric Chan",     company: "Acme Corp",  rep: "Sarah Kim",       direction: "Inbound"  },
+  { date: "2026-02-28", type: "Email",   subject: "Win confirmation",             contact: "Lisa Park",     company: "TechStart",  rep: "Marcus Chen",     direction: "Inbound"  },
+  { date: "2026-02-27", type: "Call",    subject: "Objection handling",           contact: "Rob Marsh",     company: "Soylent",    rep: "Jamie Rodriguez", direction: "Outbound" },
+];
+
+const DEMO_CONTACTS_ROWS = [
+  { name: "John Smith",    email: "john@acme.com",       company: "Acme Corp",   rep: "Sarah Kim",       status: "Contact", source: "Referral",   openDeals: 2, lastActivity: "2d ago" },
+  { name: "Lisa Park",     email: "lisa@techstart.io",   company: "TechStart",   rep: "Marcus Chen",     status: "Contact", source: "LinkedIn",   openDeals: 1, lastActivity: "1d ago" },
+  { name: "Tom Harris",    email: "tom@globex.com",       company: "Globex",      rep: "Priya Sharma",    status: "Contact", source: "Event",      openDeals: 1, lastActivity: "1d ago" },
+  { name: "Ana Souza",     email: "ana@massivedyn.com",   company: "Massive Dyn", rep: "Marcus Chen",     status: "Lead",    source: "Outbound",   openDeals: 1, lastActivity: "2d ago" },
+  { name: "James Lee",     email: "james@initech.com",    company: "Initech",     rep: "Alex Johnson",    status: "Contact", source: "Referral",   openDeals: 0, lastActivity: "3d ago" },
+  { name: "Nina Watts",    email: "nina@cyberdyne.co",    company: "Cyberdyne",   rep: "Priya Sharma",    status: "Contact", source: "Partner",    openDeals: 1, lastActivity: "1d ago" },
+  { name: "Eric Chan",     email: "eric@acme.com",        company: "Acme Corp",   rep: "Sarah Kim",       status: "Contact", source: "Referral",   openDeals: 2, lastActivity: "2d ago" },
+  { name: "Rob Marsh",     email: "rob@soylent.com",      company: "Soylent",     rep: "Jamie Rodriguez", status: "Lead",    source: "Cold outreach",openDeals: 0, lastActivity: "7d ago"},
+];
+
+const DEMO_WIN_LOSS_ROWS = [
+  { name: "Umbrella — Starter",       result: "Won",  value: 31000, rep: "Alex Johnson",    company: "Umbrella",    stageLostAt: "—",            lossReason: "—",           closeDate: "2026-02-20" },
+  { name: "Initech — Pro Seats",      result: "Won",  value: 64000, rep: "Sarah Kim",       company: "Initech",     stageLostAt: "—",            lossReason: "—",           closeDate: "2026-02-28" },
+  { name: "Soylent — Starter",        result: "Lost", value: 12000, rep: "Jamie Rodriguez", company: "Soylent",     stageLostAt: "Proposal",     lossReason: "Price",       closeDate: "2026-02-10" },
+  { name: "Sprocket — Basic",         result: "Lost", value: 18000, rep: "Marcus Chen",     company: "Sprocket Co", stageLostAt: "Negotiation",  lossReason: "Competitor",  closeDate: "2026-01-30" },
+  { name: "Dunder — Mid Market",      result: "Won",  value: 76000, rep: "Sarah Kim",       company: "Dunder Mifflin", stageLostAt: "—",          lossReason: "—",           closeDate: "2026-01-25" },
+  { name: "Vehix — Platform",         result: "Lost", value: 42000, rep: "Priya Sharma",    company: "Vehix",       stageLostAt: "Discovery",    lossReason: "No budget",   closeDate: "2026-01-18" },
+  { name: "Pied Piper — Seed",        result: "Won",  value: 55000, rep: "Alex Johnson",    company: "Pied Piper",  stageLostAt: "—",            lossReason: "—",           closeDate: "2026-01-10" },
+];
+
+const DEMO_SEQUENCE_ROWS = [
+  { name: "Enterprise Nurture",    steps: 6, enrolled: 84,  completed: 31, openRate: 68, replyRate: 22, meetingRate: 14, rep: "Sarah Kim"       },
+  { name: "SMB Outbound",          steps: 5, enrolled: 210, completed: 78, openRate: 52, replyRate: 14, meetingRate: 8,  rep: "Marcus Chen"     },
+  { name: "Event Follow-up",       steps: 4, enrolled: 56,  completed: 42, openRate: 74, replyRate: 31, meetingRate: 18, rep: "Priya Sharma"    },
+  { name: "Re-engagement Q1",      steps: 3, enrolled: 135, completed: 90, openRate: 44, replyRate: 9,  meetingRate: 4,  rep: "Alex Johnson"    },
+  { name: "Inbound Response",      steps: 3, enrolled: 48,  completed: 47, openRate: 88, replyRate: 56, meetingRate: 38, rep: "Sarah Kim"       },
+  { name: "Churn Prevention",      steps: 7, enrolled: 29,  completed: 8,  openRate: 71, replyRate: 28, meetingRate: 12, rep: "Jamie Rodriguez" },
+];
+
 // ── Saved Reports ──────────────────────────────────────────────────────────────
 
-const REPORT_TYPES = ["Pipeline", "Revenue", "Activity", "Contacts", "Win/Loss", "Sequence Performance"];
-const GROUP_BY_OPTIONS = ["Stage", "Rep", "Period", "Source", "Company", "Product"];
+const REPORT_TYPES = ["Opportunities", "Revenue", "Activity", "Contacts", "Win/Loss", "Sequence Performance"];
+
+// Group-by options are specific to each report type
+const GROUP_BY_OPTIONS_BY_TYPE: Record<string, string[]> = {
+  "Opportunities":          ["Stage", "Rep", "Company", "Lead Source", "Period"],
+  "Revenue":                ["Period", "Rep", "Company", "Product"],
+  "Activity":               ["Type", "Rep", "Contact", "Company", "Period"],
+  "Contacts":               ["Owner / Rep", "Company", "Lead Source", "Status"],
+  "Win/Loss":               ["Loss Reason", "Stage Lost At", "Rep", "Lead Source"],
+  "Sequence Performance":   ["Sequence", "Step", "Status", "Rep"],
+};
+
 const PERIODS = ["Last 7 days", "Last 30 days", "Last 90 days", "Last year", "Custom"];
 const STAGES_LIST = ["Discovery", "Proposal", "Negotiation", "Closed Won", "Closed Lost"];
 const SOURCES_LIST = ["Inbound referral", "Outbound email", "Event / webinar", "Partner channel", "Auto-captured"];
@@ -202,7 +268,7 @@ interface ReportFilters {
 }
 
 const DEFAULT_FILTERS: ReportFilters = {
-  period: PERIODS[1], groupBy: GROUP_BY_OPTIONS[0], rep: "", createdBy: "",
+  period: PERIODS[1], groupBy: GROUP_BY_OPTIONS_BY_TYPE["Opportunities"][0], rep: "", createdBy: "",
   createdFrom: "", createdTo: "", stage: "", valueMin: "", valueMax: "",
   closeFrom: "", closeTo: "", leadSource: "", currency: "", includeForecast: true,
   activityType: "", deal: "", contact: "", direction: "", assignedRep: "",
@@ -229,6 +295,9 @@ function persistReports(reports: SavedReport[]) {
 
 // ── NL Query Parser ────────────────────────────────────────────────────────────
 
+// Known rep names for NL detection (case-insensitive substring match)
+const KNOWN_REPS = ["sarah", "marcus", "priya", "alex", "jamie"];
+
 function parseNLQuery(query: string, currentFilters: ReportFilters): Partial<ReportFilters> & { type?: string } {
   const q = query.toLowerCase();
   const patch: Partial<ReportFilters> & { type?: string } = {};
@@ -239,13 +308,13 @@ function parseNLQuery(query: string, currentFilters: ReportFilters): Partial<Rep
   else if (/last\s+90\s+days?|quarter/.test(q))      patch.period = "Last 90 days";
   else if (/last\s+year|annual|yearly/.test(q))       patch.period = "Last year";
 
-  // Report type detection
-  if (/revenue|closed\s+won|won|close[sd]/.test(q))     patch.type = "Revenue";
-  else if (/pipeline|open\s+deal/.test(q))              patch.type = "Pipeline";
-  else if (/activit|email|call|meeting/.test(q))         patch.type = "Activity";
-  else if (/contact|lead/.test(q))                       patch.type = "Contacts";
-  else if (/win.*loss|loss.*win|win\s+rate/.test(q))    patch.type = "Win/Loss";
-  else if (/sequence|email\s+sequence/.test(q))          patch.type = "Sequence Performance";
+  // Report type detection — check most specific first
+  if (/win.*loss|loss.*win|win\s+rate|won.*lost/.test(q))              patch.type = "Win/Loss";
+  else if (/sequence|email\s+sequence|outreach\s+sequence/.test(q))    patch.type = "Sequence Performance";
+  else if (/revenue|closed\s+won|won\b|close[sd]\s+deal/.test(q))      patch.type = "Revenue";
+  else if (/pipeline|open\s+deal|opportunit/.test(q))                   patch.type = "Opportunities";
+  else if (/activit|email\b|call\b|meeting\b|task\b/.test(q))           patch.type = "Activity";
+  else if (/contact|lead\b/.test(q))                                     patch.type = "Contacts";
 
   // Stage detection
   if (/closed\s+won/.test(q))       patch.stage = "Closed Won";
@@ -254,12 +323,42 @@ function parseNLQuery(query: string, currentFilters: ReportFilters): Partial<Rep
   else if (/proposal/.test(q))      patch.stage = "Proposal";
   else if (/discovery/.test(q))     patch.stage = "Discovery";
 
+  // Activity type detection
+  if (/\bcall/.test(q))         patch.activityType = "Call";
+  else if (/\bemail/.test(q))   patch.activityType = "Email";
+  else if (/\bmeeting/.test(q)) patch.activityType = "Meeting";
+  else if (/\btask/.test(q))    patch.activityType = "Task";
+
+  // Rep / user detection — "by Sarah", "for Marcus", or just a known first name
+  const repMatch = q.match(/\b(?:by|for|assigned\s+to|from|rep[:=]?\s*)([a-z]+)/);
+  if (repMatch) {
+    const name = repMatch[1];
+    if (KNOWN_REPS.includes(name)) {
+      // Capitalise first letter
+      const capitalized = name.charAt(0).toUpperCase() + name.slice(1);
+      patch.rep = capitalized;
+      patch.assignedRep = capitalized;
+      patch.createdBy = capitalized;
+    }
+  } else {
+    // Direct first-name mention without preposition
+    for (const repName of KNOWN_REPS) {
+      if (q.includes(repName)) {
+        const capitalized = repName.charAt(0).toUpperCase() + repName.slice(1);
+        patch.rep = capitalized;
+        patch.assignedRep = capitalized;
+        break;
+      }
+    }
+  }
+
   // Group by detection
-  if (/by\s+rep|per\s+rep|rep\s+breakdown/.test(q))       patch.groupBy = "Rep";
-  else if (/by\s+stage|per\s+stage/.test(q))              patch.groupBy = "Stage";
-  else if (/by\s+source|per\s+source/.test(q))            patch.groupBy = "Source";
-  else if (/by\s+company|per\s+company/.test(q))          patch.groupBy = "Company";
-  else if (/by\s+period|over\s+time|trend/.test(q))       patch.groupBy = "Period";
+  if (/by\s+rep|per\s+rep|rep\s+breakdown/.test(q))        patch.groupBy = "Rep";
+  else if (/by\s+stage|per\s+stage/.test(q))               patch.groupBy = "Stage";
+  else if (/by\s+source|per\s+source/.test(q))             patch.groupBy = "Source";
+  else if (/by\s+company|per\s+company/.test(q))           patch.groupBy = "Company";
+  else if (/by\s+period|over\s+time|trend/.test(q))        patch.groupBy = "Period";
+  else if (/by\s+type|per\s+type|activity\s+type/.test(q)) patch.groupBy = "Type";
 
   return patch;
 }
@@ -289,7 +388,7 @@ function FilterSection({
         <div>
           <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Group by</label>
           <select value={F.groupBy} onChange={(e) => set({ groupBy: e.target.value })} className={inputCls}>
-            {GROUP_BY_OPTIONS.map((g) => <option key={g}>{g}</option>)}
+            {(GROUP_BY_OPTIONS_BY_TYPE[type] ?? ["Stage", "Rep", "Period"]).map((g) => <option key={g}>{g}</option>)}
           </select>
         </div>
       </div>
@@ -316,7 +415,7 @@ function FilterSection({
     </>
   );
 
-  if (type === "Pipeline") {
+  if (type === "Opportunities") {
     return (
       <div className="space-y-3">
         {commonFields}
@@ -546,13 +645,23 @@ function CreateReportModal({ onClose, onSaved }: { onClose: () => void; onSaved:
     if (!nlQuery.trim()) return;
     const result = parseNLQuery(nlQuery, filters);
     const { type: parsedType, ...filterPatch } = result;
+    const resolvedType = parsedType ?? type;
     if (parsedType) setType(parsedType);
-    setFilters((prev) => ({ ...prev, ...filterPatch }));
+    // Default groupBy to first option for the resolved type if not already set by the query
+    const typeGroupByOpts = GROUP_BY_OPTIONS_BY_TYPE[resolvedType] ?? ["Stage"];
+    const defaultGroupBy = typeGroupByOpts[0];
+    setFilters((prev) => ({
+      ...prev,
+      groupBy: prev.groupBy === "Stage" ? defaultGroupBy : prev.groupBy,
+      ...filterPatch,
+    }));
     setParsed(true);
     // Auto-name from query if no name set
     if (!rname.trim()) {
       setRname(nlQuery.trim().charAt(0).toUpperCase() + nlQuery.trim().slice(1, 60));
     }
+    // Auto-advance to the filters step so the user sees what was populated
+    setStep(2);
   };
 
   const handleSave = () => {
@@ -721,7 +830,7 @@ function SavedReportsList({ reports, onDelete, onRun }: { reports: SavedReport[]
     );
   }
   const TYPE_COLORS: Record<string, string> = {
-    Pipeline: "bg-blue-100 text-blue-700", Revenue: "bg-green-100 text-green-700",
+    Opportunities: "bg-blue-100 text-blue-700", Revenue: "bg-green-100 text-green-700",
     Activity: "bg-purple-100 text-purple-700", Contacts: "bg-orange-100 text-orange-700",
     "Win/Loss": "bg-red-100 text-red-700", "Sequence Performance": "bg-yellow-100 text-yellow-700",
   };
@@ -777,6 +886,310 @@ function KpiCard({ label, value, delta, deltaLabel, icon: Icon, color }: {
   );
 }
 
+// ── Results Table ─────────────────────────────────────────────────────────────
+
+function ResultsTable({ report, currency, locale }: { report: SavedReport; currency: string; locale: string }) {
+  const type = report.type;
+  const filters = report.filters ?? {};
+  const repFilter = (filters.rep ?? "").toLowerCase();
+  const actTypeFilter = (filters.activityType ?? "").toLowerCase();
+
+  const thCls = "px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap";
+  const tdCls = "px-3 py-2.5 text-sm text-foreground whitespace-nowrap";
+  const trCls = "border-b border-border hover:bg-muted/40 transition-colors";
+
+  if (type === "Opportunities") {
+    const rows = DEMO_OPPORTUNITIES.filter((r) =>
+      (!repFilter || r.rep.toLowerCase().includes(repFilter)) &&
+      (!filters.stage || r.stage === filters.stage)
+    );
+    const STAGE_BADGE: Record<string, string> = {
+      "Discovery":   "bg-blue-50 text-blue-700",
+      "Proposal":    "bg-yellow-50 text-yellow-700",
+      "Negotiation": "bg-orange-50 text-orange-700",
+      "Closed Won":  "bg-green-50 text-green-700",
+      "Closed Lost": "bg-red-50 text-red-700",
+    };
+    return (
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{rows.length} opportunities</h3>
+          <span className="text-xs text-muted-foreground">{filters.period ?? "All time"}</span>
+        </div>
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full">
+            <thead className="bg-muted/50"><tr>
+              <th className={thCls}>Name</th>
+              <th className={thCls}>Stage</th>
+              <th className={thCls}>Value</th>
+              <th className={thCls}>Rep</th>
+              <th className={thCls}>Company</th>
+              <th className={thCls}>Close Date</th>
+              <th className={thCls}>Source</th>
+            </tr></thead>
+            <tbody className="bg-card">
+              {rows.map((r, i) => (
+                <tr key={i} className={trCls}>
+                  <td className={cn(tdCls, "font-medium max-w-[200px] truncate")}>{r.name}</td>
+                  <td className={tdCls}><span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STAGE_BADGE[r.stage] ?? "bg-muted text-muted-foreground")}>{r.stage}</span></td>
+                  <td className={cn(tdCls, "font-semibold")}>{formatCurrency(r.value, r.currency, true, locale)}</td>
+                  <td className={tdCls}>{r.rep}</td>
+                  <td className={tdCls}>{r.company}</td>
+                  <td className={tdCls}>{new Date(r.closeDate).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" })}</td>
+                  <td className={tdCls}>{r.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex gap-6 text-sm">
+          <span className="text-muted-foreground">Total value: <strong className="text-foreground">{formatCurrency(rows.reduce((s, r) => s + r.value, 0), currency, true, locale)}</strong></span>
+          <span className="text-muted-foreground">Won: <strong className="text-green-700">{formatCurrency(rows.filter((r) => r.stage === "Closed Won").reduce((s, r) => s + r.value, 0), currency, true, locale)}</strong></span>
+          <span className="text-muted-foreground">Open: <strong className="text-foreground">{rows.filter((r) => !["Closed Won","Closed Lost"].includes(r.stage)).length}</strong></span>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Activity") {
+    const rows = DEMO_ACTIVITIES.filter((r) =>
+      (!repFilter || r.rep.toLowerCase().includes(repFilter)) &&
+      (!actTypeFilter || r.type.toLowerCase() === actTypeFilter)
+    );
+    const TYPE_BADGE: Record<string, string> = {
+      Email: "bg-blue-50 text-blue-700", Call: "bg-green-50 text-green-700",
+      Meeting: "bg-purple-50 text-purple-700", Task: "bg-orange-50 text-orange-700",
+    };
+    return (
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{rows.length} activities</h3>
+          <span className="text-xs text-muted-foreground">{filters.period ?? "All time"}</span>
+        </div>
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full">
+            <thead className="bg-muted/50"><tr>
+              <th className={thCls}>Date</th>
+              <th className={thCls}>Type</th>
+              <th className={thCls}>Subject</th>
+              <th className={thCls}>Contact</th>
+              <th className={thCls}>Company</th>
+              <th className={thCls}>Rep</th>
+              <th className={thCls}>Direction</th>
+            </tr></thead>
+            <tbody className="bg-card">
+              {rows.map((r, i) => (
+                <tr key={i} className={trCls}>
+                  <td className={tdCls}>{new Date(r.date).toLocaleDateString(locale, { day: "numeric", month: "short" })}</td>
+                  <td className={tdCls}><span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", TYPE_BADGE[r.type] ?? "bg-muted")}>{r.type}</span></td>
+                  <td className={cn(tdCls, "max-w-[220px] truncate")}>{r.subject}</td>
+                  <td className={tdCls}>{r.contact}</td>
+                  <td className={tdCls}>{r.company}</td>
+                  <td className={tdCls}>{r.rep}</td>
+                  <td className={tdCls}><span className={cn("text-xs font-medium", r.direction === "Inbound" ? "text-green-700" : r.direction === "Outbound" ? "text-blue-700" : "text-muted-foreground")}>{r.direction}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex gap-6 text-sm">
+          {(["Email","Call","Meeting","Task"] as const).map((t) => (
+            <span key={t} className="text-muted-foreground">{t}s: <strong className="text-foreground">{rows.filter((r) => r.type === t).length}</strong></span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Contacts") {
+    const rows = DEMO_CONTACTS_ROWS.filter((r) =>
+      (!repFilter || r.rep.toLowerCase().includes(repFilter))
+    );
+    return (
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{rows.length} contacts</h3>
+          <span className="text-xs text-muted-foreground">{filters.period ?? "All time"}</span>
+        </div>
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full">
+            <thead className="bg-muted/50"><tr>
+              <th className={thCls}>Name</th>
+              <th className={thCls}>Email</th>
+              <th className={thCls}>Company</th>
+              <th className={thCls}>Owner / Rep</th>
+              <th className={thCls}>Status</th>
+              <th className={thCls}>Source</th>
+              <th className={thCls}>Open Deals</th>
+              <th className={thCls}>Last Activity</th>
+            </tr></thead>
+            <tbody className="bg-card">
+              {rows.map((r, i) => (
+                <tr key={i} className={trCls}>
+                  <td className={cn(tdCls, "font-medium")}>{r.name}</td>
+                  <td className={cn(tdCls, "text-muted-foreground")}>{r.email}</td>
+                  <td className={tdCls}>{r.company}</td>
+                  <td className={tdCls}>{r.rep}</td>
+                  <td className={tdCls}><span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", r.status === "Contact" ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700")}>{r.status}</span></td>
+                  <td className={tdCls}>{r.source}</td>
+                  <td className={cn(tdCls, "text-center")}>{r.openDeals > 0 ? <span className="font-semibold text-primary">{r.openDeals}</span> : <span className="text-muted-foreground">—</span>}</td>
+                  <td className={tdCls}>{r.lastActivity}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Win/Loss") {
+    const rows = DEMO_WIN_LOSS_ROWS.filter((r) =>
+      (!repFilter || r.rep.toLowerCase().includes(repFilter))
+    );
+    const wonRows = rows.filter((r) => r.result === "Won");
+    const lostRows = rows.filter((r) => r.result === "Lost");
+    const winRate = rows.length > 0 ? Math.round((wonRows.length / rows.length) * 100) : 0;
+    return (
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{rows.length} closed deals</h3>
+          <span className="text-xs text-muted-foreground">{filters.period ?? "All time"}</span>
+        </div>
+        <div className="mb-4 grid grid-cols-3 gap-3">
+          <div className="rounded-lg border bg-green-50 px-4 py-3">
+            <p className="text-xs text-green-700">Won ({wonRows.length})</p>
+            <p className="mt-0.5 text-lg font-bold text-green-800">{formatCurrency(wonRows.reduce((s,r) => s+r.value, 0), currency, true, locale)}</p>
+          </div>
+          <div className="rounded-lg border bg-red-50 px-4 py-3">
+            <p className="text-xs text-red-700">Lost ({lostRows.length})</p>
+            <p className="mt-0.5 text-lg font-bold text-red-800">{formatCurrency(lostRows.reduce((s,r) => s+r.value, 0), currency, true, locale)}</p>
+          </div>
+          <div className="rounded-lg border bg-card px-4 py-3">
+            <p className="text-xs text-muted-foreground">Win Rate</p>
+            <p className="mt-0.5 text-lg font-bold">{winRate}%</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full">
+            <thead className="bg-muted/50"><tr>
+              <th className={thCls}>Deal</th>
+              <th className={thCls}>Result</th>
+              <th className={thCls}>Value</th>
+              <th className={thCls}>Rep</th>
+              <th className={thCls}>Company</th>
+              <th className={thCls}>Stage Lost At</th>
+              <th className={thCls}>Loss Reason</th>
+              <th className={thCls}>Close Date</th>
+            </tr></thead>
+            <tbody className="bg-card">
+              {rows.map((r, i) => (
+                <tr key={i} className={trCls}>
+                  <td className={cn(tdCls, "font-medium max-w-[180px] truncate")}>{r.name}</td>
+                  <td className={tdCls}><span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", r.result === "Won" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>{r.result}</span></td>
+                  <td className={cn(tdCls, "font-semibold")}>{formatCurrency(r.value, currency, true, locale)}</td>
+                  <td className={tdCls}>{r.rep}</td>
+                  <td className={tdCls}>{r.company}</td>
+                  <td className={tdCls}>{r.stageLostAt}</td>
+                  <td className={tdCls}>{r.lossReason}</td>
+                  <td className={tdCls}>{new Date(r.closeDate).toLocaleDateString(locale, { day: "numeric", month: "short" })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Revenue") {
+    const rev = REVENUE_DATA["30d"];
+    return (
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Revenue — {filters.period ?? "Last 30 days"}</h3>
+          <span className="text-xs text-muted-foreground">Grouped by {filters.groupBy ?? "Period"}</span>
+        </div>
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full">
+            <thead className="bg-muted/50"><tr>
+              <th className={thCls}>Period</th>
+              <th className={thCls}>Actual Revenue</th>
+              <th className={thCls}>Forecast</th>
+              <th className={thCls}>Variance</th>
+              <th className={thCls}>% Achieved</th>
+            </tr></thead>
+            <tbody className="bg-card">
+              {rev.map((r, i) => {
+                const variance = r.actual != null ? r.actual - r.forecast : null;
+                const pct = r.actual != null ? Math.round((r.actual / r.forecast) * 100) : null;
+                return (
+                  <tr key={i} className={trCls}>
+                    <td className={cn(tdCls, "font-medium")}>{r.label}</td>
+                    <td className={cn(tdCls, "font-semibold")}>{r.actual != null ? formatCurrency(r.actual, currency, true, locale) : <span className="italic text-muted-foreground">Pending</span>}</td>
+                    <td className={tdCls}>{formatCurrency(r.forecast, currency, true, locale)}</td>
+                    <td className={tdCls}>{variance != null ? <span className={cn("font-medium", variance >= 0 ? "text-green-700" : "text-red-700")}>{variance >= 0 ? "+" : ""}{formatCurrency(variance, currency, true, locale)}</span> : "—"}</td>
+                    <td className={tdCls}>{pct != null ? <span className={cn("font-medium", pct >= 100 ? "text-green-700" : pct >= 80 ? "text-yellow-700" : "text-red-700")}>{pct}%</span> : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Sequence Performance") {
+    const rows = DEMO_SEQUENCE_ROWS.filter((r) =>
+      (!repFilter || r.rep.toLowerCase().includes(repFilter))
+    );
+    return (
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{rows.length} sequences</h3>
+          <span className="text-xs text-muted-foreground">{filters.period ?? "All time"}</span>
+        </div>
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full">
+            <thead className="bg-muted/50"><tr>
+              <th className={thCls}>Sequence</th>
+              <th className={thCls}>Steps</th>
+              <th className={thCls}>Enrolled</th>
+              <th className={thCls}>Completed</th>
+              <th className={thCls}>Open Rate</th>
+              <th className={thCls}>Reply Rate</th>
+              <th className={thCls}>Meeting Rate</th>
+              <th className={thCls}>Owner</th>
+            </tr></thead>
+            <tbody className="bg-card">
+              {rows.map((r, i) => (
+                <tr key={i} className={trCls}>
+                  <td className={cn(tdCls, "font-medium")}>{r.name}</td>
+                  <td className={cn(tdCls, "text-center")}>{r.steps}</td>
+                  <td className={cn(tdCls, "text-center")}>{r.enrolled}</td>
+                  <td className={cn(tdCls, "text-center")}>{r.completed}</td>
+                  <td className={tdCls}><span className={cn("font-semibold", r.openRate >= 60 ? "text-green-700" : r.openRate >= 40 ? "text-yellow-700" : "text-red-700")}>{r.openRate}%</span></td>
+                  <td className={tdCls}><span className={cn("font-semibold", r.replyRate >= 20 ? "text-green-700" : r.replyRate >= 10 ? "text-yellow-700" : "text-red-700")}>{r.replyRate}%</span></td>
+                  <td className={tdCls}><span className={cn("font-semibold", r.meetingRate >= 15 ? "text-green-700" : r.meetingRate >= 8 ? "text-yellow-700" : "text-red-700")}>{r.meetingRate}%</span></td>
+                  <td className={tdCls}>{r.rep}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex gap-6 text-sm">
+          <span className="text-muted-foreground">Avg open rate: <strong>{Math.round(rows.reduce((s,r)=>s+r.openRate,0)/Math.max(rows.length,1))}%</strong></span>
+          <span className="text-muted-foreground">Avg reply rate: <strong>{Math.round(rows.reduce((s,r)=>s+r.replyRate,0)/Math.max(rows.length,1))}%</strong></span>
+          <span className="text-muted-foreground">Avg meeting rate: <strong>{Math.round(rows.reduce((s,r)=>s+r.meetingRate,0)/Math.max(rows.length,1))}%</strong></span>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 type Period = "7d" | "30d" | "90d" | "1y";
 
 type PageView = "analytics" | "saved";
@@ -801,7 +1214,7 @@ export default function ReportsPage() {
 
   // Which chart sections to show when a saved report is active
   const REPORT_TYPE_SECTIONS: Record<string, string[]> = {
-    Pipeline:               ["pipeline"],
+    Opportunities:          ["pipeline"],
     Revenue:                ["revenue"],
     Activity:               ["activity"],
     "Win/Loss":             ["pipeline", "winloss"],
@@ -907,20 +1320,37 @@ export default function ReportsPage() {
       {pageView === "analytics" && <>
 
       {activeReport && (
-        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
-          <div className="flex items-center gap-2 text-sm">
-            <FileText className="h-4 w-4 text-primary shrink-0" />
-            <span className="text-muted-foreground">Viewing report:</span>
-            <span className="font-semibold text-foreground">{activeReport.name}</span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{activeReport.type}</span>
-            <span className="text-muted-foreground">·</span>
-            <button onClick={() => setActiveReport(null)} className="text-xs text-primary hover:underline">
-              Show all charts
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
+            <div className="flex items-center gap-2 text-sm">
+              <FileText className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-muted-foreground">Viewing report:</span>
+              <span className="font-semibold text-foreground">{activeReport.name}</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{activeReport.type}</span>
+              {activeReport.filters?.rep && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">Rep: {activeReport.filters.rep}</span>
+              )}
+              {activeReport.filters?.period && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{activeReport.filters.period}</span>
+              )}
+              <span className="text-muted-foreground">·</span>
+              <button onClick={() => setActiveReport(null)} className="text-xs text-primary hover:underline">
+                Show all charts
+              </button>
+            </div>
+            <button onClick={() => setActiveReport(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+              <X className="h-4 w-4" />
             </button>
           </div>
-          <button onClick={() => setActiveReport(null)} className="text-muted-foreground hover:text-foreground transition-colors">
-            <X className="h-4 w-4" />
-          </button>
+          {/* Results table for this report type */}
+          <div className="rounded-xl border bg-card p-5">
+            <h2 className="mb-4 font-semibold flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              Results
+              <span className="text-xs font-normal text-muted-foreground">— filtered by saved report criteria</span>
+            </h2>
+            <ResultsTable report={activeReport} currency={currency} locale={locale} />
+          </div>
         </div>
       )}
 

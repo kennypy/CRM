@@ -255,7 +255,7 @@ function ForecastBar({ deals, currency, locale }: { deals: Deal[]; currency: str
   return (
     <div className="grid grid-cols-3 gap-3">
       <div className="rounded-lg border bg-card px-4 py-3">
-        <p className="text-xs text-muted-foreground">Open pipeline</p>
+        <p className="text-xs text-muted-foreground">Open opportunities</p>
         <p className="mt-0.5 text-lg font-semibold">
           {formatCurrency(open.reduce((s, d) => s + d.value, 0), currency, true, locale)}
         </p>
@@ -348,7 +348,7 @@ export default function PipelinePage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Briefcase className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Pipeline</h1>
+          <h1 className="text-xl font-semibold">Opportunities</h1>
         </div>
         <div className="flex items-center gap-3">
           {wonValue > 0 && (
@@ -363,7 +363,7 @@ export default function PipelinePage() {
           </button>
           <button onClick={() => setShowAddDeal(true)}
             className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-            <Plus className="h-4 w-4" /> Add Deal
+            <Plus className="h-4 w-4" /> Add Opportunity
           </button>
         </div>
       </div>
