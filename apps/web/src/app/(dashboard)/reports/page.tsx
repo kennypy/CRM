@@ -711,7 +711,7 @@ function CreateReportModal({ onClose, onSaved }: { onClose: () => void; onSaved:
   );
 }
 
-function SavedReportsList({ reports, onDelete }: { reports: SavedReport[]; onDelete: (id: string) => void }) {
+function SavedReportsList({ reports, onDelete, onRun }: { reports: SavedReport[]; onDelete: (id: string) => void; onRun: (r: SavedReport) => void }) {
   if (reports.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 py-16 text-center">
@@ -745,7 +745,7 @@ function SavedReportsList({ reports, onDelete }: { reports: SavedReport[]; onDel
               <Trash2 className="h-4 w-4" />
             </button>
           </div>
-          <button className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors">
+          <button onClick={() => onRun(r)} className="mt-3 w-full rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors">
             Run Report
           </button>
         </div>
@@ -786,10 +786,18 @@ export default function ReportsPage() {
   const currency   = tenant.defaultCurrency;
   const locale     = tenant.locale;
 
-  const [period,     setPeriod]     = useState<Period>("30d");
-  const [pageView,   setPageView]   = useState<PageView>("analytics");
-  const [showCreate, setShowCreate] = useState(false);
+  const [period,       setPeriod]       = useState<Period>("30d");
+  const [pageView,     setPageView]     = useState<PageView>("analytics");
+  const [showCreate,   setShowCreate]   = useState(false);
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
+  const [activeReport, setActiveReport] = useState<SavedReport | null>(null);
+
+  const PERIOD_MAP: Record<string, Period> = {
+    "Last 7 days":  "7d",
+    "Last 30 days": "30d",
+    "Last 90 days": "90d",
+    "Last year":    "1y",
+  };
 
   useEffect(() => { setSavedReports(loadReports()); }, []);
 
@@ -806,6 +814,14 @@ export default function ReportsPage() {
       persistReports(next);
       return next;
     });
+    if (activeReport?.id === id) setActiveReport(null);
+  };
+
+  const handleRun = (r: SavedReport) => {
+    const mapped = r.filters?.period ? PERIOD_MAP[r.filters.period] : undefined;
+    if (mapped) setPeriod(mapped);
+    setActiveReport(r);
+    setPageView("analytics");
   };
 
   const pipeline    = PIPELINE_DATA[period];
@@ -875,8 +891,22 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {pageView === "saved" && <SavedReportsList reports={savedReports} onDelete={handleDelete} />}
+      {pageView === "saved" && <SavedReportsList reports={savedReports} onDelete={handleDelete} onRun={handleRun} />}
       {pageView === "analytics" && <>
+
+      {activeReport && (
+        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm">
+            <FileText className="h-4 w-4 text-primary shrink-0" />
+            <span className="text-muted-foreground">Viewing report:</span>
+            <span className="font-semibold text-foreground">{activeReport.name}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{activeReport.type}</span>
+          </div>
+          <button onClick={() => setActiveReport(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard label="Open Pipeline"   value={formatCurrency(totalOpen, currency, true, locale)} delta={deltas.pipeline} deltaLabel={periodLabel} icon={Briefcase}  color="bg-blue-100 text-blue-600" />

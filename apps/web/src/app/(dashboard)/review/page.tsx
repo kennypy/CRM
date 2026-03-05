@@ -98,21 +98,25 @@ function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
-function ReviewCard({ item, onDecide }: {
+function ReviewCard({ item, onDecide, leaving }: {
   item: ReviewItem;
-  onDecide: (id: string, decision: "approved" | "rejected") => Promise<void>;
+  onDecide: (id: string, decision: "approved" | "rejected") => void;
+  leaving?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy]         = useState(false);
 
-  const decide = async (decision: "approved" | "rejected") => {
+  const decide = (decision: "approved" | "rejected") => {
+    if (busy) return;
     setBusy(true);
-    try { await onDecide(item.id, decision); }
-    finally { setBusy(false); }
+    onDecide(item.id, decision);
   };
 
   return (
-    <div className={cn("rounded-lg border bg-card shadow-sm transition-opacity", item.status !== "pending" && "opacity-60")}>
+    <div className={cn(
+      "rounded-lg border bg-card shadow-sm transition-all duration-300",
+      leaving ? "opacity-0 -translate-y-1 scale-[0.98] pointer-events-none" : "opacity-100"
+    )}>
       <div className="flex items-start gap-3 p-4">
         <div className="mt-0.5 rounded-full bg-primary/10 p-1.5">
           <Brain className="h-4 w-4 text-primary" />
@@ -208,10 +212,11 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 export default function ReviewQueuePage() {
-  const [allItems, setAllItems] = useState<ReviewItem[]>([]);
-  const [filter,   setFilter]   = useState<Filter>("pending");
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState<string | null>(null);
+  const [allItems,   setAllItems]   = useState<ReviewItem[]>([]);
+  const [leavingIds, setLeavingIds] = useState<Set<string>>(new Set());
+  const [filter,     setFilter]     = useState<Filter>("pending");
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -254,24 +259,31 @@ export default function ReviewQueuePage() {
   // Client-side filter so tab switches don't require a re-fetch
   const items = filter === "all" ? allItems : allItems.filter((i) => i.status === filter);
 
-  const handleDecide = useCallback(async (id: string, decision: "approved" | "rejected") => {
-    // Optimistic update
-    setAllItems((prev) =>
-      prev.map((item) => item.id === id ? { ...item, status: decision, _decideError: false } : item)
-    );
+  const handleDecide = useCallback((id: string, decision: "approved" | "rejected") => {
     // Persist locally immediately
     saveDecision(id, decision);
 
-    // Attempt API sync; show inline error badge if it fails (but keep local decision)
-    try {
-      const endpoint = decision === "approved" ? "approve" : "reject";
-      const res = await api.post(`/api/v1/ai/review-queue/${id}/${endpoint}`, {});
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch {
+    // Trigger exit animation, then update state so the item disappears from filtered views
+    setLeavingIds((prev) => new Set([...prev, id]));
+    setTimeout(() => {
       setAllItems((prev) =>
-        prev.map((item) => item.id === id ? { ...item, _decideError: true } : item)
+        prev.map((item) => item.id === id ? { ...item, status: decision, _decideError: false } : item)
       );
-    }
+      setLeavingIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
+    }, 320);
+
+    // Attempt API sync in background; show inline error badge if it fails
+    (async () => {
+      try {
+        const endpoint = decision === "approved" ? "approve" : "reject";
+        const res = await api.post(`/api/v1/ai/review-queue/${id}/${endpoint}`, {});
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } catch {
+        setAllItems((prev) =>
+          prev.map((item) => item.id === id ? { ...item, _decideError: true } : item)
+        );
+      }
+    })();
   }, []);
 
   const pendingCount = allItems.filter((i) => i.status === "pending").length;
@@ -357,7 +369,7 @@ export default function ReviewQueuePage() {
         ) : (
           <div className="flex flex-col gap-3">
             {items.map((item) => (
-              <ReviewCard key={item.id} item={item} onDecide={handleDecide} />
+              <ReviewCard key={item.id} item={item} onDecide={handleDecide} leaving={leavingIds.has(item.id)} />
             ))}
           </div>
         )}
