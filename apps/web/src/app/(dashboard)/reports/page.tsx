@@ -574,7 +574,6 @@ export default function ReportsPage() {
           <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-green-400/70 inline-block" /> Calls</span>
         </div>
       </div>
-    </div>
       </>}
     </div>
   );
