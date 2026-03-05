@@ -296,33 +296,75 @@ export async function dealsRoutes(server: FastifyInstance) {
   });
 
   /**
-   * GET /deals/:id/timeline — activities related to this deal
+   * GET /deals/:id/timeline?before=&limit= — activities related to this deal
+   * Cursor-based, newest first. Uses the PostgreSQL activities table for O(1)
+   * partition-pruned queries regardless of how far back the timeline goes.
    */
   server.get("/:id/timeline", async (request, reply) => {
     const paramParsed = IdParam.safeParse(request.params);
-    const queryParsed = TenantQuery.safeParse(request.query);
+    const queryParsed = z.object({
+      tenantId: z.string().min(1),
+      before:   z.string().datetime().optional(),
+      limit:    z.coerce.number().int().min(1).max(200).default(50),
+    }).safeParse(request.query);
     if (!paramParsed.success || !queryParsed.success) {
       return reply.status(400).send({ success: false, error: { code: "INVALID_PARAMS" } });
     }
-    const { id } = paramParsed.data;
-    const { tenantId } = queryParsed.data;
+    const { id }                       = paramParsed.data;
+    const { tenantId, before, limit }  = queryParsed.data;
 
-    const rows = await cypher(
-      `MATCH (a:Activity)-[:RELATED_TO]->(d:Deal {id: $dealId, tenant_id: $tenantId})
-       OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(a)
-       WITH a, collect(DISTINCT {id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email}) AS parts
-       RETURN {
-         id: a.id, type: a.type, direction: a.direction, subject: a.subject,
-         summary: a.summary, sentiment: a.sentiment,
-         occurred_at: a.occurred_at, source: a.source,
-         participants: parts
-       }
+    const values: unknown[] = [id, tenantId];
+    let   idx = 3;
+    const where = ["a.deal_id = $1", "a.tenant_id = $2", "a.deleted_at IS NULL"];
+
+    if (before) { where.push(`a.occurred_at < $${idx}`); values.push(before); idx++; }
+
+    const { rows } = await pool.query(
+      `SELECT
+         a.id, a.type, a.direction, a.subject, a.summary, a.sentiment,
+         a.duration_seconds, a.occurred_at, a.source,
+         COALESCE(
+           json_agg(
+             json_build_object(
+               'id',         ap.contact_id,
+               'first_name', ap.first_name,
+               'last_name',  ap.last_name,
+               'email',      ap.email
+             ) ORDER BY ap.email
+           ) FILTER (WHERE ap.email IS NOT NULL),
+           '[]'
+         ) AS participants
+       FROM activities a
+       LEFT JOIN activity_participants ap
+         ON ap.activity_id = a.id AND ap.occurred_at = a.occurred_at
+       WHERE ${where.join(" AND ")}
+       GROUP BY a.id, a.type, a.direction, a.subject, a.summary, a.sentiment,
+                a.duration_seconds, a.occurred_at, a.source
        ORDER BY a.occurred_at DESC
-       LIMIT 50`,
-      { dealId: id, tenantId }
+       LIMIT $${idx}`,
+      [...values, limit]
     );
 
-    return reply.send({ success: true, data: rows });
+    const nextCursor = rows.length === limit
+      ? (rows[rows.length - 1].occurred_at as Date).toISOString()
+      : null;
+
+    return reply.send({
+      success: true,
+      data: rows.map((r) => ({
+        id:              r.id,
+        type:            r.type,
+        direction:       r.direction    ?? null,
+        subject:         r.subject      || undefined,
+        summary:         r.summary      || undefined,
+        sentiment:       r.sentiment    != null ? Number(r.sentiment) : undefined,
+        durationSeconds: r.duration_seconds || undefined,
+        occurredAt:      (r.occurred_at as Date).toISOString(),
+        source:          r.source,
+        participants:    Array.isArray(r.participants) ? r.participants : [],
+      })),
+      pagination: { limit, hasMore: rows.length === limit, nextCursor },
+    });
   });
 
   // ── Reality Score: deterministic computation from graph signals ─────────────

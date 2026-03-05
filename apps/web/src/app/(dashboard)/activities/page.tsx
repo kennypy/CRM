@@ -252,8 +252,10 @@ const PAGE_SIZE = 50;
 
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [total, setTotal]           = useState(0);
-  const [page, setPage]             = useState(1);
+  // cursors[0] = undefined (first page), cursors[n] = `before` cursor for page n+1
+  const [cursors, setCursors]       = useState<(string | undefined)[]>([undefined]);
+  const [pageIdx, setPageIdx]       = useState(0);   // index into cursors array
+  const [hasMore, setHasMore]       = useState(false);
   const [typeFilter, setTypeFilter] = useState<ActivityType | "all">("all");
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
@@ -263,25 +265,44 @@ export default function ActivitiesPage() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) });
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
       if (typeFilter !== "all") params.set("type", typeFilter);
+      const cursor = cursors[pageIdx];
+      if (cursor) params.set("before", cursor);
       const res = await api.get(`/api/v1/activities?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setActivities(json.data ?? []);
-      setTotal(json.pagination?.total ?? json.data?.length ?? 0);
+      setHasMore(json.pagination?.hasMore ?? false);
+      // Store the nextCursor for the next page at position pageIdx+1
+      if (json.pagination?.nextCursor) {
+        setCursors((prev) => {
+          const next = [...prev];
+          next[pageIdx + 1] = json.pagination.nextCursor;
+          return next;
+        });
+      }
     } catch (e: any) {
       setError(e.message ?? "Failed to load activities");
     } finally {
       setLoading(false);
     }
-  }, [page, typeFilter]);
+  }, [pageIdx, cursors, typeFilter]);
 
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Reset to page 1 when filter changes
+  const handleTypeFilter = (t: ActivityType | "all") => {
+    setTypeFilter(t);
+    setPageIdx(0);
+    setCursors([undefined]);
+  };
+
+  const goNext = () => setPageIdx((i) => i + 1);
+  const goPrev = () => setPageIdx((i) => Math.max(0, i - 1));
 
   const grouped: { date: string; items: Activity[] }[] = [];
+
   for (const activity of activities) {
     const d = new Date(activity.occurredAt).toLocaleDateString("en-US", {
       weekday: "long", month: "long", day: "numeric",
@@ -297,9 +318,9 @@ export default function ActivitiesPage() {
         <div className="flex items-center gap-2">
           <Zap className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">Activity Feed</h1>
-          {!loading && (
+          {!loading && activities.length > 0 && (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {total.toLocaleString()}
+              {activities.length}{hasMore ? "+" : ""} shown
             </span>
           )}
         </div>
@@ -322,7 +343,7 @@ export default function ActivitiesPage() {
         <Filter className="h-4 w-4 text-muted-foreground" />
         <div className="flex gap-1 rounded-lg bg-muted p-1">
           {TYPE_FILTERS.map(({ key, label }) => (
-            <button key={key} onClick={() => { setTypeFilter(key); setPage(1); }}
+            <button key={key} onClick={() => handleTypeFilter(key)}
               className={cn("rounded-md px-3 py-1 text-sm font-medium transition-colors",
                 typeFilter === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
               {label}
@@ -380,15 +401,15 @@ export default function ActivitiesPage() {
         )}
       </div>
 
-      {totalPages > 1 && (
+      {(pageIdx > 0 || hasMore) && (
         <div className="flex items-center justify-between text-sm">
-          <p className="text-muted-foreground">Page {page} of {totalPages}</p>
+          <p className="text-muted-foreground">Page {pageIdx + 1}</p>
           <div className="flex gap-2">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1 || loading}
+            <button onClick={goPrev} disabled={pageIdx === 0 || loading}
               className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
               <ChevronLeft className="h-4 w-4" /> Previous
             </button>
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}
+            <button onClick={goNext} disabled={!hasMore || loading}
               className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
               Next <ChevronRight className="h-4 w-4" />
             </button>
