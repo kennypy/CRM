@@ -12,6 +12,7 @@ import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
 import { api } from "@/lib/api";
 import { EvidencePanel } from "@/components/deals/evidence-panel";
+import { DealDetailPanel } from "@/components/deals/deal-detail-panel";
 import {
   Briefcase, RefreshCw, TrendingUp, AlertCircle,
   ChevronRight, ChevronLeft, DollarSign, AlertTriangle,
@@ -90,13 +91,14 @@ function DeltaBadge({ declared, reality }: { declared?: number; reality?: number
 }
 
 function DealCard({
-  deal, currency, locale, onMove, isFirst, isLast, onScoreClick, onDeclaredChange,
+  deal, currency, locale, onMove, isFirst, isLast, onScoreClick, onDeclaredChange, onDetailClick,
 }: {
   deal: Deal; currency: string; locale: string;
   onMove: (id: string, direction: "prev" | "next") => void;
   isFirst: boolean; isLast: boolean;
   onScoreClick: (deal: Deal) => void;
   onDeclaredChange: (id: string, pct: number) => void;
+  onDetailClick: (deal: Deal) => void;
 }) {
   const isWon  = deal.stage === "closed_won";
   const isLost = deal.stage === "closed_lost";
@@ -117,12 +119,23 @@ function DealCard({
       isLost && "border-red-200 bg-red-50/50 opacity-70",
     )}>
       <div className="mb-1 flex items-start justify-between gap-2">
-        <p className="text-sm font-semibold leading-tight text-foreground line-clamp-2">{deal.name}</p>
+        <button
+          onClick={() => onDetailClick(deal)}
+          className="text-left text-sm font-semibold leading-tight text-foreground line-clamp-2 hover:text-primary transition-colors"
+          title="Click to view deal details"
+        >
+          {deal.name}
+        </button>
         <RealityBadge score={deal.realityScore} onClick={() => onScoreClick(deal)} />
       </div>
 
       {deal.company && (
-        <p className="mb-2 text-xs text-muted-foreground">{deal.company.name}</p>
+        <button
+          onClick={() => onDetailClick(deal)}
+          className="mb-2 block text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {deal.company.name}
+        </button>
       )}
 
       <div className="flex items-center gap-1 text-xs font-medium text-foreground">
@@ -186,12 +199,13 @@ function DealCard({
 }
 
 function KanbanColumn({
-  stage, deals, currency, locale, onMove, onScoreClick, onDeclaredChange,
+  stage, deals, currency, locale, onMove, onScoreClick, onDeclaredChange, onDetailClick,
 }: {
   stage: (typeof STAGES)[number]; deals: Deal[]; currency: string; locale: string;
   onMove: (id: string, direction: "prev" | "next") => void;
   onScoreClick: (deal: Deal) => void;
   onDeclaredChange: (id: string, pct: number) => void;
+  onDetailClick: (deal: Deal) => void;
 }) {
   const total   = deals.reduce((s, d) => s + d.value, 0);
   const isFirst = stage.key === STAGE_ORDER[0];
@@ -216,6 +230,7 @@ function KanbanColumn({
             key={deal.id} deal={deal} currency={currency} locale={locale}
             onMove={onMove} isFirst={isFirst} isLast={isLast}
             onScoreClick={onScoreClick} onDeclaredChange={onDeclaredChange}
+            onDetailClick={onDetailClick}
           />
         ))}
         {deals.length === 0 && (
@@ -273,6 +288,7 @@ export default function PipelinePage() {
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [evidenceDeal, setEvidenceDeal] = useState<Deal | null>(null);
+  const [detailDeal,   setDetailDeal]   = useState<Deal | null>(null);
 
   const fetchDeals = useCallback(async () => {
     setLoading(true);
@@ -361,10 +377,27 @@ export default function PipelinePage() {
                 currency={currency} locale={locale}
                 onMove={handleMove} onScoreClick={setEvidenceDeal}
                 onDeclaredChange={handleDeclaredChange}
+                onDetailClick={setDetailDeal}
               />
             ))}
           </div>
         </div>
+      )}
+
+      {detailDeal && (
+        <DealDetailPanel
+          dealId={detailDeal.id}
+          dealName={detailDeal.name}
+          dealValue={detailDeal.value}
+          dealCurrency={detailDeal.currency}
+          declaredProbability={detailDeal.declaredProbability}
+          stage={detailDeal.stage}
+          onClose={() => setDetailDeal(null)}
+          onScoreClick={() => { setEvidenceDeal(detailDeal); setDetailDeal(null); }}
+          onDealUpdated={(patch) =>
+            setDeals((prev) => prev.map((d) => d.id === detailDeal.id ? { ...d, ...patch } : d))
+          }
+        />
       )}
 
       {evidenceDeal && (

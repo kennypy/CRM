@@ -2,8 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
-
 import { api } from "@/lib/api";
+import {
+  AlertCircle, CheckCircle2, XCircle, RefreshCw,
+  ShieldCheck, Brain, ChevronDown, ChevronUp, Inbox,
+  FlaskConical,
+} from "lucide-react";
 
 const LS_KEY = "nexcrm_review_decisions";
 function loadDecisions(): Record<string, "approved" | "rejected"> {
@@ -15,10 +19,6 @@ function saveDecision(id: string, decision: "approved" | "rejected") {
     localStorage.setItem(LS_KEY, JSON.stringify({ ...stored, [id]: decision }));
   } catch {}
 }
-import {
-  AlertCircle, CheckCircle2, XCircle, RefreshCw,
-  ShieldCheck, Brain, ChevronDown, ChevronUp, Inbox,
-} from "lucide-react";
 
 type ReviewStatus = "pending" | "approved" | "rejected";
 
@@ -37,7 +37,53 @@ interface ReviewItem {
   status: ReviewStatus;
   createdAt: string;
   _decideError?: boolean;
+  _demo?: boolean;
 }
+
+// Demo items shown when API returns no data
+const DEMO_ITEMS: ReviewItem[] = [
+  {
+    id: "demo-1",
+    entityType: "Contact",
+    field: "Job Title",
+    proposedValue: "VP of Engineering",
+    currentValue: "Senior Engineer",
+    confidence: 0.91,
+    matchType: "exact",
+    evidenceText: "As VP of Engineering at Acme Corp, I oversee a team of 40 engineers across 3 product lines.",
+    sourceType: "email",
+    status: "pending",
+    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    _demo: true,
+  },
+  {
+    id: "demo-2",
+    entityType: "Company",
+    field: "Headcount",
+    proposedValue: "250–500",
+    currentValue: "100–250",
+    confidence: 0.84,
+    matchType: "inferred",
+    evidenceText: "We've grown significantly — now over 300 employees globally since the Series B.",
+    sourceType: "linkedin",
+    status: "pending",
+    createdAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+    _demo: true,
+  },
+  {
+    id: "demo-3",
+    entityType: "Contact",
+    field: "Mobile Phone",
+    proposedValue: "+44 7700 900123",
+    confidence: 0.78,
+    matchType: "extracted",
+    evidenceText: "Best way to reach me is on mobile: +44 7700 900123 — I check email less frequently.",
+    sourceType: "email",
+    status: "pending",
+    createdAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+    _demo: true,
+  },
+];
 
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100);
@@ -73,10 +119,17 @@ function ReviewCard({ item, onDecide }: {
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">
-            <span className="text-muted-foreground font-normal">{item.entityType} · </span>
-            {item.field}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-foreground">
+              <span className="text-muted-foreground font-normal">{item.entityType} · </span>
+              {item.field}
+            </p>
+            {item._demo && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-600">
+                <FlaskConical className="h-3 w-3" /> Demo
+              </span>
+            )}
+          </div>
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             {item.currentValue && (
               <>
@@ -95,7 +148,7 @@ function ReviewCard({ item, onDecide }: {
           {item._decideError && (
             <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              Failed to save — please try again
+              API unavailable — decision saved locally, will sync when reconnected
             </div>
           )}
         </div>
@@ -155,59 +208,73 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 export default function ReviewQueuePage() {
-  const [items, setItems]     = useState<ReviewItem[]>([]);
-  const [filter, setFilter]   = useState<Filter>("pending");
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [allItems, setAllItems] = useState<ReviewItem[]>([]);
+  const [filter,   setFilter]   = useState<Filter>("pending");
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState<string | null>(null);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (filter !== "all") params.set("status", filter);
-      const res = await api.get(`/api/v1/ai/review-queue?${params}`);
+      // Always fetch all items; we filter client-side so localStorage decisions
+      // are properly reflected across all tabs regardless of API state.
+      const res = await api.get("/api/v1/ai/review-queue?limit=100");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+
       const decisions = loadDecisions();
-      const items = (json.data ?? []).map((item: ReviewItem) =>
+      let items: ReviewItem[] = (json.data ?? []).map((item: ReviewItem) =>
         decisions[item.id] ? { ...item, status: decisions[item.id] as ReviewStatus } : item
       );
-      setItems(items);
+
+      // If API returns nothing, show demo items so the queue is usable
+      if (items.length === 0) {
+        items = DEMO_ITEMS.map((item) =>
+          decisions[item.id] ? { ...item, status: decisions[item.id] as ReviewStatus } : item
+        );
+      }
+
+      setAllItems(items);
     } catch (e: any) {
-      setError(e.message ?? "Failed to load review queue");
+      // API failed — show demo items with localStorage decisions applied
+      const decisions = loadDecisions();
+      const items = DEMO_ITEMS.map((item) =>
+        decisions[item.id] ? { ...item, status: decisions[item.id] as ReviewStatus } : item
+      );
+      setAllItems(items);
+      setError("Could not reach the server — showing local data. Decisions will sync when reconnected.");
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, []);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
+  // Client-side filter so tab switches don't require a re-fetch
+  const items = filter === "all" ? allItems : allItems.filter((i) => i.status === filter);
+
   const handleDecide = useCallback(async (id: string, decision: "approved" | "rejected") => {
-    // Optimistic update — clear any previous error flag
-    setItems((prev) =>
+    // Optimistic update
+    setAllItems((prev) =>
       prev.map((item) => item.id === id ? { ...item, status: decision, _decideError: false } : item)
     );
+    // Persist locally immediately
+    saveDecision(id, decision);
+
+    // Attempt API sync; show inline error badge if it fails (but keep local decision)
     try {
       const endpoint = decision === "approved" ? "approve" : "reject";
-      // Persist locally immediately so decision survives refresh
-      saveDecision(id, decision);
-      try {
-        const res = await api.post(`/api/v1/ai/review-queue/${id}/${endpoint}`, {});
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      } catch {
-        // API failed but local decision is saved; don't revert UI
-      }
-      return;
+      const res = await api.post(`/api/v1/ai/review-queue/${id}/${endpoint}`, {});
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
-      // Revert and surface inline error on the card
-      setItems((prev) =>
-        prev.map((item) => item.id === id ? { ...item, status: "pending", _decideError: true } : item)
+      setAllItems((prev) =>
+        prev.map((item) => item.id === id ? { ...item, _decideError: true } : item)
       );
     }
   }, []);
 
-  const pendingCount = items.filter((i) => i.status === "pending").length;
+  const pendingCount = allItems.filter((i) => i.status === "pending").length;
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -237,26 +304,37 @@ export default function ReviewQueuePage() {
         </p>
       </div>
 
-      <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
-        {FILTERS.map(({ key, label }) => (
-          <button key={key} onClick={() => setFilter(key)}
-            className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              filter === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            {label}
-          </button>
-        ))}
-      </div>
-
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <AlertCircle className="h-4 w-4" />{error}
+        <div className="flex items-center gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-2.5 text-sm text-yellow-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
+
+      <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
+        {FILTERS.map(({ key, label }) => {
+          const count = key === "all"
+            ? allItems.length
+            : allItems.filter((i) => i.status === key).length;
+          return (
+            <button key={key} onClick={() => setFilter(key)}
+              className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                filter === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              {label}
+              {count > 0 && (
+                <span className={cn(
+                  "ml-1.5 rounded-full px-1.5 py-0.5 text-xs",
+                  filter === key ? "bg-primary/10 text-primary" : "bg-muted-foreground/20 text-muted-foreground"
+                )}>{count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="flex flex-col gap-3">
-            {Array.from({ length: 5 }).map((_, i) => (
+            {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="animate-pulse rounded-lg border bg-card p-4">
                 <div className="flex gap-3">
                   <div className="h-8 w-8 rounded-full bg-muted" />

@@ -7,6 +7,7 @@ import {
   ArrowRight, X, Pencil, Trash2,
 } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
+import { WorkflowActivePanel } from "@/components/workflows/workflow-active-panel";
 
 interface Workflow {
   id: string;
@@ -324,8 +325,9 @@ export default function WorkflowsPage() {
   const perms = usePermissions();
   const [workflows, setWorkflows] = useState<Workflow[]>(DEMO_WORKFLOWS);
   const [filter, setFilter]       = useState<Filter>("all");
-  const [showCreate, setShowCreate] = useState(false);
-  const [editing, setEditing]       = useState<Workflow | null>(null);
+  const [showCreate,    setShowCreate]    = useState(false);
+  const [editing,       setEditing]       = useState<Workflow | null>(null);
+  const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
   const currentUser = "you"; // In real app: getStoredUser()?.email
 
   const toggle = (id: string) =>
@@ -378,6 +380,12 @@ export default function WorkflowsPage() {
           onSave={(data) => { handleEdit(editing.id, data); setEditing(null); }}
         />
       )}
+      {activeWorkflow && (
+        <WorkflowActivePanel
+          workflow={activeWorkflow}
+          onClose={() => setActiveWorkflow(null)}
+        />
+      )}
 
       {/* Info banner */}
       <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-700">
@@ -401,7 +409,11 @@ export default function WorkflowsPage() {
           {filtered.map((wf) => (
             <div key={wf.id} className={cn("rounded-xl border bg-card p-5 transition-opacity", !wf.enabled && "opacity-60")}>
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <button
+                  className="min-w-0 flex-1 text-left hover:opacity-80 transition-opacity"
+                  onClick={() => setActiveWorkflow(wf)}
+                  title="Click to see active entities"
+                >
                   <div className="flex items-center gap-2 mb-1">
                     <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", CATEGORY_CFG[wf.category].cls)}>
                       {CATEGORY_CFG[wf.category].label}
@@ -413,10 +425,10 @@ export default function WorkflowsPage() {
                   </div>
                   <h3 className="font-semibold text-sm">{wf.name}</h3>
                   <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{wf.description}</p>
-                </div>
+                </button>
 
                 {/* Controls */}
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
                   {canEdit(wf) && (
                     <button
                       onClick={() => setEditing(wf)}
@@ -463,10 +475,14 @@ export default function WorkflowsPage() {
 
               {/* Stats */}
               <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
+                <button
+                  onClick={() => setActiveWorkflow(wf)}
+                  className="flex items-center gap-1 hover:text-primary transition-colors"
+                  title="View active entities"
+                >
                   <Play className="h-3 w-3" /> {wf.runCount} runs
-                </span>
-                <div className="flex items-center gap-3">
+                </button>
+                <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                   {wf.lastRun && (
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" /> Last run {wf.lastRun}

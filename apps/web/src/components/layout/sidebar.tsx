@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Home, Briefcase, Users, Building2, Zap, BarChart3,
+  Briefcase, Users, Building2, Zap, BarChart3,
   CheckSquare, Settings, AlertCircle, Layers, ListOrdered,
   LayoutDashboard, Sun, Moon, Monitor,
 } from "lucide-react";
@@ -12,7 +12,6 @@ import { useTheme } from "@/components/theme/theme-provider";
 import type { Theme } from "@/components/theme/theme-provider";
 
 const navItems = [
-  { href: "/",           icon: Home,            label: "Home"        },
   { href: "/dashboard",  icon: LayoutDashboard, label: "Dashboard"   },
   { href: "/pipeline",   icon: Briefcase,       label: "Pipeline"    },
   { href: "/contacts",   icon: Users,           label: "Contacts"    },
@@ -55,7 +54,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
         {navItems.map(({ href, icon: Icon, label }) => {
-          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          const active = pathname.startsWith(href);
           return (
             <Link
               key={href}

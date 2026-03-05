@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
-import { BarChart3, TrendingUp, TrendingDown, Users, Briefcase, Activity, Award, ArrowRight, Plus, X, Trash2, FileText, CheckCircle2 } from "lucide-react";
+import { BarChart3, TrendingUp, TrendingDown, Users, Briefcase, Activity, Award, ArrowRight, Plus, X, Trash2, FileText, CheckCircle2, Sparkles, ChevronRight, ChevronLeft } from "lucide-react";
 
 // Period-keyed data sets
 const PIPELINE_DATA: Record<string, { stage: string; deals: number; value: number; avg_days: number }[]> = {
@@ -159,13 +159,63 @@ const ACTIVITY_DATA: Record<string, { label: string; emails: number; meetings: n
 const REPORT_TYPES = ["Pipeline", "Revenue", "Activity", "Contacts", "Win/Loss", "Sequence Performance"];
 const GROUP_BY_OPTIONS = ["Stage", "Rep", "Period", "Source", "Company", "Product"];
 const PERIODS = ["Last 7 days", "Last 30 days", "Last 90 days", "Last year", "Custom"];
+const STAGES_LIST = ["Discovery", "Proposal", "Negotiation", "Closed Won", "Closed Lost"];
+const SOURCES_LIST = ["Inbound referral", "Outbound email", "Event / webinar", "Partner channel", "Auto-captured"];
+const ACTIVITY_TYPES = ["Email", "Call", "Meeting", "Task"];
+const LEAD_SOURCES = ["Website", "Referral", "LinkedIn", "Event", "Cold outreach", "Auto-captured"];
+
+interface ReportFilters {
+  // Common
+  period: string;
+  groupBy: string;
+  rep: string;
+  createdBy: string;
+  createdFrom: string;
+  createdTo: string;
+  // Deal / Pipeline
+  stage: string;
+  valueMin: string;
+  valueMax: string;
+  closeFrom: string;
+  closeTo: string;
+  leadSource: string;
+  // Revenue
+  currency: string;
+  includeForecast: boolean;
+  // Activity
+  activityType: string;
+  deal: string;
+  contact: string;
+  direction: string;
+  // Contacts / Leads
+  assignedRep: string;
+  leadStatus: string;
+  source: string;
+  hasOpenDeals: boolean;
+  // Win/Loss
+  stageLostAt: string;
+  lossReason: string;
+  // Sequence
+  sequenceName: string;
+  stepNumber: string;
+  sequenceStatus: string;
+}
+
+const DEFAULT_FILTERS: ReportFilters = {
+  period: PERIODS[1], groupBy: GROUP_BY_OPTIONS[0], rep: "", createdBy: "",
+  createdFrom: "", createdTo: "", stage: "", valueMin: "", valueMax: "",
+  closeFrom: "", closeTo: "", leadSource: "", currency: "", includeForecast: true,
+  activityType: "", deal: "", contact: "", direction: "", assignedRep: "",
+  leadStatus: "", source: "", hasOpenDeals: false, stageLostAt: "", lossReason: "",
+  sequenceName: "", stepNumber: "", sequenceStatus: "",
+};
 
 interface SavedReport {
   id: string;
   name: string;
   type: string;
-  period: string;
-  groupBy: string;
+  filters: ReportFilters;
+  nlQuery?: string;
   createdAt: string;
 }
 
@@ -177,21 +227,342 @@ function persistReports(reports: SavedReport[]) {
   try { localStorage.setItem(LS_REPORTS, JSON.stringify(reports)); } catch {}
 }
 
+// ── NL Query Parser ────────────────────────────────────────────────────────────
+
+function parseNLQuery(query: string, currentFilters: ReportFilters): Partial<ReportFilters> & { type?: string } {
+  const q = query.toLowerCase();
+  const patch: Partial<ReportFilters> & { type?: string } = {};
+
+  // Period detection
+  if (/last\s+7\s+days?|this\s+week/.test(q))        patch.period = "Last 7 days";
+  else if (/last\s+30\s+days?|this\s+month/.test(q)) patch.period = "Last 30 days";
+  else if (/last\s+90\s+days?|quarter/.test(q))      patch.period = "Last 90 days";
+  else if (/last\s+year|annual|yearly/.test(q))       patch.period = "Last year";
+
+  // Report type detection
+  if (/revenue|closed\s+won|won|close[sd]/.test(q))     patch.type = "Revenue";
+  else if (/pipeline|open\s+deal/.test(q))              patch.type = "Pipeline";
+  else if (/activit|email|call|meeting/.test(q))         patch.type = "Activity";
+  else if (/contact|lead/.test(q))                       patch.type = "Contacts";
+  else if (/win.*loss|loss.*win|win\s+rate/.test(q))    patch.type = "Win/Loss";
+  else if (/sequence|email\s+sequence/.test(q))          patch.type = "Sequence Performance";
+
+  // Stage detection
+  if (/closed\s+won/.test(q))       patch.stage = "Closed Won";
+  else if (/closed\s+lost/.test(q)) patch.stage = "Closed Lost";
+  else if (/negoti/.test(q))        patch.stage = "Negotiation";
+  else if (/proposal/.test(q))      patch.stage = "Proposal";
+  else if (/discovery/.test(q))     patch.stage = "Discovery";
+
+  // Group by detection
+  if (/by\s+rep|per\s+rep|rep\s+breakdown/.test(q))       patch.groupBy = "Rep";
+  else if (/by\s+stage|per\s+stage/.test(q))              patch.groupBy = "Stage";
+  else if (/by\s+source|per\s+source/.test(q))            patch.groupBy = "Source";
+  else if (/by\s+company|per\s+company/.test(q))          patch.groupBy = "Company";
+  else if (/by\s+period|over\s+time|trend/.test(q))       patch.groupBy = "Period";
+
+  return patch;
+}
+
+// ── Type-Specific Filter Section ───────────────────────────────────────────────
+
+function FilterSection({
+  type, filters, onChange, inputCls,
+}: {
+  type: string;
+  filters: ReportFilters;
+  onChange: (patch: Partial<ReportFilters>) => void;
+  inputCls: string;
+}) {
+  const F = filters;
+  const set = (patch: Partial<ReportFilters>) => onChange(patch);
+
+  const commonFields = (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Period</label>
+          <select value={F.period} onChange={(e) => set({ period: e.target.value })} className={inputCls}>
+            {PERIODS.map((p) => <option key={p}>{p}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Group by</label>
+          <select value={F.groupBy} onChange={(e) => set({ groupBy: e.target.value })} className={inputCls}>
+            {GROUP_BY_OPTIONS.map((g) => <option key={g}>{g}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Created by</label>
+          <input value={F.createdBy} onChange={(e) => set({ createdBy: e.target.value })} placeholder="e.g. sarah@acme.com" className={inputCls} />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Rep / Owner</label>
+          <input value={F.rep} onChange={(e) => set({ rep: e.target.value })} placeholder="Any rep" className={inputCls} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Created from</label>
+          <input type="date" value={F.createdFrom} onChange={(e) => set({ createdFrom: e.target.value })} className={inputCls} />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Created to</label>
+          <input type="date" value={F.createdTo} onChange={(e) => set({ createdTo: e.target.value })} className={inputCls} />
+        </div>
+      </div>
+    </>
+  );
+
+  if (type === "Pipeline") {
+    return (
+      <div className="space-y-3">
+        {commonFields}
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Stage</label>
+          <div className="flex flex-wrap gap-1.5">
+            {["", ...STAGES_LIST].map((s) => (
+              <button key={s} type="button" onClick={() => set({ stage: s })}
+                className={cn("rounded-full px-2.5 py-1 text-xs border transition-colors",
+                  F.stage === s ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                {s || "All stages"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Min value (£)</label>
+            <input type="number" value={F.valueMin} onChange={(e) => set({ valueMin: e.target.value })} placeholder="0" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Max value (£)</label>
+            <input type="number" value={F.valueMax} onChange={(e) => set({ valueMax: e.target.value })} placeholder="No limit" className={inputCls} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Close date from</label>
+            <input type="date" value={F.closeFrom} onChange={(e) => set({ closeFrom: e.target.value })} className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Close date to</label>
+            <input type="date" value={F.closeTo} onChange={(e) => set({ closeTo: e.target.value })} className={inputCls} />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Lead source</label>
+          <select value={F.leadSource} onChange={(e) => set({ leadSource: e.target.value })} className={inputCls}>
+            <option value="">All sources</option>
+            {SOURCES_LIST.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Revenue") {
+    return (
+      <div className="space-y-3">
+        {commonFields}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Currency</label>
+            <select value={F.currency} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
+              <option value="">All currencies</option>
+              {["GBP", "USD", "EUR", "CAD", "AUD"].map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={F.includeForecast} onChange={(e) => set({ includeForecast: e.target.checked })}
+                className="h-4 w-4 rounded border-border" />
+              Include forecast
+            </label>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Activity") {
+    return (
+      <div className="space-y-3">
+        {commonFields}
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Activity type</label>
+          <div className="flex flex-wrap gap-1.5">
+            {["", ...ACTIVITY_TYPES].map((t) => (
+              <button key={t} type="button" onClick={() => set({ activityType: t })}
+                className={cn("rounded-full px-2.5 py-1 text-xs border transition-colors",
+                  F.activityType === t ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                {t || "All types"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Deal</label>
+            <input value={F.deal} onChange={(e) => set({ deal: e.target.value })} placeholder="Filter by deal name" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Contact</label>
+            <input value={F.contact} onChange={(e) => set({ contact: e.target.value })} placeholder="Filter by contact" className={inputCls} />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Direction</label>
+          <div className="flex gap-1.5">
+            {["", "Inbound", "Outbound"].map((d) => (
+              <button key={d} type="button" onClick={() => set({ direction: d })}
+                className={cn("rounded-full px-2.5 py-1 text-xs border transition-colors",
+                  F.direction === d ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                {d || "All"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Contacts") {
+    return (
+      <div className="space-y-3">
+        {commonFields}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Assigned rep</label>
+            <input value={F.assignedRep} onChange={(e) => set({ assignedRep: e.target.value })} placeholder="Any rep" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Lead status</label>
+            <div className="flex gap-1.5 mt-2">
+              {["", "Lead", "Contact"].map((s) => (
+                <button key={s} type="button" onClick={() => set({ leadStatus: s })}
+                  className={cn("rounded-full px-2.5 py-1 text-xs border transition-colors",
+                    F.leadStatus === s ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                  {s || "All"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Source</label>
+          <select value={F.source} onChange={(e) => set({ source: e.target.value })} className={inputCls}>
+            <option value="">All sources</option>
+            {LEAD_SOURCES.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={F.hasOpenDeals} onChange={(e) => set({ hasOpenDeals: e.target.checked })}
+            className="h-4 w-4 rounded border-border" />
+          Only contacts with open deals
+        </label>
+      </div>
+    );
+  }
+
+  if (type === "Win/Loss") {
+    return (
+      <div className="space-y-3">
+        {commonFields}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Stage lost at</label>
+            <select value={F.stageLostAt} onChange={(e) => set({ stageLostAt: e.target.value })} className={inputCls}>
+              <option value="">Any stage</option>
+              {STAGES_LIST.filter((s) => s !== "Closed Won").map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Lead source</label>
+            <select value={F.leadSource} onChange={(e) => set({ leadSource: e.target.value })} className={inputCls}>
+              <option value="">All sources</option>
+              {SOURCES_LIST.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Loss reason</label>
+          <input value={F.lossReason} onChange={(e) => set({ lossReason: e.target.value })} placeholder="e.g. Price, Competitor, No budget" className={inputCls} />
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "Sequence Performance") {
+    return (
+      <div className="space-y-3">
+        {commonFields}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Sequence name</label>
+            <input value={F.sequenceName} onChange={(e) => set({ sequenceName: e.target.value })} placeholder="e.g. Nurture — Enterprise" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Step #</label>
+            <input type="number" value={F.stepNumber} onChange={(e) => set({ stepNumber: e.target.value })} placeholder="Any step" className={inputCls} />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</label>
+          <div className="flex gap-1.5">
+            {["", "Active", "Completed", "Paused"].map((s) => (
+              <button key={s} type="button" onClick={() => set({ sequenceStatus: s })}
+                className={cn("rounded-full px-2.5 py-1 text-xs border transition-colors",
+                  F.sequenceStatus === s ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                {s || "All"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback: common fields only
+  return <div className="space-y-3">{commonFields}</div>;
+}
+
+// ── Create Report Modal (2-step) ───────────────────────────────────────────────
+
 function CreateReportModal({ onClose, onSaved }: { onClose: () => void; onSaved: (r: SavedReport) => void }) {
-  const [rname,  setRname]  = useState("");
-  const [type,   setType]   = useState(REPORT_TYPES[0]);
-  const [period, setPeriod] = useState(PERIODS[1]);
-  const [group,  setGroup]  = useState(GROUP_BY_OPTIONS[0]);
-  const [done,   setDone]   = useState(false);
+  const [step,    setStep]    = useState<1 | 2>(1);
+  const [rname,   setRname]   = useState("");
+  const [type,    setType]    = useState(REPORT_TYPES[0]);
+  const [nlQuery, setNlQuery] = useState("");
+  const [parsed,  setParsed]  = useState(false);
+  const [filters, setFilters] = useState<ReportFilters>({ ...DEFAULT_FILTERS });
+  const [done,    setDone]    = useState(false);
 
   const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+
+  const applyNL = () => {
+    if (!nlQuery.trim()) return;
+    const result = parseNLQuery(nlQuery, filters);
+    const { type: parsedType, ...filterPatch } = result;
+    if (parsedType) setType(parsedType);
+    setFilters((prev) => ({ ...prev, ...filterPatch }));
+    setParsed(true);
+    // Auto-name from query if no name set
+    if (!rname.trim()) {
+      setRname(nlQuery.trim().charAt(0).toUpperCase() + nlQuery.trim().slice(1, 60));
+    }
+  };
 
   const handleSave = () => {
     if (!rname.trim()) return;
     const report: SavedReport = {
       id: Date.now().toString(),
       name: rname.trim(),
-      type, period, groupBy: group,
+      type,
+      filters,
+      nlQuery: nlQuery.trim() || undefined,
       createdAt: new Date().toISOString(),
     };
     onSaved(report);
@@ -202,58 +573,138 @@ function CreateReportModal({ onClose, onSaved }: { onClose: () => void; onSaved:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-card shadow-2xl max-h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-6 py-4 shrink-0">
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
             <h2 className="font-semibold">Create Report</h2>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              Step {step} of 2
+            </span>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
         </div>
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">Report name *</label>
-            <input value={rname} onChange={(e) => setRname(e.target.value)} placeholder="e.g. Q1 Pipeline by Rep" className={inputCls} />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">Report type</label>
-            <div className="flex flex-wrap gap-2">
-              {REPORT_TYPES.map((t) => (
-                <button key={t} type="button" onClick={() => setType(t)}
-                  className={cn("rounded-full px-3 py-1 text-xs font-medium border transition-colors",
-                    type === t ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted")}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium">Period</label>
-              <select value={period} onChange={(e) => setPeriod(e.target.value)} className={inputCls}>
-                {PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium">Group by</label>
-              <select value={group} onChange={(e) => setGroup(e.target.value)} className={inputCls}>
-                {GROUP_BY_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
-              </select>
-            </div>
-          </div>
+
+        {/* Step indicators */}
+        <div className="flex border-b shrink-0">
+          {[1, 2].map((s) => (
+            <button key={s} type="button"
+              onClick={() => s < step ? setStep(s as 1 | 2) : undefined}
+              className={cn(
+                "flex-1 py-2.5 text-xs font-medium transition-colors",
+                step === s ? "border-b-2 border-primary text-primary" :
+                s < step ? "text-muted-foreground hover:text-foreground cursor-pointer" :
+                "text-muted-foreground/40 cursor-default"
+              )}>
+              {s === 1 ? "1 · Type & Query" : "2 · Filters"}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {step === 1 && (
+            <>
+              {/* Report name */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Report name *</label>
+                <input value={rname} onChange={(e) => setRname(e.target.value)}
+                  placeholder="e.g. Q1 Closed Won by Rep" className={inputCls} />
+              </div>
+
+              {/* Report type */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Report type</label>
+                <div className="flex flex-wrap gap-2">
+                  {REPORT_TYPES.map((t) => (
+                    <button key={t} type="button" onClick={() => { setType(t); setParsed(false); }}
+                      className={cn("rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                        type === t ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* NL Query */}
+              <div>
+                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  Ask in plain English
+                  <span className="ml-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-normal text-primary">optional</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    value={nlQuery}
+                    onChange={(e) => { setNlQuery(e.target.value); setParsed(false); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") applyNL(); }}
+                    placeholder='e.g. "deals closed in the last 30 days by rep"'
+                    className={cn(inputCls, "flex-1")}
+                  />
+                  <button type="button" onClick={applyNL}
+                    className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 shrink-0">
+                    Parse
+                  </button>
+                </div>
+                {parsed && (
+                  <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs text-green-700">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    Filters pre-filled from your query — review and adjust in Step 2
+                  </div>
+                )}
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Examples: "deals closed last 30 days", "contact activity by rep this quarter", "win rate by lead source"
+                </p>
+              </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Configure filters for your <strong>{type}</strong> report. All fields are optional.
+              </p>
+              <FilterSection
+                type={type}
+                filters={filters}
+                onChange={(patch) => setFilters((prev) => ({ ...prev, ...patch }))}
+                inputCls={inputCls}
+              />
+            </>
+          )}
+
           {done && (
             <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
               <CheckCircle2 className="h-4 w-4" /> Report saved!
             </div>
           )}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Cancel</button>
-            <button type="button" onClick={handleSave} disabled={!rname.trim()}
-              className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 border-t px-6 py-4 shrink-0">
+          <button type="button" onClick={onClose}
+            className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+            Cancel
+          </button>
+          {step === 1 ? (
+            <button type="button" onClick={() => setStep(2)} disabled={!rname.trim()}
+              className={cn("ml-auto flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                 !rname.trim() ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-              Save Report
+              Next: Filters <ChevronRight className="h-4 w-4" />
             </button>
-          </div>
+          ) : (
+            <>
+              <button type="button" onClick={() => setStep(1)}
+                className="flex items-center gap-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+                <ChevronLeft className="h-4 w-4" /> Back
+              </button>
+              <button type="button" onClick={handleSave}
+                className="ml-auto rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">
+                Save Report
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -284,7 +735,8 @@ function SavedReportsList({ reports, onDelete }: { reports: SavedReport[]; onDel
                 {r.type}
               </span>
               <h3 className="font-semibold text-sm">{r.name}</h3>
-              <p className="text-xs text-muted-foreground mt-1">{r.period} · Grouped by {r.groupBy}</p>
+              <p className="text-xs text-muted-foreground mt-1">{r.filters?.period ?? "—"} · Grouped by {r.filters?.groupBy ?? "—"}</p>
+              {r.nlQuery && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">"{r.nlQuery}"</p>}
               <p className="text-xs text-muted-foreground mt-0.5">
                 Created {new Date(r.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
               </p>
