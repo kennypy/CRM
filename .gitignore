@@ -53,6 +53,10 @@ htmlcov/
 # Docker volumes (local dev)
 .docker-data/
 
+# Redis runtime data
+appendonlydir/
+dump.rdb
+
 # Python virtualenvs
 .venv/
 venv/
