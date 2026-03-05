@@ -98,7 +98,7 @@ async function main() {
     ]);
 
     // ── Users — bcrypt hash, ON CONFLICT DO UPDATE so re-seeding fixes stale hashes ──
-    const pwHash = await bcrypt.hash("dev-password-123", 12);
+    const pwHash = await bcrypt.hash("Admin@nexcrm1", 12);
     await client.query(`
       INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, role)
       VALUES
@@ -393,8 +393,8 @@ async function main() {
     console.log("[seed] Done ✓");
     console.log("");
     console.log("Dev credentials:");
-    console.log("  Admin: admin@nexcrm.dev / dev-password-123");
-    console.log("  Rep:   rep@nexcrm.dev   / dev-password-123");
+    console.log("  Admin: admin@nexcrm.dev / Admin@nexcrm1");
+    console.log("  Rep:   rep@nexcrm.dev   / Admin@nexcrm1");
     console.log("");
     console.log("Seeded scores (call GET /api/v1/deals/:id/reality-score to recompute):");
     console.log("  Acme      reality ≈ 58 | declared 80% | Δ −22  (blocker + thin buying group)");
