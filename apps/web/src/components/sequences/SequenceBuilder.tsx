@@ -32,8 +32,8 @@ interface SequenceBuilderProps {
   onCancel:    () => void;
 }
 
-const DEFAULT_SETTINGS = {
-  timezoneMode: "contact" as const,
+const DEFAULT_SETTINGS: Sequence["settings"] = {
+  timezoneMode: "contact",
   fixedTz:      "UTC",
   sendDays:     [1, 2, 3, 4, 5],
   sendStart:    "09:00",

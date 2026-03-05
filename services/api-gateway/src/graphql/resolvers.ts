@@ -8,13 +8,21 @@
  *   { tenantId: string; userId: string; role: string }
  */
 
+import type { MercuriusContext } from "mercurius";
+
+// Augment MercuriusContext so our resolver signatures satisfy IFieldResolver<any, MercuriusContext>.
+// Mercurius populates these fields via the context() factory in index.ts.
+declare module "mercurius" {
+  interface MercuriusContext {
+    tenantId: string;
+    userId:   string;
+    role:     string;
+  }
+}
+
 const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
 
-interface GQLContext {
-  tenantId: string;
-  userId:   string;
-  role:     string;
-}
+type GQLContext = MercuriusContext;
 
 // ── Shared fetch helpers ───────────────────────────────────────────────────────
 

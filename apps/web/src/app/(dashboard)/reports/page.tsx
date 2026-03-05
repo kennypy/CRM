@@ -1024,7 +1024,7 @@ export default function ReportsPage() {
               </Link>
             ))}
           </div>
-        </div>
+        </div>}
 
         {/* Win Rate by Lead Source */}
         {showSection("winloss") && <div className="rounded-xl border bg-card p-5">

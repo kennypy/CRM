@@ -128,16 +128,11 @@ async function bootstrap() {
   // Protected by the authMiddleware preHandler hook registered above.
   // Context extracts the JWT claims so resolvers have tenantId + userId.
   const isDev = process.env.NODE_ENV === "development";
-  // GRAPHQL_INTROSPECTION env var must be explicitly set to "true" to enable
-  // introspection. Defaulting to disabled prevents schema exposure in staging
-  // environments where NODE_ENV might not be set to "production".
-  const graphqlIntrospection = process.env.GRAPHQL_INTROSPECTION === "true" || isDev;
   await server.register(mercurius, {
     schema: typeDefs,
     resolvers,
     path: "/graphql",
     graphiql: isDev,
-    introspection: graphqlIntrospection,
     context: (request) => {
       const user = request.user;
       return {

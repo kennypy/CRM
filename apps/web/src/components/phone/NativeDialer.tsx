@@ -263,7 +263,7 @@ export function NativeDialer({
         ) : (
           <button
             onClick={status === "ended" ? () => { setStatus("idle"); setElapsed(0); } : handleCall}
-            disabled={!deviceReady || status === "connecting"}
+            disabled={!deviceReady}
             className={cn(
               "flex h-14 w-14 items-center justify-center rounded-full text-white active:scale-95",
               status === "ended"
@@ -271,9 +271,7 @@ export function NativeDialer({
                 : "bg-green-500 hover:bg-green-600 disabled:opacity-40",
             )}
           >
-            {status === "connecting"
-              ? <RefreshCw className="h-6 w-6 animate-spin" />
-              : status === "ended"
+            {status === "ended"
               ? <RefreshCw className="h-6 w-6" />
               : <Phone className="h-6 w-6" />
             }

@@ -105,8 +105,9 @@ function ReviewCard({ item, onDecide, leaving }: {
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  // No busy state — the card animates out and unmounts within 320ms of being
-  // actioned, so there is no window where the buttons need to stay disabled.
+  // The card animates out and unmounts within 320ms of being actioned.
+  // Use the leaving prop to disable buttons during the exit animation.
+  const busy = !!leaving;
   const decide = (decision: "approved" | "rejected") => {
     onDecide(item.id, decision);
   };
