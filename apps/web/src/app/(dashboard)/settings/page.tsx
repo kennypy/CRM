@@ -9,9 +9,11 @@ import { useTenant } from "@/lib/tenant-context";
 import {
   Settings, Users, Plug, CreditCard, Shield, User,
   Plus, Trash2, Mail, CheckCircle2, AlertCircle,
-  Globe, Lock, Key, Monitor, LogOut, Building2, Phone,
+  Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
+import { useTheme } from "@/components/theme/theme-provider";
+import type { Theme } from "@/components/theme/theme-provider";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -56,6 +58,36 @@ const SUPPORTED_TIMEZONES  = [
 
 type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "security" | "communications";
 
+// ── Theme Selector ─────────────────────────────────────────────────────────────
+
+function ThemeSelector() {
+  const { theme, setTheme } = useTheme();
+  const options: { value: Theme; label: string; icon: React.FC<{ className?: string }> }[] = [
+    { value: "light",  label: "Light",  icon: Sun     },
+    { value: "dark",   label: "Dark",   icon: Moon    },
+    { value: "system", label: "System", icon: Monitor },
+  ];
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium">Theme</label>
+      <div className="flex gap-2">
+        {options.map(({ value, label, icon: Icon }) => (
+          <button key={value} onClick={() => setTheme(value)}
+            className={cn(
+              "flex flex-1 flex-col items-center gap-1.5 rounded-xl border py-3 text-xs font-medium transition-colors",
+              theme === value
+                ? "border-primary bg-primary/5 text-primary"
+                : "border-border text-muted-foreground hover:bg-muted"
+            )}>
+            <Icon className="h-5 w-5" />
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Tab: Profile ───────────────────────────────────────────────────────────────
 
 function ProfileTab({ user }: { user: StoredUser | null }) {
@@ -94,6 +126,11 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
         <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
           Save changes
         </button>
+      </div>
+
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <h3 className="font-semibold">Appearance</h3>
+        <ThemeSelector />
       </div>
 
       <div className="rounded-xl border bg-card p-5 space-y-3">
@@ -627,8 +664,17 @@ function CommunicationsTab() {
           )}
 
           {diallerCfg.provider === "native" && (
-            <div className="flex items-center gap-2 rounded-lg border border-muted bg-muted/30 p-3 text-xs text-muted-foreground">
-              Phone numbers will open as <code className="font-mono">tel:</code> links using your system&apos;s default app. No configuration needed.
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-lg border border-muted bg-muted/30 p-3 text-xs text-muted-foreground">
+                Phone numbers will open as <code className="font-mono">tel:</code> links using your system&apos;s default app.
+              </div>
+              <div>
+                <label className={labelCls}>Embedded dialler URL <span className="text-muted-foreground font-normal">(optional)</span></label>
+                <input value={diallerCfg.voipUrl} onChange={setDialler("voipUrl")} placeholder="https://your-dialler.com/embed" className={inputCls} />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  If provided, this URL loads as an iframe inside the phone sidebar panel instead of opening a tel: link.
+                </p>
+              </div>
             </div>
           )}
         </div>

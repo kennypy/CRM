@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
-import { BarChart3, TrendingUp, TrendingDown, Users, Briefcase, Activity, Award, ArrowRight } from "lucide-react";
+import { BarChart3, TrendingUp, TrendingDown, Users, Briefcase, Activity, Award, ArrowRight, Plus, X, Trash2, FileText, CheckCircle2 } from "lucide-react";
 
 // Period-keyed data sets
 const PIPELINE_DATA: Record<string, { stage: string; deals: number; value: number; avg_days: number }[]> = {
@@ -154,6 +154,154 @@ const ACTIVITY_DATA: Record<string, { label: string; emails: number; meetings: n
   ],
 };
 
+// ── Saved Reports ──────────────────────────────────────────────────────────────
+
+const REPORT_TYPES = ["Pipeline", "Revenue", "Activity", "Contacts", "Win/Loss", "Sequence Performance"];
+const GROUP_BY_OPTIONS = ["Stage", "Rep", "Period", "Source", "Company", "Product"];
+const PERIODS = ["Last 7 days", "Last 30 days", "Last 90 days", "Last year", "Custom"];
+
+interface SavedReport {
+  id: string;
+  name: string;
+  type: string;
+  period: string;
+  groupBy: string;
+  createdAt: string;
+}
+
+const LS_REPORTS = "nexcrm_saved_reports";
+function loadReports(): SavedReport[] {
+  try { return JSON.parse(localStorage.getItem(LS_REPORTS) ?? "[]"); } catch { return []; }
+}
+function persistReports(reports: SavedReport[]) {
+  try { localStorage.setItem(LS_REPORTS, JSON.stringify(reports)); } catch {}
+}
+
+function CreateReportModal({ onClose, onSaved }: { onClose: () => void; onSaved: (r: SavedReport) => void }) {
+  const [rname,  setRname]  = useState("");
+  const [type,   setType]   = useState(REPORT_TYPES[0]);
+  const [period, setPeriod] = useState(PERIODS[1]);
+  const [group,  setGroup]  = useState(GROUP_BY_OPTIONS[0]);
+  const [done,   setDone]   = useState(false);
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+
+  const handleSave = () => {
+    if (!rname.trim()) return;
+    const report: SavedReport = {
+      id: Date.now().toString(),
+      name: rname.trim(),
+      type, period, groupBy: group,
+      createdAt: new Date().toISOString(),
+    };
+    onSaved(report);
+    setDone(true);
+    setTimeout(onClose, 1200);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold">Create Report</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Report name *</label>
+            <input value={rname} onChange={(e) => setRname(e.target.value)} placeholder="e.g. Q1 Pipeline by Rep" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Report type</label>
+            <div className="flex flex-wrap gap-2">
+              {REPORT_TYPES.map((t) => (
+                <button key={t} type="button" onClick={() => setType(t)}
+                  className={cn("rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                    type === t ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">Period</label>
+              <select value={period} onChange={(e) => setPeriod(e.target.value)} className={inputCls}>
+                {PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">Group by</label>
+              <select value={group} onChange={(e) => setGroup(e.target.value)} className={inputCls}>
+                {GROUP_BY_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+          </div>
+          {done && (
+            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              <CheckCircle2 className="h-4 w-4" /> Report saved!
+            </div>
+          )}
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Cancel</button>
+            <button type="button" onClick={handleSave} disabled={!rname.trim()}
+              className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
+                !rname.trim() ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
+              Save Report
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SavedReportsList({ reports, onDelete }: { reports: SavedReport[]; onDelete: (id: string) => void }) {
+  if (reports.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-16 text-center">
+        <FileText className="h-12 w-12 text-muted-foreground/30" />
+        <p className="text-muted-foreground">No saved reports yet — click "Create Report" to build one.</p>
+      </div>
+    );
+  }
+  const TYPE_COLORS: Record<string, string> = {
+    Pipeline: "bg-blue-100 text-blue-700", Revenue: "bg-green-100 text-green-700",
+    Activity: "bg-purple-100 text-purple-700", Contacts: "bg-orange-100 text-orange-700",
+    "Win/Loss": "bg-red-100 text-red-700", "Sequence Performance": "bg-yellow-100 text-yellow-700",
+  };
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {reports.map((r) => (
+        <div key={r.id} className="rounded-xl border bg-card p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium mb-2", TYPE_COLORS[r.type] ?? "bg-muted text-muted-foreground")}>
+                {r.type}
+              </span>
+              <h3 className="font-semibold text-sm">{r.name}</h3>
+              <p className="text-xs text-muted-foreground mt-1">{r.period} · Grouped by {r.groupBy}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Created {new Date(r.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+              </p>
+            </div>
+            <button onClick={() => onDelete(r.id)} className="text-muted-foreground hover:text-red-600 transition-colors shrink-0">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+          <button className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors">
+            Run Report
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function KpiCard({ label, value, delta, deltaLabel, icon: Icon, color }: {
   label: string; value: string; delta: number; deltaLabel: string;
   icon: React.FC<{ className?: string }>; color: string;
@@ -179,12 +327,34 @@ function KpiCard({ label, value, delta, deltaLabel, icon: Icon, color }: {
 
 type Period = "7d" | "30d" | "90d" | "1y";
 
+type PageView = "analytics" | "saved";
+
 export default function ReportsPage() {
   const { tenant } = useTenant();
   const currency   = tenant.defaultCurrency;
   const locale     = tenant.locale;
 
-  const [period, setPeriod] = useState<Period>("30d");
+  const [period,     setPeriod]     = useState<Period>("30d");
+  const [pageView,   setPageView]   = useState<PageView>("analytics");
+  const [showCreate, setShowCreate] = useState(false);
+  const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
+
+  useEffect(() => { setSavedReports(loadReports()); }, []);
+
+  const handleSaved = (r: SavedReport) => {
+    setSavedReports((prev) => {
+      const next = [r, ...prev];
+      persistReports(next);
+      return next;
+    });
+  };
+  const handleDelete = (id: string) => {
+    setSavedReports((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      persistReports(next);
+      return next;
+    });
+  };
 
   const pipeline    = PIPELINE_DATA[period];
   const revenue     = REVENUE_DATA[period];
@@ -208,12 +378,41 @@ export default function ReportsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-auto">
-      <div className="flex items-center justify-between">
+      {showCreate && <CreateReportModal onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">Reports</h1>
+          {savedReports.length > 0 && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {savedReports.length} saved
+            </span>
+          )}
         </div>
-        <div className="flex gap-1 rounded-lg bg-muted p-1">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 rounded-lg bg-muted p-1">
+            <button onClick={() => setPageView("analytics")}
+              className={cn("rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                pageView === "analytics" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              Analytics
+            </button>
+            <button onClick={() => setPageView("saved")}
+              className={cn("rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                pageView === "saved" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              Saved Reports
+            </button>
+          </div>
+          <button onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+            <Plus className="h-4 w-4" /> Create Report
+          </button>
+        </div>
+      </div>
+
+      {/* Period picker (only on analytics view) */}
+      {pageView === "analytics" && (
+        <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
           {(["7d", "30d", "90d", "1y"] as Period[]).map((p) => (
             <button key={p} onClick={() => setPeriod(p)}
               className={cn("rounded-md px-3 py-1 text-sm font-medium transition-colors",
@@ -222,7 +421,10 @@ export default function ReportsPage() {
             </button>
           ))}
         </div>
-      </div>
+      )}
+
+      {pageView === "saved" && <SavedReportsList reports={savedReports} onDelete={handleDelete} />}
+      {pageView === "analytics" && <>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard label="Open Pipeline"   value={formatCurrency(totalOpen, currency, true, locale)} delta={deltas.pipeline} deltaLabel={periodLabel} icon={Briefcase}  color="bg-blue-100 text-blue-600" />
@@ -372,6 +574,8 @@ export default function ReportsPage() {
           <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-green-400/70 inline-block" /> Calls</span>
         </div>
       </div>
+    </div>
+      </>}
     </div>
   );
 }

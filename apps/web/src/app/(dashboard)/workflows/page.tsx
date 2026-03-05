@@ -86,12 +86,115 @@ const TRIGGERS = [
   "Deal moved to Closed Won",
   "Deal moved to Closed Lost",
   "Deal inactive for 7 days",
+  "Deal value changes",
   "Contact auto-captured (confidence ≥ 90%)",
+  "Contact created manually",
+  "Lead score changes",
   "Meeting activity created",
+  "Call activity completed",
+  "Email received from contact",
   "Review queue item pending > 24h",
   "New deal created",
   "Task overdue",
+  "Task completed",
+  "Sequence step completed",
 ];
+
+// ── Structured action menu ─────────────────────────────────────────────────────
+
+interface ActionDef {
+  section: string;
+  action: string;
+  value: string;
+  configLabel?: string;
+  configPlaceholder?: string;
+}
+
+const ACTION_MENU: ActionDef[] = [
+  // Tasks & CRM
+  { section: "Tasks & CRM",    action: "Create task",          value: "create_task",      configLabel: "Task title",        configPlaceholder: "e.g. Legal review" },
+  { section: "Tasks & CRM",    action: "Assign to rep",        value: "assign_rep",       configLabel: "Rep email",         configPlaceholder: "rep@company.com"   },
+  { section: "Tasks & CRM",    action: "Update deal stage",    value: "update_stage",     configLabel: "New stage",         configPlaceholder: "e.g. Negotiation"  },
+  { section: "Tasks & CRM",    action: "Add tag",              value: "add_tag",          configLabel: "Tag",               configPlaceholder: "e.g. VIP"          },
+  { section: "Tasks & CRM",    action: "Update CRM field",     value: "update_field",     configLabel: "Field: value",      configPlaceholder: "e.g. priority: high"},
+  // Notifications
+  { section: "Notifications",  action: "Notify owner via email", value: "notify_owner",   configLabel: "Message",           configPlaceholder: "Deal needs attention" },
+  { section: "Notifications",  action: "Notify manager",       value: "notify_manager",   configLabel: "Message",           configPlaceholder: "Escalation needed"   },
+  { section: "Notifications",  action: "Send Slack message",   value: "slack_message",    configLabel: "Channel",           configPlaceholder: "#channel or @user"   },
+  { section: "Notifications",  action: "Send webhook",         value: "send_webhook",     configLabel: "Webhook URL",       configPlaceholder: "https://…"           },
+  // Email
+  { section: "Email",          action: "Send email",           value: "send_email",       configLabel: "Template / subject",configPlaceholder: "Welcome email"        },
+  { section: "Email",          action: "Add to email sequence",value: "add_email_seq",    configLabel: "Sequence name",     configPlaceholder: "Nurture — Enterprise" },
+  { section: "Email",          action: "Schedule follow-up email",value:"schedule_email", configLabel: "Delay (days)",      configPlaceholder: "3"                    },
+  // Calling
+  { section: "Calling",        action: "Add to call list",     value: "add_call_list",    configLabel: "List name",         configPlaceholder: "Hot prospects"         },
+  { section: "Calling",        action: "Schedule call",        value: "schedule_call",    configLabel: "Delay (hours)",     configPlaceholder: "24"                    },
+  // Sequences
+  { section: "Sequences",      action: "Enrol in sequence",    value: "seq_enrol",        configLabel: "Sequence name",     configPlaceholder: "Onboarding — SMB"      },
+  { section: "Sequences",      action: "Remove from sequence", value: "seq_remove",       configLabel: "Sequence name",     configPlaceholder: "Leave blank for all"   },
+  { section: "Sequences",      action: "Pause sequence",       value: "seq_pause",        configLabel: "Reason",            configPlaceholder: "Deal in progress"       },
+  // AI
+  { section: "AI",             action: "Extract action items", value: "ai_extract",       configLabel: "Source field",      configPlaceholder: "meeting notes"          },
+  { section: "AI",             action: "Score lead (AI)",      value: "ai_score",                                                                                       },
+  { section: "AI",             action: "Summarise activity",   value: "ai_summarise",                                                                                   },
+];
+
+const ACTION_SECTIONS = [...new Set(ACTION_MENU.map((a) => a.section))];
+
+function ActionRow({ index, value, onChange, onRemove }: {
+  index: number;
+  value: string;
+  onChange: (v: string) => void;
+  onRemove: () => void;
+}) {
+  // Parse existing value: "action_value||config_text"
+  const parts    = value.split("||");
+  const actionVal = parts[0] ?? "";
+  const configVal = parts[1] ?? "";
+  const def = ACTION_MENU.find((a) => a.value === actionVal);
+
+  const setActionType = (v: string) => onChange(v + (configVal ? "||" + configVal : ""));
+  const setConfig     = (c: string) => onChange(actionVal + "||" + c);
+
+  const grouped = ACTION_SECTIONS.map((sec) => ({
+    section: sec,
+    actions: ACTION_MENU.filter((a) => a.section === sec),
+  }));
+
+  const displayLabel = def ? def.action + (configVal ? ": " + configVal : "") : value;
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+          {index + 1}
+        </span>
+        <select value={actionVal} onChange={(e) => setActionType(e.target.value)}
+          className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+          <option value="">— select action —</option>
+          {grouped.map(({ section, actions }) => (
+            <optgroup key={section} label={section}>
+              {actions.map((a) => (
+                <option key={a.value} value={a.value}>{a.action}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <button type="button" onClick={onRemove} className="text-muted-foreground hover:text-red-600 shrink-0">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+      {def?.configLabel && (
+        <div className="ml-7">
+          <input value={configVal} onChange={(e) => setConfig(e.target.value)}
+            placeholder={def.configPlaceholder ?? ""}
+            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          <p className="mt-0.5 text-xs text-muted-foreground">{def.configLabel}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface WorkflowModalProps {
   initial?: Workflow;
@@ -182,16 +285,13 @@ function WorkflowModal({ initial, onClose, onSave }: WorkflowModalProps) {
             </label>
             <div className="space-y-2">
               {actions.map((action, i) => (
-                <div key={i} className="flex gap-2">
-                  <input value={action} onChange={(e) => setAction(i, e.target.value)}
-                    placeholder={`Action ${i + 1}…`}
-                    className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-                  {actions.length > 1 && (
-                    <button onClick={() => removeAction(i)} className="text-muted-foreground hover:text-red-600">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
+                <ActionRow
+                  key={i}
+                  index={i}
+                  value={action}
+                  onChange={(v) => setAction(i, v)}
+                  onRemove={() => removeAction(i)}
+                />
               ))}
             </div>
             <button onClick={addAction} className="mt-2 text-xs text-primary hover:underline flex items-center gap-1">
@@ -347,12 +447,17 @@ export default function WorkflowsPage() {
                   <span className="font-medium text-foreground">{wf.trigger}</span>
                 </div>
                 <div className="space-y-1 pl-5">
-                  {wf.actions.map((action, i) => (
-                    <div key={i} className="flex items-center gap-1.5 text-muted-foreground">
-                      <ArrowRight className="h-3 w-3 shrink-0" />
-                      {action}
-                    </div>
-                  ))}
+                  {wf.actions.map((action, i) => {
+                    const parts = action.split("||");
+                    const def = ACTION_MENU.find((a) => a.value === parts[0]);
+                    const label = def ? def.action + (parts[1] ? ": " + parts[1] : "") : action;
+                    return (
+                      <div key={i} className="flex items-center gap-1.5 text-muted-foreground">
+                        <ArrowRight className="h-3 w-3 shrink-0" />
+                        {label}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

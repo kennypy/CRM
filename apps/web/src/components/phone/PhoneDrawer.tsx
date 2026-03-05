@@ -35,10 +35,44 @@ export function PhoneDrawer({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Try to build config from localStorage comm settings as fallback
+    function buildLocalConfig(): DialerConfig | null {
+      try {
+        const raw = localStorage.getItem("nexcrm_comms_config");
+        if (!raw) return null;
+        const cfg = JSON.parse(raw);
+        const dialler = cfg?.dialler;
+        if (!dialler) return null;
+        if (dialler.provider === "twilio" && dialler.twilioSid) {
+          return {
+            nativeEnabled: true, nativeConfigured: true,
+            iframeConfigs: [], activeDialer: "native", activeIframeId: null,
+          };
+        }
+        if ((dialler.provider === "voip" || dialler.provider === "native") && dialler.voipUrl) {
+          return {
+            nativeEnabled: false, nativeConfigured: false,
+            iframeConfigs: [{ id: "local", name: "Dialler", provider: dialler.provider, embedUrl: dialler.voipUrl, active: true }],
+            activeDialer: "iframe", activeIframeId: "local",
+          };
+        }
+        if (dialler.provider === "native" && !dialler.voipUrl) {
+          return {
+            nativeEnabled: true, nativeConfigured: true,
+            iframeConfigs: [], activeDialer: "native", activeIframeId: null,
+          };
+        }
+      } catch {}
+      return null;
+    }
+
     api.get("/api/v1/outreach/dialers/config")
       .then((r) => r.json())
-      .then((j) => setConfig(j.data ?? null))
-      .catch(() => setConfig(null))
+      .then((j) => {
+        const apiConfig = j.data ?? null;
+        setConfig(apiConfig ?? buildLocalConfig());
+      })
+      .catch(() => setConfig(buildLocalConfig()))
       .finally(() => setLoading(false));
   }, []);
 

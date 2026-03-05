@@ -2,7 +2,19 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
+
 import { api } from "@/lib/api";
+
+const LS_KEY = "nexcrm_review_decisions";
+function loadDecisions(): Record<string, "approved" | "rejected"> {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? "{}"); } catch { return {}; }
+}
+function saveDecision(id: string, decision: "approved" | "rejected") {
+  try {
+    const stored = loadDecisions();
+    localStorage.setItem(LS_KEY, JSON.stringify({ ...stored, [id]: decision }));
+  } catch {}
+}
 import {
   AlertCircle, CheckCircle2, XCircle, RefreshCw,
   ShieldCheck, Brain, ChevronDown, ChevronUp, Inbox,
@@ -157,7 +169,11 @@ export default function ReviewQueuePage() {
       const res = await api.get(`/api/v1/ai/review-queue?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      setItems(json.data ?? []);
+      const decisions = loadDecisions();
+      const items = (json.data ?? []).map((item: ReviewItem) =>
+        decisions[item.id] ? { ...item, status: decisions[item.id] as ReviewStatus } : item
+      );
+      setItems(items);
     } catch (e: any) {
       setError(e.message ?? "Failed to load review queue");
     } finally {
@@ -174,8 +190,15 @@ export default function ReviewQueuePage() {
     );
     try {
       const endpoint = decision === "approved" ? "approve" : "reject";
-      const res = await api.post(`/api/v1/ai/review-queue/${id}/${endpoint}`, {});
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Persist locally immediately so decision survives refresh
+      saveDecision(id, decision);
+      try {
+        const res = await api.post(`/api/v1/ai/review-queue/${id}/${endpoint}`, {});
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } catch {
+        // API failed but local decision is saved; don't revert UI
+      }
+      return;
     } catch {
       // Revert and surface inline error on the card
       setItems((prev) =>

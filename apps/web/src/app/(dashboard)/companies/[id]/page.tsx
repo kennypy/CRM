@@ -7,6 +7,7 @@ import { usePermissions } from "@/lib/permissions";
 import { useTenant } from "@/lib/tenant-context";
 import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 import { AddContactModal } from "@/components/modals/add-contact-modal";
+import { AddDealModal } from "@/components/modals/add-deal-modal";
 import { EditCompanyModal } from "@/components/modals/edit-company-modal";
 import {
   Building2, Globe, Users, Briefcase, Calendar, ArrowLeft,
@@ -76,6 +77,7 @@ export default function CompanyDetailPage() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
   const [showAddContact, setShowAddContact] = useState(false);
+  const [showAddDeal,     setShowAddDeal]     = useState(false);
   const [showEdit, setShowEdit] = useState(false);
 
   const fetchDetail = async () => {
@@ -228,7 +230,7 @@ export default function CompanyDetailPage() {
               Deals <span className="text-xs text-muted-foreground">({deals.length})</span>
             </div>
             {perms.canWrite && (
-              <button onClick={() => router.push("/pipeline")}
+              <button onClick={() => setShowAddDeal(true)}
                 className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90">
                 <Plus className="h-3 w-3" /> Add Deal
               </button>
@@ -289,6 +291,15 @@ export default function CompanyDetailPage() {
           onCreated={() => { setShowAddContact(false); fetchDetail(); }}
           prelinkedCompanyId={company.id}
           prelinkedCompanyName={company.name}
+        />
+      )}
+      {showAddDeal && (
+        <AddDealModal
+          companyId={company.id}
+          companyName={company.name}
+          defaultCurrency={tenant.defaultCurrency}
+          onClose={() => setShowAddDeal(false)}
+          onCreated={() => { setShowAddDeal(false); fetchDetail(); }}
         />
       )}
       {showEdit && (

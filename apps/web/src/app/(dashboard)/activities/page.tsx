@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
   Zap, RefreshCw, AlertCircle, Mail, Phone, Video,
   FileText, MessageSquare, Users, Briefcase,
-  ChevronLeft, ChevronRight, Filter, Plus, X, CheckCircle2,
+  ChevronLeft, ChevronRight, Filter, Plus, X, CheckCircle2, Search,
 } from "lucide-react";
+
+interface ContactOption { id: string; firstName: string; lastName: string; email: string; }
+interface LeadOption   { id: string; firstName: string; lastName: string; email: string; }
 
 type ActivityType = "email" | "call" | "meeting" | "document" | "chat";
 
@@ -110,6 +113,56 @@ function ActivityRow({ activity }: { activity: Activity }) {
 
 // ── Log Activity Modal ────────────────────────────────────────────────────────
 
+function ContactLeadSearch({ onSelect }: { onSelect: (item: { id: string; name: string; email: string; type: "contact" | "lead" }) => void }) {
+  const [query, setQuery]     = useState("");
+  const [results, setResults] = useState<{ id: string; firstName: string; lastName: string; email: string; _type: "contact" | "lead" }[]>([]);
+  const [open, setOpen]       = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      try {
+        const [cr, lr] = await Promise.all([
+          api.get("/api/v1/contacts?limit=5&search=" + encodeURIComponent(query)).then((r) => r.json()),
+          api.get("/api/v1/leads?limit=5&search=" + encodeURIComponent(query)).then((r) => r.json()),
+        ]);
+        const contacts = (cr.data ?? []).map((c: ContactOption) => ({ ...c, _type: "contact" as const }));
+        const leads    = (lr.data ?? []).map((l: LeadOption)   => ({ ...l, _type: "lead" as const }));
+        setResults([...contacts, ...leads]);
+        setOpen(true);
+      } catch { setResults([]); }
+    }, 300);
+  }, [query]);
+
+  return (
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <input value={query} onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => results.length > 0 && setOpen(true)}
+        placeholder="Search contacts or leads…"
+        className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+      {open && results.length > 0 && (
+        <div className="absolute top-full mt-1 z-10 w-full rounded-xl border bg-card shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+          {results.map((r) => (
+            <button key={r._type + r.id} type="button"
+              onClick={() => { onSelect({ id: r.id, name: r.firstName + " " + r.lastName, email: r.email, type: r._type }); setQuery(""); setOpen(false); }}
+              className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted transition-colors">
+              <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium",
+                r._type === "contact" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
+                {r._type === "contact" ? "Contact" : "Lead"}
+              </span>
+              <span className="text-sm font-medium">{r.firstName} {r.lastName}</span>
+              <span className="text-xs text-muted-foreground ml-auto">{r.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [type, setType]       = useState<ActivityType>("call");
   const [subject, setSubject] = useState("");
@@ -119,20 +172,26 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [done, setDone]       = useState(false);
+  const [linkedEntity, setLinkedEntity] = useState<{ id: string; name: string; email: string; type: "contact" | "lead" } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const res = await api.post("/api/v1/activities", {
+      const body: Record<string, unknown> = {
         type,
         subject: subject || undefined,
         summary: summary || undefined,
         occurredAt: new Date(date).toISOString(),
         durationSeconds: duration ? parseInt(duration) * 60 : undefined,
         source: "user",
-      });
+      };
+      if (linkedEntity) {
+        if (linkedEntity.type === "contact") body.contactId = linkedEntity.id;
+        else body.leadId = linkedEntity.id;
+      }
+      const res = await api.post("/api/v1/activities", body);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data?.error?.message ?? "Failed to log activity");
@@ -163,6 +222,27 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Contact / Lead link */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Linked contact or lead</label>
+            {linkedEntity ? (
+              <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+                <div>
+                  <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium mr-2",
+                    linkedEntity.type === "contact" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
+                    {linkedEntity.type === "contact" ? "Contact" : "Lead"}
+                  </span>
+                  <span className="text-sm font-medium">{linkedEntity.name}</span>
+                </div>
+                <button type="button" onClick={() => setLinkedEntity(null)} className="text-muted-foreground hover:text-red-600">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <ContactLeadSearch onSelect={setLinkedEntity} />
+            )}
+          </div>
+
           {/* Type selector */}
           <div>
             <label className="mb-1.5 block text-sm font-medium">Type</label>

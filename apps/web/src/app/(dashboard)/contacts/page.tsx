@@ -10,6 +10,7 @@ import { EmailDrawer }      from "@/components/email/EmailDrawer";
 import { PhoneDrawer }      from "@/components/phone/PhoneDrawer";
 import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
+import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import {
   Users, Search, Plus, RefreshCw, AlertCircle,
   Building2, Mail, Phone, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil,
@@ -78,6 +79,7 @@ export default function ContactsPage() {
   const [error, setError]         = useState<string | null>(null);
   const [showAdd, setShowAdd]     = useState(false);
   const [editing, setEditing]     = useState<Contact | null>(null);
+  const [detailContact, setDetailContact] = useState<Contact | null>(null);
   const [emailContact, setEmailContact] = useState<Contact | null>(null);
   const [phoneContact, setPhoneContact] = useState<Contact | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -147,6 +149,16 @@ export default function ContactsPage() {
           onSaved={() => { setEditing(null); fetchContacts(); }}
         />
       )}
+      {detailContact && (
+        <ContactDrawer
+          contact={detailContact}
+          canWrite={perms.canWrite}
+          onClose={() => setDetailContact(null)}
+          onEmail={(c) => { setDetailContact(null); setEmailContact(c); }}
+          onPhone={(c) => { setDetailContact(null); setPhoneContact(c); }}
+          onEdit={(c) => { setDetailContact(null); setEditing(c); }}
+        />
+      )}
       {emailContact && (
         <EmailDrawer
           contactId={emailContact.id}
@@ -212,7 +224,12 @@ export default function ContactsPage() {
                   {/* Name — always visible */}
                   {visible.has("name") && (
                     <td className="px-4 py-3">
-                      <p className="font-medium text-foreground">{contact.firstName} {contact.lastName}</p>
+                      <button
+                        onClick={() => setDetailContact(contact)}
+                        className="font-medium text-foreground hover:text-primary hover:underline text-left"
+                      >
+                        {contact.firstName} {contact.lastName}
+                      </button>
                       {/* Email — clickable → EmailDrawer */}
                       <button
                         onClick={() => setEmailContact(contact)}
