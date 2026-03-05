@@ -4,8 +4,8 @@
  *
  * Reads DATABASE_URL from environment or uses the default dev value.
  */
-const { Client } = require("./services/graph-core/node_modules/pg");
-const bcrypt = require("./services/graph-core/node_modules/bcryptjs");
+const { Client } = require("pg");
+const bcrypt = require("bcryptjs");
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
