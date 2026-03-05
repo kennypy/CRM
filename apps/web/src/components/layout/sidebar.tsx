@@ -13,6 +13,7 @@ import {
   Settings,
   AlertCircle,
   Layers,
+  ListOrdered,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/companies", icon: Building2, label: "Companies" },
   { href: "/activities", icon: Zap, label: "Activities" },
   { href: "/tasks", icon: CheckSquare, label: "Tasks" },
+  { href: "/sequences", icon: ListOrdered, label: "Sequences" },
   { href: "/reports", icon: BarChart3, label: "Reports" },
   { href: "/review", icon: AlertCircle, label: "Review Queue" },
   { href: "/workflows", icon: Layers, label: "Workflows" },

@@ -126,6 +126,7 @@ services:
     environment:
       AUTH_SERVICE_URL: http://auth:4001
       GRAPH_CORE_URL: http://graph-core:4002
+      OUTREACH_URL: http://outreach:4003
       AI_ENGINE_URL: http://ai-engine:5001
     ports:
       - "4000:4000"
@@ -153,6 +154,21 @@ services:
       GRAPH_CORE_PORT: "4002"
     ports:
       - "4002:4002"
+    depends_on: [postgres, redis]
+    profiles: [full-stack]
+
+  outreach:
+    build: { context: ., dockerfile: services/outreach/Dockerfile }
+    container_name: nexcrm-outreach
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      OUTREACH_PORT: "4003"
+      # Internal: only API gateway should reach this service
+      API_GATEWAY_URL: http://api-gateway:4000
+    ports:
+      # Bind to loopback only in prod; expose for dev convenience
+      - "4003:4003"
     depends_on: [postgres, redis]
     profiles: [full-stack]
 

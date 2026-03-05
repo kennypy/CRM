@@ -4,11 +4,13 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import { AddContactModal } from "@/components/modals/add-contact-modal";
+import { AddContactModal }  from "@/components/modals/add-contact-modal";
 import { EditContactModal } from "@/components/modals/edit-contact-modal";
+import { EmailDrawer }      from "@/components/email/EmailDrawer";
+import { PhoneDrawer }      from "@/components/phone/PhoneDrawer";
 import {
   Users, Search, Plus, RefreshCw, AlertCircle,
-  Building2, Mail, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil,
+  Building2, Mail, Phone, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil,
 } from "lucide-react";
 
 interface Contact {
@@ -63,6 +65,8 @@ export default function ContactsPage() {
   const [error, setError]         = useState<string | null>(null);
   const [showAdd, setShowAdd]     = useState(false);
   const [editing, setEditing]     = useState<Contact | null>(null);
+  const [emailContact, setEmailContact] = useState<Contact | null>(null);
+  const [phoneContact, setPhoneContact] = useState<Contact | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSearchChange = (value: string) => {
@@ -126,6 +130,23 @@ export default function ContactsPage() {
           contact={editing}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); fetchContacts(); }}
+        />
+      )}
+      {emailContact && (
+        <EmailDrawer
+          contactId={emailContact.id}
+          contactEmail={emailContact.email}
+          contactName={`${emailContact.firstName} ${emailContact.lastName}`}
+          onClose={() => setEmailContact(null)}
+        />
+      )}
+      {phoneContact && (
+        <PhoneDrawer
+          contactId={phoneContact.id}
+          contactEmail={phoneContact.email}
+          contactName={`${phoneContact.firstName} ${phoneContact.lastName}`}
+          contactPhone={phoneContact.phone}
+          onClose={() => setPhoneContact(null)}
         />
       )}
 
@@ -205,13 +226,31 @@ export default function ContactsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    {perms.canWrite && (
-                      <button onClick={() => setEditing(contact)}
-                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        title="Edit">
-                        <Pencil className="h-3.5 w-3.5" />
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setEmailContact(contact)}
+                        className="rounded p-1 text-muted-foreground hover:bg-blue-50 hover:text-blue-600"
+                        title="Email"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
                       </button>
-                    )}
+                      {contact.phone && (
+                        <button
+                          onClick={() => setPhoneContact(contact)}
+                          className="rounded p-1 text-muted-foreground hover:bg-green-50 hover:text-green-600"
+                          title="Call"
+                        >
+                          <Phone className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {perms.canWrite && (
+                        <button onClick={() => setEditing(contact)}
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          title="Edit">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

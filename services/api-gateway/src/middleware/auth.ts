@@ -10,6 +10,8 @@ const PUBLIC_PATHS = new Set([
   "/webhooks/zoom",
   "/webhooks/slack",
   "/webhooks/stripe",
+  "/api/v1/outreach/email/unsubscribe",
+  "/api/v1/outreach/calls/webhooks/twilio/status",
 ]);
 
 export async function authMiddleware(
