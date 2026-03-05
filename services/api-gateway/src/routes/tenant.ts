@@ -19,8 +19,7 @@ const UpdateSchema = z.object({
 export async function tenantRoutes(server: FastifyInstance) {
   // ── GET /api/v1/tenant ────────────────────────────────────────────────────
   server.get("/", async (request, reply) => {
-    const user = (request as any).user as { tenantId: string } | undefined;
-    const tenantId = user?.tenantId;
+    const tenantId = request.user?.tenantId;
     if (!tenantId) {
       return reply.status(401).send({ success: false, error: { code: "UNAUTHORIZED" } });
     }
@@ -53,16 +52,15 @@ export async function tenantRoutes(server: FastifyInstance) {
 
   // ── PATCH /api/v1/tenant ─────────────────────────────────────────────────
   server.patch("/", async (request, reply) => {
-    const user = (request as any).user as
-      | { tenantId: string; role: string }
-      | undefined;
+    const tenantId = request.user?.tenantId;
+    const role     = request.user?.role;
 
-    if (!user?.tenantId) {
+    if (!tenantId) {
       return reply.status(401).send({ success: false, error: { code: "UNAUTHORIZED" } });
     }
 
     // Only admins and super_admins may change tenant preferences
-    if (!["admin", "super_admin"].includes(user.role)) {
+    if (!["admin", "super_admin"].includes(role ?? "")) {
       return reply.status(403).send({
         success: false,
         error: { code: "FORBIDDEN", message: "Admin role required to update tenant preferences" },
@@ -79,7 +77,7 @@ export async function tenantRoutes(server: FastifyInstance) {
 
     const { defaultCurrency, locale, timezone } = parsed.data;
     const sets: string[] = ["updated_at = NOW()"];
-    const vals: unknown[] = [user.tenantId];
+    const vals: unknown[] = [tenantId];
 
     if (defaultCurrency !== undefined) { vals.push(defaultCurrency); sets.push(`default_currency = $${vals.length}`); }
     if (locale          !== undefined) { vals.push(locale);          sets.push(`locale = $${vals.length}`); }

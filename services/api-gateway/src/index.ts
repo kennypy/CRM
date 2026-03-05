@@ -18,8 +18,9 @@ import { graphRoutes } from "./routes/graph";
 import { webhookRoutes } from "./routes/webhooks";
 import { integrationsRoutes } from "./routes/integrations";
 import { tenantRoutes } from "./routes/tenant";
-import { tasksRoutes }    from "./routes/tasks";
-import { outreachRoutes } from "./routes/outreach";
+import { tasksRoutes }     from "./routes/tasks";
+import { outreachRoutes }  from "./routes/outreach";
+import { workflowsRoutes } from "./routes/workflows";
 import { errorHandler } from "./middleware/error-handler";
 import { authMiddleware } from "./middleware/auth";
 import { typeDefs } from "./graphql/schema";
@@ -42,6 +43,12 @@ const server = Fastify({
   // Hard timeout per request — prevents slow-read/slow-write Slowloris attacks.
   // The AI /nl SSE stream has its own extended timeout set via the route config.
   connectionTimeout: 10_000,
+
+  // Trust exactly one hop of reverse proxy (nginx / ALB / Cloud Run ingress).
+  // This lets req.ip reflect the real client IP from X-Forwarded-For so the
+  // rate limiter keys correctly per client rather than keying on the proxy IP.
+  // Set TRUST_PROXY=false in .env to disable if running without a reverse proxy.
+  trustProxy: process.env.TRUST_PROXY !== "false",
 });
 
 async function bootstrap() {
@@ -77,7 +84,10 @@ async function bootstrap() {
     // Falls back to IP for unauthenticated/pre-auth requests.
     keyGenerator: (req) => {
       const user = (req as any).user as { sub?: string } | undefined;
-      return user?.sub ?? req.ip ?? "unknown";
+      // Never fall back to a shared "unknown" bucket — each unidentifiable
+      // request gets its own unique key so one bad actor can't exhaust the
+      // bucket for all anonymous callers simultaneously.
+      return user?.sub ?? req.ip ?? crypto.randomUUID();
     },
   });
 
@@ -110,22 +120,24 @@ async function bootstrap() {
   await server.register(tenantRoutes,       { prefix: "/api/v1/tenant" });
   await server.register(tasksRoutes,        { prefix: "/api/v1/tasks" });
   await server.register(outreachRoutes,     { prefix: "/api/v1/outreach" });
+  await server.register(workflowsRoutes,    { prefix: "/api/v1/workflows" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
   // Context extracts the JWT claims so resolvers have tenantId + userId.
   const isDev = process.env.NODE_ENV === "development";
+  // GRAPHQL_INTROSPECTION env var must be explicitly set to "true" to enable
+  // introspection. Defaulting to disabled prevents schema exposure in staging
+  // environments where NODE_ENV might not be set to "production".
+  const graphqlIntrospection = process.env.GRAPHQL_INTROSPECTION === "true" || isDev;
   await server.register(mercurius, {
     schema: typeDefs,
     resolvers,
     path: "/graphql",
     graphiql: isDev,
-    // Disable introspection in production — prevents API surface mapping by attackers
-    introspection: isDev,
+    introspection: graphqlIntrospection,
     context: (request) => {
-      const user = (request as any).user as
-        | { sub: string; tenantId: string; email: string; role: string }
-        | undefined;
+      const user = request.user;
       return {
         tenantId: user?.tenantId ?? "",
         userId:   user?.sub      ?? "",

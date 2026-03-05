@@ -92,6 +92,34 @@ function ThemeSelector() {
 
 function ProfileTab({ user }: { user: StoredUser | null }) {
   const initials = user ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}` : "?";
+  const [firstName, setFirstName] = useState(user?.firstName ?? "");
+  const [lastName,  setLastName]  = useState(user?.lastName  ?? "");
+  const [email,     setEmail]     = useState(user?.email     ?? "");
+  const [saving,    setSaving]    = useState(false);
+  const [saved,     setSaved]     = useState(false);
+  const [error,     setError]     = useState<string | null>(null);
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+
+  const saveProfile = async () => {
+    if (!firstName.trim() || !email.trim()) return;
+    setSaving(true); setError(null);
+    try {
+      const res = await api.patch("/api/v1/users/me", { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim() });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError(json?.error?.message ?? "Failed to save profile");
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-lg">
       <div className="flex items-center gap-4">
@@ -112,20 +140,29 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1.5 block text-sm font-medium">First name</label>
-            <input defaultValue={user?.firstName ?? ""} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputCls} />
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">Last name</label>
-            <input defaultValue={user?.lastName ?? ""} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <input value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
           </div>
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium">Email</label>
-          <input defaultValue={user?.email ?? ""} type="email" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className={inputCls} />
         </div>
-        <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-          Save changes
-        </button>
+        {error && (
+          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 shrink-0" />{error}
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <button onClick={saveProfile} disabled={saving || !firstName.trim() || !email.trim()}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+          {saved && <span className="flex items-center gap-1 text-sm text-green-600"><CheckCircle2 className="h-4 w-4" /> Saved!</span>}
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card p-5 space-y-4">
@@ -229,13 +266,30 @@ function UsersTab() {
   const [inviteRole,  setInviteRole]    = useState<TeamUser["role"]>("rep");
   const [showInvite,  setShowInvite]    = useState(false);
   const [inviting,    setInviting]      = useState(false);
+  const [deletingId,  setDeletingId]    = useState<string | null>(null);
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return;
     setInviting(true);
-    await new Promise((r) => setTimeout(r, 600));
+    try {
+      await api.post("/api/v1/users/invite", { email: inviteEmail.trim(), role: inviteRole });
+    } catch { /* fall through — add optimistically */ }
     setUsers((us) => [...us, { id: Date.now().toString(), firstName: inviteEmail.split("@")[0], lastName: "", email: inviteEmail.trim(), role: inviteRole, status: "invited" }]);
     setInviteEmail(""); setShowInvite(false); setInviting(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      const res = await api.delete(`/api/v1/users/${id}`);
+      if (res.ok || res.status === 404) {
+        setUsers((us) => us.filter((x) => x.id !== id));
+      }
+    } catch {
+      setUsers((us) => us.filter((x) => x.id !== id)); // remove optimistically if API unreachable
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -303,7 +357,8 @@ function UsersTab() {
                     : <span className="flex items-center gap-1 text-xs text-yellow-600"><Mail className="h-3 w-3" /> Invited</span>}
                 </td>
                 <td className="px-4 py-3">
-                  <button onClick={() => setUsers((us) => us.filter((x) => x.id !== u.id))} className="text-muted-foreground hover:text-red-600 transition-colors">
+                  <button onClick={() => handleDelete(u.id)} disabled={deletingId === u.id}
+                    className="text-muted-foreground hover:text-red-600 transition-colors disabled:opacity-40">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </td>
@@ -319,9 +374,17 @@ function UsersTab() {
 // ── Tab: Integrations ──────────────────────────────────────────────────────────
 
 function IntegrationsTab() {
-  const [integrations, setIntegrations] = useState(INTEGRATIONS);
-  const disconnect = (id: string) =>
+  const [integrations,   setIntegrations]   = useState(INTEGRATIONS);
+  const [disconnecting,  setDisconnecting]  = useState<string | null>(null);
+
+  const disconnect = async (id: string) => {
+    setDisconnecting(id);
+    try {
+      await api.delete(`/api/v1/integrations/${id}`);
+    } catch { /* fall through — update locally anyway */ }
     setIntegrations((prev) => prev.map((i) => i.id === id ? { ...i, status: "available", account: null } : i));
+    setDisconnecting(null);
+  };
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
@@ -343,7 +406,10 @@ function IntegrationsTab() {
                 <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
                   <CheckCircle2 className="h-3 w-3" /> Connected
                 </span>
-                <button onClick={() => disconnect(intg.id)} className="text-xs text-muted-foreground hover:text-red-600 transition-colors">Disconnect</button>
+                <button onClick={() => disconnect(intg.id)} disabled={disconnecting === intg.id}
+                  className="text-xs text-muted-foreground hover:text-red-600 transition-colors disabled:opacity-50">
+                  {disconnecting === intg.id ? "Disconnecting…" : "Disconnect"}
+                </button>
               </div>
             ) : (
               <button className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted shrink-0">Connect</button>
@@ -543,10 +609,15 @@ function CommunicationsTab() {
   const setDialler = (k: keyof typeof diallerCfg) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setDiallerCfg((prev) => ({ ...prev, [k]: e.target.value }));
 
-  const save = () => {
+  const save = async () => {
+    // Persist locally for offline/fast access
     try {
       localStorage.setItem(STORAGE_KEY_COMMS, JSON.stringify({ email: emailCfg, dialler: diallerCfg }));
     } catch {}
+    // Also sync to server so settings survive browser data clear
+    try {
+      await api.patch("/api/v1/tenant", { settings: { comms: { email: emailCfg, dialler: diallerCfg } } });
+    } catch { /* non-fatal — local copy is the fallback */ }
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };

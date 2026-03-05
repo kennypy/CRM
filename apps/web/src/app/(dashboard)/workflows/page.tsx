@@ -7,6 +7,7 @@ import {
   ArrowRight, X, Pencil, Trash2,
 } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
+import { getStoredUser } from "@/lib/auth";
 import { WorkflowActivePanel } from "@/components/workflows/workflow-active-panel";
 
 interface Workflow {
@@ -328,7 +329,7 @@ export default function WorkflowsPage() {
   const [showCreate,    setShowCreate]    = useState(false);
   const [editing,       setEditing]       = useState<Workflow | null>(null);
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
-  const currentUser = "you"; // In real app: getStoredUser()?.email
+  const currentUser = getStoredUser()?.email ?? "";
 
   const toggle = (id: string) =>
     setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: !w.enabled } : w));

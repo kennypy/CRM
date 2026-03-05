@@ -16,9 +16,7 @@ export interface ProxyOptions {
 
 export function createProxy(opts: ProxyOptions) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const jwt = (request as any).user as {
-      sub?: string; tenantId?: string; role?: string; scopes?: string[];
-    } | undefined;
+    const jwt = request.user;
 
     const url = opts.stripPrefix
       ? request.url.replace(opts.stripPrefix, "")

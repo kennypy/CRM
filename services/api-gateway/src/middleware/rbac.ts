@@ -25,8 +25,7 @@ const ROLE_RANK: Record<UserRole, number> = {
  */
 export function requireMinRole(minRole: UserRole) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const user = (request as any).user as { role?: string } | undefined;
-    const role = (user?.role ?? "read_only") as UserRole;
+    const role = (request.user?.role ?? "read_only") as UserRole;
     const rank = ROLE_RANK[role] ?? 0;
 
     if (rank < ROLE_RANK[minRole]) {

@@ -97,7 +97,7 @@ function NotificationPanel({
         ))}
       </div>
       <div className="border-t px-4 py-2 text-center">
-        <button className="text-xs text-primary hover:underline">View all notifications</button>
+        <button className="text-xs text-primary hover:underline" onClick={onClose}>View all notifications</button>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
@@ -82,7 +82,13 @@ export default function DashboardPage() {
   const { tenant } = useTenant();
   const currency = tenant.defaultCurrency;
   const locale   = tenant.locale;
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    // Full reload ensures any server-side data and cached responses are refreshed.
+    // Replace with targeted data re-fetches once API calls replace demo data.
+    window.location.reload();
+  }, []);
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-auto">
@@ -93,10 +99,11 @@ export default function DashboardPage() {
           <h1 className="text-xl font-semibold">Dashboard</h1>
         </div>
         <button
-          onClick={() => setRefreshKey((k) => k + 1)}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60"
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
           Refresh
         </button>
       </div>

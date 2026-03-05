@@ -104,11 +104,10 @@ function ReviewCard({ item, onDecide, leaving }: {
   leaving?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [busy, setBusy]         = useState(false);
 
+  // No busy state — the card animates out and unmounts within 320ms of being
+  // actioned, so there is no window where the buttons need to stay disabled.
   const decide = (decision: "approved" | "rejected") => {
-    if (busy) return;
-    setBusy(true);
     onDecide(item.id, decision);
   };
 

@@ -113,7 +113,8 @@ function LoginForm() {
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <label className="text-sm font-medium">Password</label>
-          <button type="button" className="text-xs text-primary hover:underline" tabIndex={-1}>
+          <button type="button" className="text-xs text-primary hover:underline" tabIndex={-1}
+            onClick={() => alert("Contact your workspace admin to reset your password, or email support@nexcrm.dev")}>
             Forgot password?
           </button>
         </div>

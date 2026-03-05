@@ -34,16 +34,16 @@ export async function aiRoutes(server: FastifyInstance) {
   // Review queue — reads from Postgres directly (fast, no extra hop)
   server.get("/review-queue", async (request, reply) => {
     const q = request.query as Record<string, string>;
-    const jwt = (request as any).user as { tenantId: string };
+    const jwt = request.user;
     const status = q.status ?? "pending";
     const limit = Math.min(parseInt(q.limit ?? "20", 10), 100);
 
     const { rows } = await pool.query(
-      `SELECT * FROM review_queue
-       WHERE tenant_id = $1 AND status = $2 AND NOT EXISTS (
-         SELECT 1 FROM review_queue rq2
-         WHERE rq2.id = review_queue.id AND rq2.status != 'pending'
-       )
+      `SELECT id, tenant_id, status, confidence, summary,
+              proposed_changes, evidence, reviewed_by, reviewed_at,
+              rejection_reason, created_at, updated_at
+       FROM review_queue
+       WHERE tenant_id = $1 AND status = $2
        ORDER BY confidence ASC, created_at DESC
        LIMIT $3`,
       [jwt.tenantId, status, limit]
@@ -59,7 +59,7 @@ export async function aiRoutes(server: FastifyInstance) {
   // Approve a review item — apply the proposed changes to the graph
   server.post("/review-queue/:id/approve", { preHandler: [requireRep] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const jwt = (request as any).user as { tenantId: string; sub: string };
+    const jwt = request.user;
 
     const { rows } = await pool.query(
       `UPDATE review_queue
@@ -82,7 +82,7 @@ export async function aiRoutes(server: FastifyInstance) {
   // Reject a review item — feedback loop for extraction quality
   server.post("/review-queue/:id/reject", { preHandler: [requireRep] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const jwt = (request as any).user as { tenantId: string; sub: string };
+    const jwt = request.user;
     const bodyParsed = ReviewRejectBody.safeParse(request.body);
     const body = bodyParsed.success ? bodyParsed.data : { reason: undefined };
 
@@ -114,7 +114,7 @@ export async function aiRoutes(server: FastifyInstance) {
       });
     }
     const { entityType, entityId, field } = parsed.data;
-    const jwt = (request as any).user as { tenantId: string };
+    const jwt = request.user;
 
     // Look up in crm_events for the most recent write to this field
     const { rows } = await pool.query(
@@ -160,7 +160,6 @@ function toReviewItem(row: Record<string, unknown>) {
     matchType:     first.matchType    ?? null,
     evidenceText:  row.evidence       ?? null,
     sourceType:    first.sourceType   ?? "ai",
-    sourceId:      (row.extraction_id as string) ?? null,
     createdAt:     row.created_at,
     updatedAt:     row.updated_at,
   };
