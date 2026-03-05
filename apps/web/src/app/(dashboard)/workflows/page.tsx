@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   Layers, Plus, Play, Zap, AlertCircle, CheckCircle2, Clock,
@@ -331,19 +332,76 @@ export default function WorkflowsPage() {
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
   const currentUser = getStoredUser()?.email ?? "";
 
-  const toggle = (id: string) =>
-    setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: !w.enabled } : w));
+  useEffect(() => {
+    api.get("/api/v1/workflows")
+      .then((r) => r.json())
+      .then((json) => {
+        const data: Workflow[] = (json.data ?? []).map((w: any) => ({
+          id:          w.id,
+          name:        w.name,
+          description: w.description ?? "",
+          trigger:     w.trigger?.label ?? (typeof w.trigger === "string" ? w.trigger : JSON.stringify(w.trigger)),
+          actions:     (w.actions ?? []).map((a: any) => a.label ?? a.type ?? JSON.stringify(a)),
+          enabled:     w.is_active ?? true,
+          lastRun:     w.lastRun   ?? null,
+          runCount:    w.runCount  ?? 0,
+          category:    w.trigger?.category ?? "deal",
+          createdBy:   w.createdBy ?? null,
+        }));
+        if (data.length) setWorkflows(data);
+      })
+      .catch(() => { /* keep demo data */ });
+  }, []);
 
-  const handleCreate = (data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
+  const toggle = async (id: string) => {
+    const wf = workflows.find((w) => w.id === id);
+    if (!wf) return;
+    const newEnabled = !wf.enabled;
+    setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: newEnabled } : w));
+    try {
+      await api.patch(`/api/v1/workflows/${id}`, { is_active: newEnabled });
+    } catch {
+      setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: wf.enabled } : w));
+    }
+  };
+
+  const handleCreate = async (data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
+    try {
+      const res = await api.post("/api/v1/workflows", {
+        name:      data.name,
+        description: data.description,
+        trigger:   { label: data.trigger, category: data.category },
+        actions:   data.actions.map((a) => ({ label: a })),
+        is_active: data.enabled,
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const w = json.data;
+        setWorkflows((ws) => [{ ...data, id: w.id, runCount: 0 }, ...ws]);
+        return;
+      }
+    } catch {}
     setWorkflows((ws) => [...ws, { ...data, id: Date.now().toString(), runCount: 0 }]);
   };
 
-  const handleEdit = (id: string, data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
+  const handleEdit = async (id: string, data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
     setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, ...data } : w));
+    try {
+      await api.patch(`/api/v1/workflows/${id}`, {
+        name:      data.name,
+        description: data.description,
+        is_active: data.enabled,
+        trigger:   { label: data.trigger, category: data.category },
+        actions:   data.actions.map((a) => ({ label: a })),
+      });
+    } catch {}
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     setWorkflows((ws) => ws.filter((w) => w.id !== id));
+    try {
+      await api.delete(`/api/v1/workflows/${id}`);
+    } catch {}
   };
 
   // A user can edit a workflow if they're admin/manager, or if they created it

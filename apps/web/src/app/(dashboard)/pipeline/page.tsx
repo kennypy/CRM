@@ -13,8 +13,9 @@ import { useTenant } from "@/lib/tenant-context";
 import { api } from "@/lib/api";
 import { EvidencePanel } from "@/components/deals/evidence-panel";
 import { DealDetailPanel } from "@/components/deals/deal-detail-panel";
+import { AddDealModal } from "@/components/modals/add-deal-modal";
 import {
-  Briefcase, RefreshCw, TrendingUp, AlertCircle,
+  Briefcase, RefreshCw, TrendingUp, AlertCircle, Plus,
   ChevronRight, ChevronLeft, DollarSign, AlertTriangle,
 } from "lucide-react";
 
@@ -289,6 +290,7 @@ export default function PipelinePage() {
   const [error,        setError]        = useState<string | null>(null);
   const [evidenceDeal, setEvidenceDeal] = useState<Deal | null>(null);
   const [detailDeal,   setDetailDeal]   = useState<Deal | null>(null);
+  const [showAddDeal,  setShowAddDeal]  = useState(false);
 
   const fetchDeals = useCallback(async () => {
     setLoading(true);
@@ -359,8 +361,19 @@ export default function PipelinePage() {
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
             Refresh
           </button>
+          <button onClick={() => setShowAddDeal(true)}
+            className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+            <Plus className="h-4 w-4" /> Add Deal
+          </button>
         </div>
       </div>
+
+      {showAddDeal && (
+        <AddDealModal
+          onClose={() => setShowAddDeal(false)}
+          onCreated={() => { setShowAddDeal(false); fetchDeals(); }}
+        />
+      )}
 
       <ForecastBar deals={deals} currency={currency} locale={locale} />
 

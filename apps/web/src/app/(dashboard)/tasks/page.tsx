@@ -244,9 +244,30 @@ function CreateTaskModal({ onClose, onCreated }: { onClose: () => void; onCreate
 type Filter = "all" | "mine" | "overdue" | "done";
 
 export default function TasksPage() {
-  const [tasks, setTasks]       = useState<Task[]>(DEMO_TASKS);
-  const [filter, setFilter]     = useState<Filter>("all");
+  const [tasks, setTasks]         = useState<Task[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [filter, setFilter]       = useState<Filter>("all");
   const [showModal, setShowModal] = useState(false);
+
+  useEffect(() => {
+    api.get("/api/v1/tasks")
+      .then((r) => r.json())
+      .then((json) => {
+        const data: Task[] = (json.data ?? []).map((t: any) => ({
+          id:           t.id,
+          title:        t.title,
+          priority:     t.priority ?? "medium",
+          status:       t.status   ?? "open",
+          dueDate:      t.dueDate  ?? t.due_date,
+          assignee:     t.assignee ?? "You",
+          linkedEntity: t.linkedEntity ?? (t.linked_entity_id ? { type: t.linked_entity_type, id: t.linked_entity_id, name: t.linked_entity_name ?? "" } : undefined),
+          createdAt:    t.createdAt ?? t.created_at,
+        }));
+        setTasks(data.length ? data : DEMO_TASKS);
+      })
+      .catch(() => setTasks(DEMO_TASKS))
+      .finally(() => setLoading(false));
+  }, []);
 
   const now = Date.now();
 
@@ -257,8 +278,18 @@ export default function TasksPage() {
     return t.status !== "done";
   });
 
-  const toggle = (id: string) =>
-    setTasks((ts) => ts.map((t) => t.id === id ? { ...t, status: t.status === "done" ? "open" : "done" } : t));
+  const toggle = async (id: string) => {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const newStatus: Status = task.status === "done" ? "open" : "done";
+    setTasks((ts) => ts.map((t) => t.id === id ? { ...t, status: newStatus } : t));
+    try {
+      await api.patch(`/api/v1/tasks/${id}`, { status: newStatus });
+    } catch {
+      // revert on error
+      setTasks((ts) => ts.map((t) => t.id === id ? { ...t, status: task.status } : t));
+    }
+  };
 
   const overdue = tasks.filter((t) => t.status !== "done" && new Date(t.dueDate).getTime() < now).length;
 
@@ -299,12 +330,15 @@ export default function TasksPage() {
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col gap-1">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">Loading tasks…</div>
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-16 text-center">
               <CheckCircle2 className="h-12 w-12 text-green-400" />
               <p className="text-muted-foreground">All caught up!</p>
             </div>
-          ) : (
+          ) : null}
+          {!loading && filtered.length > 0 && (
             filtered.map((task) => {
               const isOverdue = task.status !== "done" && new Date(task.dueDate).getTime() < now;
               return (
@@ -346,6 +380,7 @@ export default function TasksPage() {
           )}
         </div>
       </div>
+
     </div>
   );
 }

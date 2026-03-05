@@ -13,7 +13,7 @@ import type { ColDef } from "@/components/ui/column-picker";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
 import {
   Users, Search, Plus, RefreshCw, AlertCircle,
-  Building2, Mail, Phone, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil,
+  Building2, Mail, Phone, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil, Trash2,
 } from "lucide-react";
 
 interface Contact {
@@ -82,12 +82,23 @@ export default function ContactsPage() {
   const [detailContact, setDetailContact] = useState<Contact | null>(null);
   const [emailContact, setEmailContact] = useState<Contact | null>(null);
   const [phoneContact, setPhoneContact] = useState<Contact | null>(null);
+  const [deletingId, setDeletingId]     = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSearchChange = (value: string) => {
     setSearch(value);
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => { setDebouncedSearch(value); setPage(1); }, 300);
+  };
+
+  const handleDeleteContact = async (id: string) => {
+    if (!window.confirm("Delete this contact? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      const res = await api.delete(`/api/v1/contacts/${id}`);
+      if (res.ok || res.status === 404) fetchContacts();
+    } catch {}
+    setDeletingId(null);
   };
 
   const fetchContacts = useCallback(async () => {
@@ -309,6 +320,15 @@ export default function ContactsPage() {
                             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                             title="Edit">
                             <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {perms.canManageUsers && (
+                          <button
+                            onClick={() => handleDeleteContact(contact.id)}
+                            disabled={deletingId === contact.id}
+                            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+                            title="Delete contact">
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>

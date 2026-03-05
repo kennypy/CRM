@@ -11,7 +11,7 @@ import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
 import {
   Building2, Search, Plus, RefreshCw, AlertCircle,
-  Globe, ChevronLeft, ChevronRight, Briefcase, Zap, Pencil,
+  Globe, ChevronLeft, ChevronRight, Briefcase, Zap, Pencil, Trash2,
 } from "lucide-react";
 
 const COL_DEFS: ColDef[] = [
@@ -83,7 +83,18 @@ export default function CompaniesPage() {
   const [error, setError]           = useState<string | null>(null);
   const [showAdd, setShowAdd]       = useState(false);
   const [editing, setEditing]       = useState<Company | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleDeleteCompany = async (id: string) => {
+    if (!window.confirm("Delete this company? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      const res = await api.delete(`/api/v1/companies/${id}`);
+      if (res.ok || res.status === 404) fetchCompanies();
+    } catch {}
+    setDeletingId(null);
+  };
 
   const handleSearch = (v: string) => {
     setSearch(v);
@@ -252,15 +263,27 @@ export default function CompaniesPage() {
                   )}
                   {visible.has("actions") && (
                     <td className="px-4 py-3">
-                      {perms.canWrite && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEditing(co); }}
-                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                          title="Edit"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {perms.canWrite && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditing(co); }}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            title="Edit"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {perms.canManageUsers && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteCompany(co.id); }}
+                            disabled={deletingId === co.id}
+                            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+                            title="Delete company"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>

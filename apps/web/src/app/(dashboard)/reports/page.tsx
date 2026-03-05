@@ -799,6 +799,18 @@ export default function ReportsPage() {
     "Last year":    "1y",
   };
 
+  // Which chart sections to show when a saved report is active
+  const REPORT_TYPE_SECTIONS: Record<string, string[]> = {
+    Pipeline:               ["pipeline"],
+    Revenue:                ["revenue"],
+    Activity:               ["activity"],
+    "Win/Loss":             ["pipeline", "winloss"],
+    Contacts:               ["reps", "activity"],
+    "Sequence Performance": ["activity"],
+  };
+  const showSection = (key: string) =>
+    !activeReport || (REPORT_TYPE_SECTIONS[activeReport.type] ?? Object.keys(REPORT_TYPE_SECTIONS).flatMap((k) => REPORT_TYPE_SECTIONS[k])).includes(key);
+
   useEffect(() => { setSavedReports(loadReports()); }, []);
 
   const handleSaved = (r: SavedReport) => {
@@ -901,6 +913,10 @@ export default function ReportsPage() {
             <span className="text-muted-foreground">Viewing report:</span>
             <span className="font-semibold text-foreground">{activeReport.name}</span>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{activeReport.type}</span>
+            <span className="text-muted-foreground">·</span>
+            <button onClick={() => setActiveReport(null)} className="text-xs text-primary hover:underline">
+              Show all charts
+            </button>
           </div>
           <button onClick={() => setActiveReport(null)} className="text-muted-foreground hover:text-foreground transition-colors">
             <X className="h-4 w-4" />
@@ -917,7 +933,7 @@ export default function ReportsPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Pipeline by Stage — each row drills into /pipeline */}
-        <div className="rounded-xl border bg-card p-5">
+        {showSection("pipeline") && <div className="rounded-xl border bg-card p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold">Pipeline by Stage</h2>
             <Link href="/pipeline" className="flex items-center gap-1 text-xs text-primary hover:underline">
@@ -948,10 +964,10 @@ export default function ReportsPage() {
               </Link>
             ))}
           </div>
-        </div>
+        </div>}
 
         {/* Monthly / Period Revenue */}
-        <div className="rounded-xl border bg-card p-5">
+        {showSection("revenue") && <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-4 font-semibold">{period === "7d" ? "Daily Revenue" : period === "1y" ? "Quarterly Revenue" : "Monthly Revenue"}</h2>
           <div className="space-y-2">
             {revenue.map((m) => (
@@ -976,10 +992,10 @@ export default function ReportsPage() {
             <span className="flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-primary inline-block" /> Actual</span>
             <span className="flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-muted-foreground/30 inline-block" /> Forecast</span>
           </div>
-        </div>
+        </div>}
 
         {/* Rep Leaderboard — each row links to /contacts */}
-        <div className="rounded-xl border bg-card p-5">
+        {showSection("reps") && <div className="rounded-xl border bg-card p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold">Rep Leaderboard</h2>
             <Link href="/contacts" className="flex items-center gap-1 text-xs text-primary hover:underline">
@@ -1011,7 +1027,7 @@ export default function ReportsPage() {
         </div>
 
         {/* Win Rate by Lead Source */}
-        <div className="rounded-xl border bg-card p-5">
+        {showSection("winloss") && <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-4 font-semibold">Win Rate by Lead Source</h2>
           <div className="space-y-3">
             {WIN_LOSS_BY_SOURCE.map((s) => (
@@ -1027,11 +1043,11 @@ export default function ReportsPage() {
               </div>
             ))}
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* Activity Volume */}
-      <div className="rounded-xl border bg-card p-5">
+      {showSection("activity") && <div className="rounded-xl border bg-card p-5">
         <h2 className="mb-4 font-semibold">
           Activity Volume ({period === "7d" ? "Last 7 Days" : period === "30d" ? "Last 6 Weeks" : period === "90d" ? "Last 6 Months" : "By Quarter"})
         </h2>
@@ -1055,7 +1071,7 @@ export default function ReportsPage() {
           <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-purple-400/70 inline-block" /> Meetings</span>
           <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-green-400/70 inline-block" /> Calls</span>
         </div>
-      </div>
+      </div>}
       </>}
     </div>
   );
