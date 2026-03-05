@@ -112,9 +112,11 @@ CREATE INDEX IF NOT EXISTS idx_activity_participants_contact
   ON activity_participants (contact_id, occurred_at DESC)
   WHERE contact_id IS NOT NULL;
 
--- Dedup index for external ingestion (one row per source message per tenant)
+-- Dedup index for external ingestion (one row per source message per tenant).
+-- occurred_at must be included because unique indexes on partitioned tables
+-- must contain all partitioning columns.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_external_dedup
-  ON activities (tenant_id, source, external_id)
+  ON activities (tenant_id, source, external_id, occurred_at)
   WHERE external_id IS NOT NULL AND deleted_at IS NULL;
 
 -- ── Backfill note ─────────────────────────────────────────────────────────────
