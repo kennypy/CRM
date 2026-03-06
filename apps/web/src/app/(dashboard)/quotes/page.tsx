@@ -302,7 +302,7 @@ export default function QuotesPage() {
           <FileText className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">Quotes</h1>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{quotes.length}</span>
-          <ActionBar context="quotes" />
+          <ActionBar context="quotes" onQuoteSaved={handleSaved} />
         </div>
         <button onClick={() => setShowBuilder(true)}
           className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">

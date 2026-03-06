@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { parseNL, summariseIntent, type ParseResult } from "@/lib/nl-parser";
 import { QuoteBuilderModal } from "@/components/modals/quote-builder-modal";
-import { DEMO_PRODUCTS } from "@/lib/quotes";
+import { DEMO_PRODUCTS, type Quote } from "@/lib/quotes";
 
 // ── Company disambiguation types ──────────────────────────────────────────────
 interface CompanyOption {
@@ -48,6 +48,7 @@ interface Props {
   companyId?:   string;
   companyName?: string;
   contactId?:   string;
+  onQuoteSaved?: (q: Quote) => void;
 }
 
 type BarState =
@@ -62,7 +63,7 @@ type BarState =
   | "success"
   | "error";
 
-export function ActionBar({ context, dealId, dealName, companyId, companyName, contactId }: Props) {
+export function ActionBar({ context, dealId, dealName, companyId, companyName, contactId, onQuoteSaved }: Props) {
   const router = useRouter();
 
   const [open,     setOpen]     = useState(false);
@@ -137,16 +138,21 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
         setState("confirm_activity");
         break;
 
-      case "create_quote":
-        // Pre-fill quote builder from NL-detected products
+      case "create_quote": {
+        // Extract a single order-level discount if all products share the same one
+        const discounts = p.products.map((pr) => pr.discountPct ?? 0).filter((d) => d > 0);
+        const orderDiscount = discounts.length > 0 && discounts.every((d) => d === discounts[0])
+          ? { type: "percent" as const, value: discounts[0] }
+          : null;
+
         setQuotePreFill({
           companyId:   company?.id     || companyId,
           companyName: company?.name   || companyName,
           dealId,  dealName,
           contactId,
+          orderDiscount,
           items: p.products.length > 0
             ? p.products.map((prod) => {
-                // Try to match to catalog
                 const catalogMatch = DEMO_PRODUCTS.find((cp) =>
                   cp.name.toLowerCase().includes(prod.name.toLowerCase()) ||
                   prod.name.toLowerCase().includes(cp.name.toLowerCase().split(" ")[0])
@@ -156,7 +162,8 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
                   productName: catalogMatch?.name ?? prod.name,
                   quantity:    prod.quantity,
                   unitPrice:   catalogMatch?.unitPrice ?? 0,
-                  discountPct: prod.discountPct,
+                  // No per-line discount when there's an order-level one
+                  discountPct: orderDiscount ? 0 : (prod.discountPct ?? 0),
                 };
               })
             : undefined,
@@ -164,6 +171,7 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
         setShowQuoteBuilder(true);
         setOpen(false);
         break;
+      }
 
       case "send_quote":
         setState("confirm_send");
@@ -451,8 +459,9 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
           companyName={String(quotePreFill.companyName ?? companyName ?? "")}
           contactId={String(quotePreFill.contactId ?? contactId ?? "")}
           initialItems={quotePreFill.items as Parameters<typeof QuoteBuilderModal>[0]["initialItems"]}
+          initialOrderDiscount={quotePreFill.orderDiscount as Parameters<typeof QuoteBuilderModal>[0]["initialOrderDiscount"]}
           onClose={() => setShowQuoteBuilder(false)}
-          onSaved={() => setShowQuoteBuilder(false)}
+          onSaved={(q) => { setShowQuoteBuilder(false); onQuoteSaved?.(q); }}
         />
       )}
     </>

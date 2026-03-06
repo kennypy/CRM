@@ -24,6 +24,8 @@ interface Props {
   contactName?: string;
   /** NL-parsed items to pre-fill (from ActionBar) */
   initialItems?: Omit<DraftItem, "_key">[];
+  /** NL-parsed order-level discount to pre-fill */
+  initialOrderDiscount?: { type: "percent" | "fixed"; value: number };
   /** Edit mode */
   existing?:    Quote;
   /** Discount approval threshold (from tenant settings, default 10) */
@@ -53,7 +55,7 @@ function newDraftItem(product?: Product): DraftItem {
 
 export function QuoteBuilderModal({
   dealId, dealName, companyId, companyName, contactId, contactName,
-  initialItems, existing, discountThreshold = 10,
+  initialItems, initialOrderDiscount, existing, discountThreshold = 10,
   onClose, onSaved,
 }: Props) {
   const isEdit = !!existing;
@@ -75,8 +77,8 @@ export function QuoteBuilderModal({
     const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10);
   })());
   const [taxRate,       setTaxRate]       = useState(existing?.taxRate      ?? 0);
-  const [discountType,  setDiscountType]  = useState<"none"|"percent"|"fixed">(existing?.discountType  ?? "none");
-  const [discountValue, setDiscountValue] = useState(existing?.discountValue ?? 0);
+  const [discountType,  setDiscountType]  = useState<"none"|"percent"|"fixed">(existing?.discountType  ?? initialOrderDiscount?.type  ?? "none");
+  const [discountValue, setDiscountValue] = useState(existing?.discountValue ?? initialOrderDiscount?.value ?? 0);
 
   const [items, setItems] = useState<DraftItem[]>(() => {
     if (existing?.items?.length) {
