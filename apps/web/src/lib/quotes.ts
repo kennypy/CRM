@@ -44,6 +44,7 @@ export interface Quote {
   discountValue: number;
   taxRate: number;
   total: number;
+  relatedTo?: string | null;
   notes?: string | null;
   terms?: string | null;
   validUntil?: string | null;

@@ -49,6 +49,9 @@ function dealReturnMap() {
     declared_probability: d.declared_probability,
     reality_score: d.reality_score, reality_explanation: d.reality_explanation,
     risk_flags: d.risk_flags, owner_id: d.owner_id,
+    line_item: d.line_item, value_usd: d.value_usd, value_eur: d.value_eur,
+    main_poc: d.main_poc, created_by: d.created_by,
+    last_opportunity_activity: d.last_opportunity_activity,
     created_at: d.created_at, updated_at: d.updated_at,
     company_id: c.id, company_name: c.name
   }`;
@@ -425,9 +428,15 @@ function toDealResponse(row: Record<string, unknown>) {
     riskFlags:           row.risk_flags ? JSON.parse(row.risk_flags as string) : [],
     ownerId:             row.owner_id,
     company:             companyId ? { id: companyId, name: companyName } : undefined,
-    buyingGroupSize:     (row.buying_group_size as number) ?? 0,
-    stakeholders:        (row.stakeholders        as unknown[]) ?? [],
-    createdAt:           row.created_at,
-    updatedAt:           row.updated_at,
+    buyingGroupSize:            (row.buying_group_size as number) ?? 0,
+    stakeholders:               (row.stakeholders     as unknown[]) ?? [],
+    lineItem:                   row.line_item                   || undefined,
+    valueUsd:                   row.value_usd                   || undefined,
+    valueEur:                   row.value_eur                   || undefined,
+    mainPoc:                    row.main_poc                    || undefined,
+    createdBy:                  row.created_by                  || undefined,
+    lastOpportunityActivity:    row.last_opportunity_activity   || undefined,
+    createdAt:                  row.created_at,
+    updatedAt:                  row.updated_at,
   };
 }

@@ -17,9 +17,12 @@ interface Contact {
   company?: { id: string; name: string };
   influenceScore?: number;
   lastActivityAt?: string;
+  lastActivity?: string;
   linkedinUrl?: string;
   source: string;
   createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
 }
 
 function InfluenceBadge({ score }: { score?: number }) {
@@ -180,6 +183,18 @@ export function ContactDrawer({ contact, onClose, onEmail, onPhone, onEdit, canW
             <Row icon={Clock} label="Added">
               <span className="text-muted-foreground">{addedDate}</span>
             </Row>
+            {contact.updatedAt && (
+              <Row icon={Clock} label="Updated">
+                <span className="text-muted-foreground">
+                  {new Date(contact.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              </Row>
+            )}
+            {contact.createdBy && (
+              <Row icon={User} label="Created By">
+                <span className="text-muted-foreground">{contact.createdBy}</span>
+              </Row>
+            )}
             {contact.linkedinUrl && (
               <Row icon={ExternalLink} label="LinkedIn">
                 <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer"

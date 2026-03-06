@@ -29,6 +29,8 @@ interface Activity {
   company?: { id: string; name: string };
   occurredAt: string;
   durationSeconds?: number;
+  createdBy?: string;
+  relatedTo?: string;
 }
 
 const ACTIVITY_META: Record<ActivityType, { icon: React.FC<{ className?: string }>; label: string; color: string }> = {
@@ -106,6 +108,12 @@ function ActivityRow({ activity }: { activity: Activity }) {
             activity.source === "user" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600")}>
             {SOURCE_LABELS[activity.source] ?? activity.source}
           </span>
+          {activity.relatedTo && (
+            <span className="flex items-center gap-1 text-muted-foreground">Related: {activity.relatedTo}</span>
+          )}
+          {activity.createdBy && (
+            <span className="flex items-center gap-1 text-muted-foreground">By: {activity.createdBy}</span>
+          )}
         </div>
       </div>
     </div>

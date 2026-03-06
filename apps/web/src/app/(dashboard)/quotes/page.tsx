@@ -118,6 +118,7 @@ function QuotePreviewModal({
             <div className="mt-1 flex flex-wrap gap-4 text-xs text-muted-foreground">
               {quote.companyName && <span>Company: <strong className="text-foreground">{quote.companyName}</strong></span>}
               {quote.createdByName && <span>Rep: <strong className="text-foreground">{quote.createdByName}</strong></span>}
+              {quote.relatedTo && <span>Related to: <strong className="text-foreground">{quote.relatedTo}</strong></span>}
               {quote.validUntil && <span>Valid until: <strong className="text-foreground">{new Date(quote.validUntil).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</strong></span>}
             </div>
           </div>

@@ -12,9 +12,14 @@ import { pool } from "../db";
 import { requireAdmin } from "../middleware/rbac";
 
 const UpdateMeSchema = z.object({
-  firstName:  z.string().min(1).max(100).optional(),
-  lastName:   z.string().min(0).max(100).optional(),
-  avatarUrl:  z.string().url().optional().or(z.literal("")),
+  firstName:    z.string().min(1).max(100).optional(),
+  lastName:     z.string().min(0).max(100).optional(),
+  avatarUrl:    z.string().url().optional().or(z.literal("")),
+  country:      z.string().max(100).optional().nullable(),
+  timezone:     z.string().max(100).optional().nullable(),
+  language:     z.string().max(20).optional().nullable(),
+  phone:        z.string().max(50).optional().nullable(),
+  twilioNumber: z.string().max(50).optional().nullable(),
 });
 
 const CreateUserSchema = z.object({
@@ -47,14 +52,19 @@ function toUser(row: Record<string, unknown>) {
     id:          row.id,
     email:       row.email,
     firstName:   row.first_name,
-    lastName:    row.last_name,
-    role:        row.role,
-    avatarUrl:   row.avatar_url ?? null,
-    lastLoginAt: row.last_login_at ?? null,
-    status:      row.password_hash === null ? "invited" : "active",
-    createdAt:   row.created_at,
-    canQuote:    row.can_quote ?? false,
-    managerId:   row.manager_id ?? null,
+    lastName:      row.last_name,
+    role:          row.role,
+    avatarUrl:     row.avatar_url    ?? null,
+    lastLoginAt:   row.last_login_at ?? null,
+    status:        row.password_hash === null ? "invited" : "active",
+    createdAt:     row.created_at,
+    canQuote:      row.can_quote     ?? false,
+    managerId:     row.manager_id    ?? null,
+    country:       row.country       ?? null,
+    timezone:      row.timezone      ?? null,
+    language:      row.language      ?? null,
+    phone:         row.phone         ?? null,
+    twilioNumber:  row.twilio_number ?? null,
   };
 }
 
@@ -63,13 +73,29 @@ export async function usersRoutes(server: FastifyInstance) {
   server.get("/", { preHandler: [requireAdmin] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
-      `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id
+      `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id,
+              country, timezone, language, phone, twilio_number
        FROM users
        WHERE tenant_id = $1
        ORDER BY created_at ASC`,
       [tenantId]
     );
     return reply.send({ success: true, data: rows.map(toUser) });
+  });
+
+  // ── GET /api/v1/users/me ─────────────────────────────────────────────────
+  server.get("/me", async (request, reply) => {
+    const { sub: userId, tenantId } = request.user;
+    const { rows } = await pool.query(
+      `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
+              can_quote, manager_id, country, timezone, language, phone, twilio_number
+       FROM users WHERE id = $1 AND tenant_id = $2`,
+      [userId, tenantId]
+    );
+    if (!rows.length) {
+      return reply.status(404).send({ success: false, error: { code: "USER_NOT_FOUND" } });
+    }
+    return reply.send({ success: true, data: toUser(rows[0]) });
   });
 
   // ── PATCH /api/v1/users/me ────────────────────────────────────────────────
@@ -83,14 +109,19 @@ export async function usersRoutes(server: FastifyInstance) {
     }
 
     const { sub: userId, tenantId } = request.user;
-    const { firstName, lastName, avatarUrl } = parsed.data;
+    const { firstName, lastName, avatarUrl, country, timezone, language, phone, twilioNumber } = parsed.data;
 
     const sets: string[] = ["updated_at = NOW()"];
     const vals: unknown[] = [userId, tenantId];
 
-    if (firstName !== undefined) { vals.push(firstName); sets.push(`first_name = $${vals.length}`); }
-    if (lastName  !== undefined) { vals.push(lastName);  sets.push(`last_name  = $${vals.length}`); }
-    if (avatarUrl !== undefined) { vals.push(avatarUrl || null); sets.push(`avatar_url = $${vals.length}`); }
+    if (firstName    !== undefined) { vals.push(firstName);          sets.push(`first_name    = $${vals.length}`); }
+    if (lastName     !== undefined) { vals.push(lastName);           sets.push(`last_name     = $${vals.length}`); }
+    if (avatarUrl    !== undefined) { vals.push(avatarUrl || null);  sets.push(`avatar_url    = $${vals.length}`); }
+    if (country      !== undefined) { vals.push(country);            sets.push(`country       = $${vals.length}`); }
+    if (timezone     !== undefined) { vals.push(timezone);           sets.push(`timezone      = $${vals.length}`); }
+    if (language     !== undefined) { vals.push(language);           sets.push(`language      = $${vals.length}`); }
+    if (phone        !== undefined) { vals.push(phone);              sets.push(`phone         = $${vals.length}`); }
+    if (twilioNumber !== undefined) { vals.push(twilioNumber);       sets.push(`twilio_number = $${vals.length}`); }
 
     if (sets.length === 1) {
       return reply.status(400).send({ success: false, error: { code: "NOTHING_TO_UPDATE" } });
@@ -99,7 +130,8 @@ export async function usersRoutes(server: FastifyInstance) {
     const { rows } = await pool.query(
       `UPDATE users SET ${sets.join(", ")}
        WHERE id = $1 AND tenant_id = $2
-       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id`,
+       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
+                 can_quote, manager_id, country, timezone, language, phone, twilio_number`,
       vals
     );
 
@@ -165,7 +197,8 @@ export async function usersRoutes(server: FastifyInstance) {
     const { rows } = await pool.query(
       `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role, can_quote, manager_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id`,
+       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
+                 can_quote, manager_id, country, timezone, language, phone, twilio_number`,
       [tenantId, email.toLowerCase(), passwordHash, firstName, lastName, role, effectiveCanQuote, managerId ?? null]
     );
 
@@ -208,7 +241,8 @@ export async function usersRoutes(server: FastifyInstance) {
     const { rows } = await pool.query(
       `UPDATE users SET ${sets.join(", ")}
        WHERE id = $1 AND tenant_id = $2
-       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id`,
+       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
+                 can_quote, manager_id, country, timezone, language, phone, twilio_number`,
       vals
     );
 

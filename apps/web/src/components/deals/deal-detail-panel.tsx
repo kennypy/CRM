@@ -37,6 +37,13 @@ interface DealDetail {
   notes?: string;
   owner?: { id: string; name: string; email?: string };
   contacts?: { id: string; name: string; email?: string; role?: string }[];
+  // Extended fields
+  lineItem?: string;
+  valueUsd?: number;
+  valueEur?: number;
+  mainPoc?: string;
+  createdBy?: string;
+  lastOpportunityActivity?: string;
 }
 
 interface TimelineActivity {
@@ -393,6 +400,51 @@ export function DealDetailPanel({
                   </div>
                 )}
               </div>
+
+              {/* Extended fields */}
+              {(d?.lineItem || d?.mainPoc || d?.valueUsd != null || d?.valueEur != null || d?.createdBy || d?.lastOpportunityActivity) && (
+                <div className="px-6 py-5">
+                  <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">Additional Fields</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                    {d.lineItem && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Line Item</p>
+                        <p className="text-sm">{d.lineItem}</p>
+                      </div>
+                    )}
+                    {d.mainPoc && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Main POC</p>
+                        <p className="text-sm">{d.mainPoc}</p>
+                      </div>
+                    )}
+                    {d.valueUsd != null && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Value ($)</p>
+                        <p className="text-sm">{d.valueUsd.toLocaleString(locale, { style: "currency", currency: "USD", maximumFractionDigits: 0 })}</p>
+                      </div>
+                    )}
+                    {d.valueEur != null && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Value (€) Converted</p>
+                        <p className="text-sm">{d.valueEur.toLocaleString(locale, { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}</p>
+                      </div>
+                    )}
+                    {d.createdBy && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Created By</p>
+                        <p className="text-sm">{d.createdBy}</p>
+                      </div>
+                    )}
+                    {d.lastOpportunityActivity && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Last Activity</p>
+                        <p className="text-sm">{new Date(d.lastOpportunityActivity).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Metadata */}
               <div className="px-6 py-4 bg-muted/20">

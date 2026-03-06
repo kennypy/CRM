@@ -54,6 +54,9 @@ export async function companiesRoutes(server: FastifyInstance) {
     id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
     industry: c.industry, headcount: c.headcount, tier: c.tier,
     website: c.website, country: c.country,
+    sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
+    sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
+    created_by: c.created_by,
     open_deals: open_deals, open_deal_value: open_deal_value,
     created_at: c.created_at, updated_at: c.updated_at
   }
@@ -162,6 +165,9 @@ export async function companiesRoutes(server: FastifyInstance) {
          id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
          industry: c.industry, headcount: c.headcount, tier: c.tier,
          website: c.website, country: c.country,
+         sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
+         sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
+         created_by: c.created_by,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -291,6 +297,9 @@ export async function companiesRoutes(server: FastifyInstance) {
          id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
          industry: c.industry, headcount: c.headcount, tier: c.tier,
          website: c.website, country: c.country,
+         sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
+         sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
+         created_by: c.created_by,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -337,10 +346,20 @@ export async function companiesRoutes(server: FastifyInstance) {
       { id, tenantId }
     );
 
+    // Compute derived fields from already-fetched related data
+    const lastCompanyActivity = activityRows[0]?.occurred_at ?? null;
+    const opportunitiesName   = dealRows[0]?.name ?? null;
+
+    const companyData = {
+      ...toCompanyResponse(companyRows[0]),
+      lastCompanyActivity,
+      opportunitiesName,
+    };
+
     return reply.send({
       success: true,
       data: {
-        company:    toCompanyResponse(companyRows[0]),
+        company:    companyData,
         contacts:   contactRows,
         deals:      dealRows,
         activities: activityRows,
@@ -363,6 +382,13 @@ function toCompanyResponse(row: Record<string, unknown>) {
     tier:           row.tier           || undefined,
     website:        row.website        || undefined,
     country:        row.country        || undefined,
+    subRegion:      row.sub_region     || undefined,
+    region:         row.region         || undefined,
+    linkedinUrl:    row.linkedin_url   || undefined,
+    subIndustry:    row.sub_industry   || undefined,
+    revenue:        row.revenue        || undefined,
+    segment:        row.segment        || undefined,
+    createdBy:      row.created_by     || undefined,
     openDeals:      row.open_deals     ?? 0,
     openDealValue:  row.open_deal_value ?? 0,
     createdAt:      row.created_at,

@@ -95,12 +95,30 @@ function ThemeSelector() {
 
 function ProfileTab({ user }: { user: StoredUser | null }) {
   const initials = user ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}` : "?";
-  const [firstName, setFirstName] = useState(user?.firstName ?? "");
-  const [lastName,  setLastName]  = useState(user?.lastName  ?? "");
-  const [email,     setEmail]     = useState(user?.email     ?? "");
-  const [saving,    setSaving]    = useState(false);
-  const [saved,     setSaved]     = useState(false);
-  const [error,     setError]     = useState<string | null>(null);
+  const [firstName,    setFirstName]    = useState(user?.firstName ?? "");
+  const [lastName,     setLastName]     = useState(user?.lastName  ?? "");
+  const [email,        setEmail]        = useState(user?.email     ?? "");
+  const [country,      setCountry]      = useState("");
+  const [timezone,     setTimezone]     = useState("");
+  const [language,     setLanguage]     = useState("");
+  const [phone,        setPhone]        = useState("");
+  const [twilioNumber, setTwilioNumber] = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [saved,        setSaved]        = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get("/api/v1/users/me").then(async (r) => {
+      if (!r.ok) return;
+      const j = await r.json();
+      const d = j.data;
+      if (d.country)      setCountry(d.country);
+      if (d.timezone)     setTimezone(d.timezone);
+      if (d.language)     setLanguage(d.language);
+      if (d.phone)        setPhone(d.phone);
+      if (d.twilioNumber) setTwilioNumber(d.twilioNumber);
+    }).catch(() => {});
+  }, []);
 
   const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
 
@@ -108,7 +126,11 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
     if (!firstName.trim() || !email.trim()) return;
     setSaving(true); setError(null);
     try {
-      const res = await api.patch("/api/v1/users/me", { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim() });
+      const res = await api.patch("/api/v1/users/me", {
+        firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(),
+        country: country || null, timezone: timezone || null,
+        language: language || null, phone: phone || null, twilioNumber: twilioNumber || null,
+      });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         setError(json?.error?.message ?? "Failed to save profile");
@@ -153,6 +175,33 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
         <div>
           <label className="mb-1.5 block text-sm font-medium">Email</label>
           <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className={inputCls} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Phone</label>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" placeholder="+1 555 000 0000" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Twilio Number</label>
+            <input value={twilioNumber} onChange={(e) => setTwilioNumber(e.target.value)} placeholder="+1 555 000 0000" className={inputCls} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Country</label>
+            <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. United Kingdom" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Timezone</label>
+            <input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. Europe/London" className={inputCls} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Language</label>
+            <input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="e.g. en" className={inputCls} />
+          </div>
+          <div>{/* spacer */}</div>
         </div>
         {error && (
           <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

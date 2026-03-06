@@ -25,7 +25,10 @@ import { generateQuotePDF } from "@/lib/quote-pdf";
 interface Company {
   id: string; name: string; domain?: string; industry?: string;
   headcount?: number; tier?: string; website?: string; country?: string;
-  openDeals: number; openDealValue: number; createdAt: string;
+  subRegion?: string; region?: string; linkedinUrl?: string;
+  subIndustry?: string; revenue?: number; segment?: string;
+  createdBy?: string; lastCompanyActivity?: string; opportunitiesName?: string;
+  openDeals: number; openDealValue: number; createdAt: string; updatedAt?: string;
 }
 
 interface ContactRow {
@@ -194,6 +197,53 @@ export default function CompanyDetailPage() {
           </div>
         ))}
       </div>
+
+      {/* Extended company fields */}
+      {(company.subRegion || company.region || company.subIndustry || company.revenue != null ||
+        company.segment || company.linkedinUrl || company.lastCompanyActivity ||
+        company.opportunitiesName || company.createdBy) && (
+        <div className="rounded-xl border border-border bg-card p-5">
+          <h3 className="mb-4 text-sm font-semibold text-foreground">Additional Details</h3>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
+            {company.region && (
+              <div><p className="text-xs text-muted-foreground">Region</p><p className="text-sm">{company.region}</p></div>
+            )}
+            {company.subRegion && (
+              <div><p className="text-xs text-muted-foreground">Sub Region</p><p className="text-sm">{company.subRegion}</p></div>
+            )}
+            {company.subIndustry && (
+              <div><p className="text-xs text-muted-foreground">Sub Industry</p><p className="text-sm">{company.subIndustry}</p></div>
+            )}
+            {company.segment && (
+              <div><p className="text-xs text-muted-foreground">Segment</p><p className="text-sm">{company.segment}</p></div>
+            )}
+            {company.revenue != null && (
+              <div><p className="text-xs text-muted-foreground">Revenue ($)</p><p className="text-sm">{company.revenue.toLocaleString()}</p></div>
+            )}
+            {company.opportunitiesName && (
+              <div><p className="text-xs text-muted-foreground">Opportunity Name</p><p className="text-sm">{company.opportunitiesName}</p></div>
+            )}
+            {company.lastCompanyActivity && (
+              <div><p className="text-xs text-muted-foreground">Last Activity</p><p className="text-sm">{new Date(company.lastCompanyActivity).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+            )}
+            {company.createdBy && (
+              <div><p className="text-xs text-muted-foreground">Created By</p><p className="text-sm">{company.createdBy}</p></div>
+            )}
+            {company.linkedinUrl && (
+              <div className="col-span-2 sm:col-span-1">
+                <p className="text-xs text-muted-foreground">LinkedIn</p>
+                <a href={company.linkedinUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-sm text-primary hover:underline">
+                  View profile <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+            {company.updatedAt && (
+              <div><p className="text-xs text-muted-foreground">Last Updated</p><p className="text-sm text-muted-foreground">{new Date(company.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Two-column layout: Contacts + Deals */}
       <div className="grid gap-4 lg:grid-cols-2">

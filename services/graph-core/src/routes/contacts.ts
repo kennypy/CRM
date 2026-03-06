@@ -362,8 +362,10 @@ function toContactResponse(row: Record<string, unknown>) {
     company: row.company_id
       ? { id: row.company_id, name: row.company_name, domain: row.company_domain }
       : undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdBy:    row.created_by    || undefined,
+    lastActivity: row.last_activity_at || undefined,
+    createdAt:    row.created_at,
+    updatedAt:    row.updated_at,
   };
 }
 

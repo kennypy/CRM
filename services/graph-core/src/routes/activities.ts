@@ -76,7 +76,7 @@ export async function activitiesRoutes(server: FastifyInstance) {
       SELECT
         a.id, a.tenant_id, a.type, a.direction, a.subject, a.summary,
         a.sentiment, a.duration_seconds, a.occurred_at, a.source,
-        a.external_id, a.deal_id, a.created_at, a.updated_at,
+        a.external_id, a.deal_id, a.created_by, a.related_to, a.created_at, a.updated_at,
         COALESCE(
           json_agg(
             json_build_object(
@@ -453,6 +453,8 @@ function toActivityResponse(row: Record<string, unknown>) {
     externalId:      row.external_id || undefined,
     participants:    Array.isArray(row.participants) ? row.participants : [],
     deal:            row.deal_id ? { id: row.deal_id } : undefined,
+    createdBy:       row.created_by  || undefined,
+    relatedTo:       row.related_to  || undefined,
     createdAt:       row.created_at instanceof Date
                        ? (row.created_at as Date).toISOString()
                        : row.created_at,
