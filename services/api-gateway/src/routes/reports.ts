@@ -367,7 +367,9 @@ export async function reportsRoutes(server: FastifyInstance) {
   // ── POST /api/v1/reports/run ─────────────────────────────────────────────
   server.post("/reports/run", async (request, reply) => {
     const { tenantId } = request.user;
-    const parsed = QuerySpecSchema.safeParse(request.body);
+    const body = request.body as Record<string, unknown>;
+    const rawSpec = body.spec ?? body; // frontend wraps in { spec } but accept either shape
+    const parsed = QuerySpecSchema.safeParse(rawSpec);
     if (!parsed.success)
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
 

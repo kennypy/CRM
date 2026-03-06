@@ -16,11 +16,11 @@ import type { StoredUser } from "@/lib/auth";
 
 const PRIMARY_NAV = [
   { href: "/",           icon: Home,       label: "Home"          },
-  { href: "/pipeline",   icon: Briefcase,  label: "Opportunities" },
-  { href: "/contacts",   icon: Users,      label: "Contacts"      },
-  { href: "/companies",  icon: Building2,  label: "Companies"     },
-  { href: "/leads",      icon: TrendingUp, label: "Leads"         },
   { href: "/activities", icon: Activity,   label: "Activities"    },
+  { href: "/leads",      icon: TrendingUp, label: "Leads"         },
+  { href: "/contacts",   icon: Users,      label: "Contacts"      },
+  { href: "/pipeline",   icon: Briefcase,  label: "Opportunities" },
+  { href: "/companies",  icon: Building2,  label: "Companies"     },
 ];
 
 const MORE_NAV = [
