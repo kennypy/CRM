@@ -366,7 +366,7 @@ export default function QuotesPage() {
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                {["Quote #", "Title", "Company", "Status", "Total", "Valid Until", "Rep", "Actions"].map((h) => (
+                {["Quote #", "Title", "Company", "Contact", "Status", "Total", "Valid Until", "Rep", "Actions"].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">{h}</th>
                 ))}
               </tr>
@@ -382,6 +382,7 @@ export default function QuotesPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{q.companyName ?? "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{q.contactName ?? "—"}</td>
                   <td className="px-4 py-3">
                     <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", STATUS_COLORS[q.status])}>
                       {STATUS_ICON[q.status]}

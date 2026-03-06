@@ -75,12 +75,13 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
   const [selectedCompany, setSelectedCompany] = useState<CompanyOption | null>(null);
   const [showQuoteBuilder, setShowQuoteBuilder] = useState(false);
   const [quotePreFill, setQuotePreFill] = useState<Record<string, unknown>>({});
+  const [resolvedContact, setResolvedContact] = useState<{ id: string; name: string } | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
-    else { setInput(""); setState("idle"); setParsed(null); setMessage(""); setCompanies([]); setSelectedCompany(null); }
+    else { setInput(""); setState("idle"); setParsed(null); setMessage(""); setCompanies([]); setSelectedCompany(null); setResolvedContact(null); }
   }, [open]);
 
   // ── Company lookup ───────────────────────────────────────────────────────
@@ -96,6 +97,17 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
         country: c.country ? String(c.country)  : undefined,
       }));
     } catch { return []; }
+  };
+
+  // ── Contact lookup (used when company search has no results) ─────────────
+  const lookupContact = async (name: string): Promise<{ id: string; name: string } | null> => {
+    try {
+      const res  = await api.get(`/api/v1/contacts?search=${encodeURIComponent(name)}&limit=3`);
+      const json = await res.json();
+      const hit  = json.data?.[0];
+      if (!hit) return null;
+      return { id: String(hit.id), name: `${hit.first_name ?? ""} ${hit.last_name ?? ""}`.trim() };
+    } catch { return null; }
   };
 
   // ── Parse + execute ───────────────────────────────────────────────────────
@@ -116,8 +128,14 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
     } else if (p.company) {
       const found = await lookupCompany(p.company);
       if (found.length === 0) {
-        // No match — proceed with name from NL but no ID
-        resolvedCompany = { id: "", name: p.company };
+        // Not a company — check if it's a contact name
+        const contact = await lookupContact(p.company);
+        if (contact) {
+          setResolvedContact(contact);
+          resolvedCompany = null; // don't store the person's name as a company
+        } else {
+          resolvedCompany = { id: "", name: p.company }; // unknown entity, store as-is
+        }
       } else if (found.length === 1) {
         resolvedCompany = found[0];
       } else {
@@ -149,7 +167,8 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
           companyId:   company?.id     || companyId,
           companyName: company?.name   || companyName,
           dealId,  dealName,
-          contactId,
+          contactId:   resolvedContact?.id   || contactId,
+          contactName: resolvedContact?.name || undefined,
           orderDiscount,
           items: p.products.length > 0
             ? p.products.map((prod) => {
@@ -457,6 +476,7 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
           companyId={String(quotePreFill.companyId ?? companyId ?? "")}
           companyName={String(quotePreFill.companyName ?? companyName ?? "")}
           contactId={String(quotePreFill.contactId ?? contactId ?? "")}
+          contactName={quotePreFill.contactName ? String(quotePreFill.contactName) : undefined}
           initialItems={quotePreFill.items as Parameters<typeof QuoteBuilderModal>[0]["initialItems"]}
           initialOrderDiscount={quotePreFill.orderDiscount as Parameters<typeof QuoteBuilderModal>[0]["initialOrderDiscount"]}
           onClose={() => setShowQuoteBuilder(false)}

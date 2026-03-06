@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRef } from "react";
 import {
-  X, Plus, Trash2, FileText, ChevronDown, ChevronUp,
-  AlertCircle, CheckCircle2, Search, Package, Info,
+  X, Plus, Trash2, FileText,
+  AlertCircle, Search, Package, Info, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -77,8 +78,51 @@ export function QuoteBuilderModal({
     const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10);
   })());
   const [taxRate,       setTaxRate]       = useState(existing?.taxRate      ?? 0);
-  const [discountType,  setDiscountType]  = useState<"none"|"percent"|"fixed">(existing?.discountType  ?? initialOrderDiscount?.type  ?? "none");
-  const [discountValue, setDiscountValue] = useState(existing?.discountValue ?? initialOrderDiscount?.value ?? 0);
+  // When editing a quote whose discount was stored per-line (order discount = "none"),
+  // reflect the uniform line discount in the Order Discount field for UI clarity.
+  const [discountType, setDiscountType] = useState<"none"|"percent"|"fixed">(() => {
+    if (existing?.discountType && existing.discountType !== "none") return existing.discountType;
+    if (existing?.items?.length) {
+      const d0 = existing.items[0]?.discountPct ?? 0;
+      if (d0 > 0 && existing.items.every((it) => Math.abs(it.discountPct - d0) < 0.001)) return "percent";
+    }
+    return initialOrderDiscount?.type ?? "none";
+  });
+  const [discountValue, setDiscountValue] = useState(() => {
+    if (existing?.discountValue && existing.discountValue > 0) return existing.discountValue;
+    if (existing?.items?.length) {
+      const d0 = existing.items[0]?.discountPct ?? 0;
+      if (d0 > 0 && existing.items.every((it) => Math.abs(it.discountPct - d0) < 0.001)) return d0;
+    }
+    return initialOrderDiscount?.value ?? 0;
+  });
+
+  // ── Contact link ───────────────────────────────────────────────────────────
+  const [linkedContact, setLinkedContact] = useState<{ id: string; name: string; email?: string } | null>(
+    () => (contactId && contactName) ? { id: contactId, name: contactName } : null
+  );
+  const [contactSearch,  setContactSearch]  = useState("");
+  const [contactResults, setContactResults] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [contactOpen,    setContactOpen]    = useState(false);
+  const contactTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleContactSearch = (q: string) => {
+    setContactSearch(q);
+    if (!q.trim()) { setContactResults([]); return; }
+    if (contactTimer.current) clearTimeout(contactTimer.current);
+    contactTimer.current = setTimeout(async () => {
+      try {
+        const res = await api.get(`/api/v1/contacts?search=${encodeURIComponent(q)}&limit=8`);
+        const j   = await res.json();
+        setContactResults((j.data ?? []).map((c: Record<string, unknown>) => ({
+          id:    String(c.id),
+          name:  `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim(),
+          email: String(c.email ?? ""),
+        })));
+        setContactOpen(true);
+      } catch { setContactResults([]); }
+    }, 300);
+  };
 
   const [items, setItems] = useState<DraftItem[]>(() => {
     if (existing?.items?.length) {
@@ -156,10 +200,11 @@ export function QuoteBuilderModal({
         taxRate,
         discountType:  allLinesMatchOrder ? "none" : discountType,
         discountValue: allLinesMatchOrder ? 0      : discountValue,
-        dealId:       dealId       || existing?.dealId       || undefined,
-        contactId:    contactId    || existing?.contactId    || undefined,
-        companyId:    companyId    || existing?.companyId    || undefined,
-        companyName:  companyName  || existing?.companyName  || undefined,
+        dealId:      dealId      || existing?.dealId      || undefined,
+        companyId:   companyId   || existing?.companyId   || undefined,
+        companyName: companyName || existing?.companyName || undefined,
+        contactId:   linkedContact?.id   || contactId   || existing?.contactId   || undefined,
+        contactName: linkedContact?.name || contactName || existing?.contactName || undefined,
         items: items.map((it) => ({
           // Only send productId if it's a real UUID (demo catalog uses "prod-001" style IDs)
           productId:   it.productId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(it.productId) ? it.productId : undefined,
@@ -223,6 +268,49 @@ export function QuoteBuilderModal({
               <textarea value={title} onChange={(e) => setTitle(e.target.value)} rows={3}
                 className={cn(inputCls, "resize-none text-sm")} placeholder="e.g. Acme Corp — 5 seats" />
             </div>
+            {/* Contact */}
+            <div>
+              <label className={labelCls}>Contact</label>
+              {linkedContact ? (
+                <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <User className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium truncate">{linkedContact.name}</p>
+                      {linkedContact.email && <p className="text-xs text-muted-foreground truncate">{linkedContact.email}</p>}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => { setLinkedContact(null); setContactSearch(""); }}
+                    className="ml-1 shrink-0 text-muted-foreground hover:text-red-600">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input value={contactSearch} onChange={(e) => handleContactSearch(e.target.value)}
+                    onFocus={() => contactResults.length > 0 && setContactOpen(true)}
+                    placeholder="Search contacts…"
+                    className={cn(inputCls, "pl-8 text-xs")} />
+                  {contactOpen && contactResults.length > 0 && (
+                    <div className="absolute top-full mt-1 z-20 w-full rounded-xl border bg-card shadow-lg overflow-hidden max-h-40 overflow-y-auto">
+                      {contactResults.map((c) => (
+                        <button key={c.id} type="button"
+                          onClick={() => { setLinkedContact(c); setContactSearch(""); setContactOpen(false); }}
+                          className="flex w-full items-start gap-2 px-2.5 py-2 text-left hover:bg-muted transition-colors">
+                          <User className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium truncate">{c.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{c.email}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div>
               <label className={labelCls}>Currency</label>
               <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputCls}>

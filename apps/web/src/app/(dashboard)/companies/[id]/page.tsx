@@ -9,11 +9,16 @@ import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 import { AddContactModal } from "@/components/modals/add-contact-modal";
 import { AddDealModal } from "@/components/modals/add-deal-modal";
 import { EditCompanyModal } from "@/components/modals/edit-company-modal";
+import { QuoteBuilderModal } from "@/components/modals/quote-builder-modal";
+import {
+  fmtCurrency, STATUS_COLORS, STATUS_LABELS, type Quote,
+} from "@/lib/quotes";
 import {
   Building2, Globe, Users, Briefcase, Calendar, ArrowLeft,
   Plus, Pencil, ExternalLink, AlertCircle, Mail, Activity,
-  ChevronRight,
+  ChevronRight, FileText, Eye, Download,
 } from "lucide-react";
+import { generateQuotePDF } from "@/lib/quote-pdf";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,7 +83,9 @@ export default function CompanyDetailPage() {
   const [error, setError]       = useState<string | null>(null);
   const [showAddContact, setShowAddContact] = useState(false);
   const [showAddDeal,     setShowAddDeal]     = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
+  const [showEdit,        setShowEdit]        = useState(false);
+  const [showNewQuote,    setShowNewQuote]     = useState(false);
+  const [quotes,          setQuotes]           = useState<Quote[]>([]);
 
   const fetchDetail = async () => {
     setLoading(true);
@@ -96,6 +103,13 @@ export default function CompanyDetailPage() {
   };
 
   useEffect(() => { fetchDetail(); }, [id]);
+
+  useEffect(() => {
+    api.get(`/api/v1/quotes?companyId=${id}`)
+      .then((r) => r.json())
+      .then((j) => { if (j.data) setQuotes(j.data); })
+      .catch(() => {});
+  }, [id]);
 
   if (loading) {
     return (
@@ -284,6 +298,60 @@ export default function CompanyDetailPage() {
         </div>
       )}
 
+      {/* Quotes */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <div className="flex items-center gap-2 font-medium">
+            <FileText className="h-4 w-4 text-primary" />
+            Quotes <span className="text-xs text-muted-foreground">({quotes.length})</span>
+          </div>
+          {perms.canWrite && (
+            <button onClick={() => setShowNewQuote(true)}
+              className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90">
+              <Plus className="h-3 w-3" /> New Quote
+            </button>
+          )}
+        </div>
+        {quotes.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-center text-muted-foreground">No quotes yet</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted/30">
+              <tr>
+                {["Quote #", "Title", "Status", "Total", "Valid Until", "Actions"].map((h) => (
+                  <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {quotes.map((q) => (
+                <tr key={q.id} className="hover:bg-muted/20">
+                  <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{q.quoteNumber}</td>
+                  <td className="px-4 py-2.5 max-w-xs truncate font-medium">{q.title}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", STATUS_COLORS[q.status])}>
+                      {STATUS_LABELS[q.status]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 font-semibold tabular-nums">{fmtCurrency(q.total, q.currency)}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground text-xs">
+                    {q.validUntil ? new Date(q.validUntil).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => generateQuotePDF(q)} title="Download PDF"
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+                        <Download className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       {/* Modals */}
       {showAddContact && (
         <AddContactModal
@@ -307,6 +375,14 @@ export default function CompanyDetailPage() {
           company={company}
           onClose={() => setShowEdit(false)}
           onSaved={() => { setShowEdit(false); fetchDetail(); }}
+        />
+      )}
+      {showNewQuote && (
+        <QuoteBuilderModal
+          companyId={company.id}
+          companyName={company.name}
+          onClose={() => setShowNewQuote(false)}
+          onSaved={(q) => { setShowNewQuote(false); setQuotes((prev) => [q, ...prev]); }}
         />
       )}
     </div>
