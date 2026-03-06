@@ -123,7 +123,8 @@ function extractProducts(text: string): ParsedProduct[] {
   // Pattern: "[qty] [x] [product name] [with [a] [discount]% [discount]]"
   // e.g. "3 x Pro licenses with 10% discount", "5 CRM-PRO-M with a 10% discount"
   // Greedy hyphen-aware product name; optional article "a/an" before percentage
-  const re = /\b(\d+(?:\.\d+)?)\s*(?:x\s+)?([A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z0-9-]+){0,6})(?:\s+(?:licenses?|seats?|users?|copies?|units?))?(?:\s+(?:with|at)\s+(?:an?\s+)?(\d+(?:\.\d+)?)%(?:\s+(?:discount|off))?)?/gi;
+  // Product name stops before connector words (with/at/for/in/of) so the discount suffix can match.
+  const re = /\b(\d+(?:\.\d+)?)\s*(?:x\s+)?([A-Za-z][A-Za-z0-9-]*(?:\s+(?!(?:with|at|for|in|of)\b)[A-Za-z0-9-]+){0,6})(?:\s+(?:licenses?|seats?|users?|copies?|units?))?(?:\s+(?:with|at)\s+(?:an?\s+)?(\d+(?:\.\d+)?)%(?:\s+(?:discount|off))?)?/gi;
 
   let m: RegExpExecArray | null;
   while ((m = re.exec(t)) !== null) {

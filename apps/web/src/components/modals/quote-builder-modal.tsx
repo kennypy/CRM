@@ -141,9 +141,9 @@ export function QuoteBuilderModal({
         title, currency, notes: notes || undefined, terms: terms || undefined,
         validUntil: validUntil || undefined,
         taxRate, discountType, discountValue,
-        dealId: dealId ?? existing?.dealId ?? undefined,
-        contactId: contactId ?? existing?.contactId ?? undefined,
-        companyId: companyId ?? existing?.companyId ?? undefined,
+        dealId:    dealId    || existing?.dealId    || undefined,
+        contactId: contactId || existing?.contactId || undefined,
+        companyId: companyId || existing?.companyId || undefined,
         items: items.map((it) => ({
           productId:   it.productId   ?? undefined,
           productName: it.productName,
