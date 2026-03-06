@@ -42,7 +42,7 @@ services:
       redis-server
       --appendonly yes
       --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory-policy noeviction
       --requirepass ${REDIS_PASSWORD:-nexcrm_redis_dev_password}
     ports:
       # Bind to loopback only — Redis must NOT be reachable from the network.
