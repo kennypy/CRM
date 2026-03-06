@@ -27,7 +27,7 @@ import { decrypt } from "../lib/encrypt";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const QUEUE_NAME  = "nexcrm:sequence-steps";
+const QUEUE_NAME  = "nexcrm-sequence-steps";
 const BATCH_SIZE  = 50;
 const APP_URL     = () => process.env.APP_URL ?? "http://localhost:3000";
 

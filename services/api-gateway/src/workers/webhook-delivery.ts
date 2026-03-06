@@ -14,7 +14,7 @@ import { createHmac } from "crypto";
 import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
 
-const QUEUE_NAME = "nexcrm:webhook-deliveries";
+const QUEUE_NAME = "nexcrm-webhook-deliveries";
 
 function redisConnection() {
   const url = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
