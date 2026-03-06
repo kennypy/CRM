@@ -1,12 +1,16 @@
--- ── Migration 008: Quotes, Products, Company Hierarchy, Manager→Rep ──────────
+-- ── Migration 008: Quotes, Products, Manager→Rep Hierarchy ───────────────────
 -- Adds:
 --   1. manager_id on users (rep hierarchy)
---   2. parent_company_id on companies (account hierarchy)
---   3. quoting_skill on users (per-user quoting permission)
+--   2. can_quote on users (per-user quoting permission)
+--   3. quoting settings on tenants (discount approval threshold, etc.)
 --   4. products table (product catalog)
 --   5. quotes table (quote lifecycle)
 --   6. quote_items table (line items)
---   7. tenant quoting settings column (discount approval threshold)
+--
+-- NOTE: companies, contacts, and deals are stored as Apache AGE graph nodes —
+-- there are no relational tables for those entities. FK references to them are
+-- omitted; the columns (deal_id, company_id, contact_id) are plain UUIDs that
+-- reference graph node IDs by convention.
 
 -- ── 1. Manager hierarchy on users ────────────────────────────────────────────
 ALTER TABLE users
@@ -18,13 +22,7 @@ UPDATE users SET can_quote = true WHERE role IN ('admin', 'manager');
 
 CREATE INDEX IF NOT EXISTS idx_users_manager ON users(manager_id) WHERE manager_id IS NOT NULL;
 
--- ── 2. Company hierarchy ──────────────────────────────────────────────────────
-ALTER TABLE companies
-  ADD COLUMN IF NOT EXISTS parent_company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS idx_companies_parent ON companies(parent_company_id) WHERE parent_company_id IS NOT NULL;
-
--- ── 3. Tenant quoting settings ───────────────────────────────────────────────
+-- ── 2. Tenant quoting settings ───────────────────────────────────────────────
 -- discount_approval_threshold: discounts ABOVE this % require manager approval
 -- (0 = all discounts need approval, 100 = none do, default = 10)
 ALTER TABLE tenants
@@ -33,7 +31,7 @@ ALTER TABLE tenants
   ADD COLUMN IF NOT EXISTS quote_send_method           TEXT          NOT NULL DEFAULT 'email'
     CHECK (quote_send_method IN ('email', 'link', 'both'));
 
--- ── 4. Product catalog ────────────────────────────────────────────────────────
+-- ── 3. Product catalog ────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS products (
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id     UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -51,14 +49,15 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE INDEX IF NOT EXISTS idx_products_tenant ON products(tenant_id) WHERE active = true;
 
--- ── 5. Quotes ─────────────────────────────────────────────────────────────────
+-- ── 4. Quotes ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS quotes (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   quote_number    TEXT        NOT NULL,   -- e.g. Q-2026-0001
-  deal_id         UUID        REFERENCES deals(id) ON DELETE SET NULL,
-  contact_id      UUID        REFERENCES contacts(id) ON DELETE SET NULL,
-  company_id      UUID        REFERENCES companies(id) ON DELETE SET NULL,
+  -- deal_id / contact_id / company_id reference AGE graph node IDs (no FK)
+  deal_id         UUID,
+  contact_id      UUID,
+  company_id      UUID,
   created_by      UUID        NOT NULL REFERENCES users(id),
   assigned_to     UUID        REFERENCES users(id) ON DELETE SET NULL,
   status          TEXT        NOT NULL DEFAULT 'draft'
@@ -94,7 +93,7 @@ CREATE INDEX IF NOT EXISTS idx_quotes_company   ON quotes(company_id) WHERE comp
 CREATE INDEX IF NOT EXISTS idx_quotes_contact   ON quotes(contact_id) WHERE contact_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_quotes_status    ON quotes(tenant_id, status);
 
--- ── 6. Quote items (line items) ───────────────────────────────────────────────
+-- ── 5. Quote items (line items) ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS quote_items (
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   quote_id      UUID        NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
@@ -112,7 +111,7 @@ CREATE TABLE IF NOT EXISTS quote_items (
 
 CREATE INDEX IF NOT EXISTS idx_quote_items_quote ON quote_items(quote_id);
 
--- ── 7. Quote number sequence per tenant ──────────────────────────────────────
+-- ── 6. Quote number sequence per tenant ──────────────────────────────────────
 -- A simple function to generate Q-YYYY-NNNN style numbers
 CREATE OR REPLACE FUNCTION next_quote_number(p_tenant_id UUID)
 RETURNS TEXT LANGUAGE plpgsql AS $$
