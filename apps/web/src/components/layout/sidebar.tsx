@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Briefcase, Users, Building2, Zap, BarChart3,
   CheckSquare, Settings, AlertCircle, Layers, ListOrdered,
-  LayoutDashboard, Sun, Moon, Monitor,
+  LayoutDashboard, Sun, Moon, Monitor, Upload, Box,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -22,6 +22,7 @@ const navItems = [
   { href: "/reports",    icon: BarChart3,       label: "Reports"     },
   { href: "/review",     icon: AlertCircle,     label: "Review Queue"},
   { href: "/workflows",  icon: Layers,          label: "Workflows"   },
+  { href: "/import",     icon: Upload,          label: "Import"      },
   { href: "/settings",   icon: Settings,        label: "Settings"    },
 ];
 

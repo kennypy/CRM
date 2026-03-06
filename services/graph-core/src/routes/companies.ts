@@ -18,6 +18,7 @@ const CreateCompanySchema = z.object({
   tier:      z.enum(["smb", "mid_market", "enterprise"]).optional(),
   website:   z.string().url().max(2048).optional(),
   country:   z.string().max(100).optional(),
+  customFields: z.record(z.unknown()).optional(),
 });
 
 const GetCompaniesQuery = z.object({
@@ -56,7 +57,7 @@ export async function companiesRoutes(server: FastifyInstance) {
     website: c.website, country: c.country,
     sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
     sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
-    created_by: c.created_by,
+    created_by: c.created_by, custom_fields: c.custom_fields,
     open_deals: open_deals, open_deal_value: open_deal_value,
     created_at: c.created_at, updated_at: c.updated_at
   }
@@ -87,7 +88,7 @@ export async function companiesRoutes(server: FastifyInstance) {
 
     const id  = crypto.randomUUID();
     const now = new Date().toISOString();
-    const { name, domain, industry, headcount, tier, website, country } = body.data;
+    const { name, domain, industry, headcount, tier, website, country, customFields } = body.data;
 
     // Dedup by domain within tenant
     const existing = await cypher(
@@ -104,26 +105,28 @@ export async function companiesRoutes(server: FastifyInstance) {
 
     await cypher(
       `CREATE (c:Company {
-        id:        $id,
-        tenant_id: $tenantId,
-        name:      $name,
-        domain:    $domain,
-        industry:  $industry,
-        headcount: $headcount,
-        tier:      $tier,
-        website:   $website,
-        country:   $country,
-        source:    'user',
-        created_at: $now,
-        updated_at: $now
+        id:            $id,
+        tenant_id:     $tenantId,
+        name:          $name,
+        domain:        $domain,
+        industry:      $industry,
+        headcount:     $headcount,
+        tier:          $tier,
+        website:       $website,
+        country:       $country,
+        custom_fields: $customFields,
+        source:        'user',
+        created_at:    $now,
+        updated_at:    $now
       }) RETURN {id: c.id}`,
       {
         id, tenantId, name, domain,
-        industry:  industry  ?? "",
-        headcount: headcount ?? 0,
-        tier:      tier      ?? "smb",
-        website:   website   ?? "",
-        country:   country   ?? "",
+        industry:     industry     ?? "",
+        headcount:    headcount    ?? 0,
+        tier:         tier         ?? "smb",
+        website:      website      ?? "",
+        country:      country      ?? "",
+        customFields: JSON.stringify(customFields ?? {}),
         now,
       }
     );
@@ -139,7 +142,7 @@ export async function companiesRoutes(server: FastifyInstance) {
        RETURN {
          id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
          industry: c.industry, headcount: c.headcount, tier: c.tier,
-         website: c.website, country: c.country,
+         website: c.website, country: c.country, custom_fields: c.custom_fields,
          open_deals: 0, open_deal_value: 0,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -167,7 +170,7 @@ export async function companiesRoutes(server: FastifyInstance) {
          website: c.website, country: c.country,
          sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
          sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
-         created_by: c.created_by,
+         created_by: c.created_by, custom_fields: c.custom_fields,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -202,7 +205,8 @@ export async function companiesRoutes(server: FastifyInstance) {
     if (f.industry)  { setParts.push("c.industry  = $industry");  params.industry  = f.industry; }
     if (f.headcount) { setParts.push("c.headcount = $headcount"); params.headcount = f.headcount; }
     if (f.tier)      { setParts.push("c.tier      = $tier");      params.tier      = f.tier; }
-    if (f.country)   { setParts.push("c.country   = $country");   params.country   = f.country; }
+    if (f.country)      { setParts.push("c.country       = $country");      params.country      = f.country; }
+    if (f.customFields) { setParts.push("c.custom_fields = $customFields"); params.customFields = JSON.stringify(f.customFields); }
 
     await cypher(
       `MATCH (c:Company {id: $id, tenant_id: $tenantId})
@@ -218,7 +222,7 @@ export async function companiesRoutes(server: FastifyInstance) {
        RETURN {
          id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
          industry: c.industry, headcount: c.headcount, tier: c.tier,
-         website: c.website, country: c.country,
+         website: c.website, country: c.country, custom_fields: c.custom_fields,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -299,7 +303,7 @@ export async function companiesRoutes(server: FastifyInstance) {
          website: c.website, country: c.country,
          sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
          sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
-         created_by: c.created_by,
+         created_by: c.created_by, custom_fields: c.custom_fields,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -389,6 +393,7 @@ function toCompanyResponse(row: Record<string, unknown>) {
     revenue:        row.revenue        || undefined,
     segment:        row.segment        || undefined,
     createdBy:      row.created_by     || undefined,
+    customFields:   row.custom_fields ? JSON.parse(row.custom_fields as string) : {},
     openDeals:      row.open_deals     ?? 0,
     openDealValue:  row.open_deal_value ?? 0,
     createdAt:      row.created_at,

@@ -36,7 +36,16 @@ import { errorHandler }           from "./middleware/error-handler";
 import { authMiddleware }         from "./middleware/auth";
 import { typeDefs }               from "./graphql/schema";
 import { resolvers }              from "./graphql/resolvers";
+import { customFieldsRoutes }         from "./routes/custom-fields";
+import { customObjectsRoutes }        from "./routes/custom-objects";
+import { permissionsRoutes }          from "./routes/permissions";
+import { slackRoutes }                from "./routes/slack";
+import { importRoutes }               from "./routes/import";
+import { bulkRoutes }                 from "./routes/bulk";
 import { startWebhookDeliveryWorker } from "./workers/webhook-delivery";
+import { startSlackNotificationWorker } from "./workers/slack-notification";
+import { startImportProcessorWorker }   from "./workers/import-processor";
+import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
 
 const server = Fastify({
   logger: {
@@ -141,6 +150,12 @@ async function bootstrap() {
   await server.register(billingRoutes,          { prefix: "/api/v1/billing" });
   await server.register(exportRoutes,           { prefix: "/api/v1/export" });
   await server.register(apiKeysRoutes,          { prefix: "/api/v1/api-keys" });
+  await server.register(customFieldsRoutes,     { prefix: "/api/v1/custom-fields" });
+  await server.register(customObjectsRoutes,    { prefix: "/api/v1/custom-objects" });
+  await server.register(permissionsRoutes,      { prefix: "/api/v1/permissions" });
+  await server.register(slackRoutes,            { prefix: "/api/v1/integrations/slack" });
+  await server.register(importRoutes,           { prefix: "/api/v1/import" });
+  await server.register(bulkRoutes,             { prefix: "/api/v1/bulk" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
@@ -166,6 +181,9 @@ async function bootstrap() {
 
   // ── Background workers ────────────────────────────────────────────────────
   startWebhookDeliveryWorker();
+  startSlackNotificationWorker();
+  startImportProcessorWorker();
+  startCloseDateCheckerWorker();
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

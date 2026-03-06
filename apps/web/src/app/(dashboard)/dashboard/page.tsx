@@ -9,6 +9,7 @@ import {
   Activity, Award, ArrowRight, Mail, Phone, CheckSquare, AlertCircle,
   Zap, Star, RefreshCw,
 } from "lucide-react";
+import { ForecastPanel } from "@/components/ai/forecast-panel";
 
 // ── KPI Cards ─────────────────────────────────────────────────────────────────
 
@@ -271,6 +272,9 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* AI Forecast */}
+      <ForecastPanel />
 
       {/* Activity summary stats */}
       <div className="rounded-xl border bg-card p-5">
