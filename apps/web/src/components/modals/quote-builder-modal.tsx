@@ -64,7 +64,7 @@ export function QuoteBuilderModal({
   // ── Form state ─────────────────────────────────────────────────────────────
   const [title, setTitle] = useState(() => {
     if (existing?.title) return existing.title;
-    const base = dealName ?? companyName;
+    const base = dealName || companyName || null;  // || treats "" as falsy, unlike ??
     if (initialItems?.[0]) {
       const p = initialItems[0];
       return `${base ?? "Quote"} — ${p.productName}${p.quantity !== 1 ? ` × ${p.quantity}` : ""}`;

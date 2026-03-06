@@ -101,13 +101,20 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
   };
 
   // ── Contact lookup (used when company search has no results) ─────────────
-  const lookupContact = async (name: string): Promise<{ id: string; name: string } | null> => {
+  const lookupContact = async (name: string): Promise<{
+    id: string; name: string; companyId?: string; companyName?: string;
+  } | null> => {
     try {
       const res  = await api.get(`/api/v1/contacts?search=${encodeURIComponent(name)}&limit=3`);
       const json = await res.json();
       const hit  = json.data?.[0];
       if (!hit) return null;
-      return { id: String(hit.id), name: `${hit.first_name ?? ""} ${hit.last_name ?? ""}`.trim() };
+      return {
+        id:          String(hit.id),
+        name:        `${hit.first_name ?? ""} ${hit.last_name ?? ""}`.trim(),
+        companyId:   hit.company_id   ? String(hit.company_id)   : undefined,
+        companyName: hit.company_name ? String(hit.company_name) : undefined,
+      };
     } catch { return null; }
   };
 
@@ -124,6 +131,7 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
 
     // Resolve company: check if already in context or need to look up
     let resolvedCompany: CompanyOption | null = null;
+    let localContact: { id: string; name: string; companyId?: string; companyName?: string } | null = null;
     if (companyId && companyName) {
       resolvedCompany = { id: companyId, name: companyName };
     } else if (p.company) {
@@ -132,8 +140,14 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
         // Not a company — check if it's a contact name
         const contact = await lookupContact(p.company);
         if (contact) {
+          localContact = contact;
           setResolvedContact(contact);
-          resolvedCompany = null; // don't store the person's name as a company
+          // If the contact belongs to a company, use that as the quote company
+          if (contact.companyId && contact.companyName) {
+            resolvedCompany = { id: contact.companyId, name: contact.companyName };
+          } else {
+            resolvedCompany = null;
+          }
         } else {
           resolvedCompany = { id: "", name: p.company }; // unknown entity, store as-is
         }
@@ -148,10 +162,15 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
     }
 
     setSelectedCompany(resolvedCompany);
-    await dispatchIntent(p, resolvedCompany);
+    // Pass localContact directly — do NOT read from resolvedContact state (React state is stale here)
+    await dispatchIntent(p, resolvedCompany, localContact);
   };
 
-  const dispatchIntent = async (p: ParseResult, company: CompanyOption | null) => {
+  const dispatchIntent = async (
+    p: ParseResult,
+    company: CompanyOption | null,
+    contact: { id: string; name: string; companyId?: string; companyName?: string } | null = null
+  ) => {
     switch (p.intent) {
       case "log_activity":
         setState("confirm_activity");
@@ -168,8 +187,8 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
           companyId:   company?.id     || companyId,
           companyName: company?.name   || companyName,
           dealId,  dealName,
-          contactId:   resolvedContact?.id   || contactId,
-          contactName: resolvedContact?.name || contactName,
+          contactId:   contact?.id   || contactId,
+          contactName: contact?.name || contactName,
           orderDiscount,
           items: p.products.length > 0
             ? p.products.map((prod) => {
@@ -472,12 +491,12 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
       {/* Quote builder launched from action bar */}
       {showQuoteBuilder && (
         <QuoteBuilderModal
-          dealId={String(quotePreFill.dealId ?? dealId ?? "")}
-          dealName={String(quotePreFill.dealName ?? dealName ?? "")}
-          companyId={String(quotePreFill.companyId ?? companyId ?? "")}
-          companyName={String(quotePreFill.companyName ?? companyName ?? "")}
-          contactId={String(quotePreFill.contactId ?? contactId ?? "")}
-          contactName={quotePreFill.contactName ? String(quotePreFill.contactName) : undefined}
+          dealId={(quotePreFill.dealId as string) || dealId || undefined}
+          dealName={(quotePreFill.dealName as string) || dealName || undefined}
+          companyId={(quotePreFill.companyId as string) || companyId || undefined}
+          companyName={(quotePreFill.companyName as string) || companyName || undefined}
+          contactId={(quotePreFill.contactId as string) || contactId || undefined}
+          contactName={(quotePreFill.contactName as string) || contactName || undefined}
           initialItems={quotePreFill.items as Parameters<typeof QuoteBuilderModal>[0]["initialItems"]}
           initialOrderDiscount={quotePreFill.orderDiscount as Parameters<typeof QuoteBuilderModal>[0]["initialOrderDiscount"]}
           onClose={() => setShowQuoteBuilder(false)}
