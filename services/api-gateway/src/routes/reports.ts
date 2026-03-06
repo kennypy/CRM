@@ -350,13 +350,13 @@ async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
   // 9. Limit
   rows = rows.slice(0, spec.limit ?? 1000);
 
-  // 10. Build column metadata
-  const columns = hasAgg
+  // 10. Build column list (plain strings — frontend uses these as React keys + headers)
+  const columns: string[] = hasAgg
     ? [
-        ...(spec.groupBy ?? []).map((g) => ({ key: `${g.source}.${g.field}`, label: `${g.source}.${g.field}` })),
-        ...(spec.aggregations ?? []).map((a) => ({ key: a.alias, label: a.alias })),
+        ...(spec.groupBy ?? []).map((g) => `${g.source}.${g.field}`),
+        ...(spec.aggregations ?? []).map((a) => a.alias),
       ]
-    : spec.fields.map((f) => ({ key: f.alias ?? `${f.source}.${f.field}`, label: f.alias ?? `${f.source}.${f.field}` }));
+    : spec.fields.map((f) => f.alias ?? `${f.source}.${f.field}`);
 
   return { rows, columns, rowCount: rows.length };
 }
