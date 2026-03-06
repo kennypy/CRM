@@ -87,8 +87,8 @@ async function bootstrap() {
   await server.register(callsRoutes,     { prefix: "/calls" });
   await server.register(dialersRoutes,   { prefix: "/dialers" });
 
-  // ── Sequence runner ────────────────────────────────────────────────────────
-  startSequenceRunner();
+  // ── Sequence runner (BullMQ) ───────────────────────────────────────────────
+  await startSequenceRunner();
 
   // ── Start ──────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.OUTREACH_PORT ?? "4003", 10);

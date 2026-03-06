@@ -1,0 +1,10 @@
+# PgBouncer user list — md5 hashed passwords
+# Format: "username" "md5<md5(password + username)>"
+#
+# Generate with:
+#   echo -n "nexcrm_devnexcrm" | md5sum   # password="nexcrm_dev", user="nexcrm"
+#   → prefix with "md5"
+#
+# In production, use a strong password and rotate via secrets management.
+# This file is mounted as a Docker secret or configmap in production.
+"nexcrm" "md5${PGBOUNCER_MD5_HASH:-c9e9acca4e0d4e3e3a43d91e9a6b8e5f}"

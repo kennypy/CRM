@@ -2,6 +2,9 @@ import * as path from "path";
 import * as dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
+import { initSentry } from "./lib/sentry";
+initSentry();
+
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -24,11 +27,16 @@ import { workflowsRoutes } from "./routes/workflows";
 import { usersRoutes }     from "./routes/users";
 import { quotesRoutes }    from "./routes/quotes";
 import { productsRoutes }  from "./routes/products";
-import { reportsRoutes }   from "./routes/reports";
-import { errorHandler } from "./middleware/error-handler";
-import { authMiddleware } from "./middleware/auth";
-import { typeDefs } from "./graphql/schema";
-import { resolvers } from "./graphql/resolvers";
+import { reportsRoutes }          from "./routes/reports";
+import { outboundWebhooksRoutes } from "./routes/outbound-webhooks";
+import { billingRoutes }          from "./routes/billing";
+import { exportRoutes }           from "./routes/export";
+import { apiKeysRoutes }          from "./routes/api-keys";
+import { errorHandler }           from "./middleware/error-handler";
+import { authMiddleware }         from "./middleware/auth";
+import { typeDefs }               from "./graphql/schema";
+import { resolvers }              from "./graphql/resolvers";
+import { startWebhookDeliveryWorker } from "./workers/webhook-delivery";
 
 const server = Fastify({
   logger: {
@@ -128,7 +136,11 @@ async function bootstrap() {
   await server.register(usersRoutes,        { prefix: "/api/v1/users" });
   await server.register(quotesRoutes,       { prefix: "/api/v1/quotes" });
   await server.register(productsRoutes,     { prefix: "/api/v1/products" });
-  await server.register(reportsRoutes,      { prefix: "/api/v1" });
+  await server.register(reportsRoutes,          { prefix: "/api/v1" });
+  await server.register(outboundWebhooksRoutes, { prefix: "/api/v1/webhooks" });
+  await server.register(billingRoutes,          { prefix: "/api/v1/billing" });
+  await server.register(exportRoutes,           { prefix: "/api/v1/export" });
+  await server.register(apiKeysRoutes,          { prefix: "/api/v1/api-keys" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
@@ -151,6 +163,9 @@ async function bootstrap() {
 
   // ── Error handling ────────────────────────────────────────────────────────
   server.setErrorHandler(errorHandler);
+
+  // ── Background workers ────────────────────────────────────────────────────
+  startWebhookDeliveryWorker();
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

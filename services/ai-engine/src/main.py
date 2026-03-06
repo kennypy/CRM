@@ -11,13 +11,22 @@ Handles all LLM-based intelligence:
   - Smart email composition suggestions
 """
 
+import os
 from contextlib import asynccontextmanager
 import structlog
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .config import settings
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    environment=os.getenv("NODE_ENV", "development"),
+    traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
+    enabled=bool(os.getenv("SENTRY_DSN")),
+)
 from .routers import extraction, scoring, nl_command, health
 from .workers.extraction_worker import start_extraction_worker
 from .telemetry import setup_telemetry

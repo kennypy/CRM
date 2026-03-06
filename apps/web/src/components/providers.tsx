@@ -2,9 +2,25 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TenantProvider } from "@/lib/tenant-context";
 import { ThemeProvider } from "@/components/theme/theme-provider";
+import { initPostHog, posthog } from "@/lib/posthog";
+import { usePathname, useSearchParams } from "next/navigation";
+
+function PostHogPageView() {
+  const pathname     = usePathname();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (pathname) {
+      const url = window.origin + pathname + (searchParams?.toString() ? `?${searchParams}` : "");
+      posthog.capture("$pageview", { $current_url: url });
+    }
+  }, [pathname, searchParams]);
+
+  return null;
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -19,10 +35,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
       })
   );
 
+  useEffect(() => {
+    initPostHog();
+  }, []);
+
   return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <TenantProvider>
+          <PostHogPageView />
           {children}
         </TenantProvider>
         {process.env.NODE_ENV === "development" && (

@@ -22,7 +22,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { pool } from "../db";
+import { pool, readPool } from "../db";
 
 // ── QuerySpec types ───────────────────────────────────────────────────────────
 
@@ -271,7 +271,7 @@ async function fetchSQLSource(
                       a.sentiment, a.duration_seconds, a.occurred_at, a.source,
                       a.deal_id, a.company_id, a.created_at
              ORDER BY a.occurred_at DESC LIMIT 5000`;
-    const { rows } = await pool.query(sql, vals);
+    const { rows } = await readPool.query(sql, vals);
     return rows;
   }
 
@@ -287,12 +287,12 @@ async function fetchSQLSource(
       sql += ` AND created_at >= $${vals.length}`;
     }
     sql += ` ORDER BY created_at DESC LIMIT 5000`;
-    const { rows } = await pool.query(sql, vals);
+    const { rows } = await readPool.query(sql, vals);
     return rows;
   }
 
   if (source === "users") {
-    const { rows } = await pool.query(
+    const { rows } = await readPool.query(
       `SELECT id, first_name, last_name, email, role, can_quote, manager_id
        FROM users WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY last_name`,
       [tenantId]
@@ -472,7 +472,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   // ── GET /api/v1/reports ──────────────────────────────────────────────────
   server.get("/reports", async (request, reply) => {
     const { tenantId } = request.user;
-    const { rows } = await pool.query(
+    const { rows } = await readPool.query(
       `SELECT r.*, u.first_name || ' ' || u.last_name AS created_by_name,
               s.row_count AS last_row_count, s.taken_at AS last_snapshot_at
        FROM reports r
@@ -507,7 +507,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   server.get("/reports/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
-    const { rows: [r] } = await pool.query(
+    const { rows: [r] } = await readPool.query(
       `SELECT r.*, u.first_name || ' ' || u.last_name AS created_by_name
        FROM reports r LEFT JOIN users u ON u.id = r.created_by
        WHERE r.id = $1 AND r.tenant_id = $2`,
@@ -557,7 +557,7 @@ export async function reportsRoutes(server: FastifyInstance) {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
-    const { rows: [report] } = await pool.query(`SELECT * FROM reports WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
+    const { rows: [report] } = await readPool.query(`SELECT * FROM reports WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     if (!report) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
 
     const specParsed = QuerySpecSchema.safeParse(report.spec);
@@ -576,7 +576,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   server.get("/reports/:id/snapshots", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
-    const { rows } = await pool.query(
+    const { rows } = await readPool.query(
       `SELECT id, report_id, taken_at, row_count FROM report_snapshots
        WHERE report_id=$1 AND tenant_id=$2 ORDER BY taken_at DESC LIMIT 30`,
       [id, tenantId]
@@ -588,7 +588,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   server.get("/reports/:id/snapshots/:snapId", async (request, reply) => {
     const { snapId, id } = request.params as { id: string; snapId: string };
     const { tenantId } = request.user;
-    const { rows: [snap] } = await pool.query(
+    const { rows: [snap] } = await readPool.query(
       `SELECT * FROM report_snapshots WHERE id=$1 AND report_id=$2 AND tenant_id=$3`,
       [snapId, id, tenantId]
     );
@@ -600,7 +600,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   server.get("/reports/:id/subscriptions", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
-    const { rows } = await pool.query(
+    const { rows } = await readPool.query(
       `SELECT rs.*, u.first_name || ' ' || u.last_name AS user_name, u.email AS user_email
        FROM report_subscriptions rs JOIN users u ON u.id = rs.user_id
        WHERE rs.report_id=$1 AND rs.tenant_id=$2 ORDER BY rs.created_at`,
@@ -640,7 +640,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   // ── GET /api/v1/datasets ─────────────────────────────────────────────────
   server.get("/datasets", async (request, reply) => {
     const { tenantId } = request.user;
-    const { rows } = await pool.query(
+    const { rows } = await readPool.query(
       `SELECT d.*, u.first_name || ' ' || u.last_name AS created_by_name
        FROM report_datasets d LEFT JOIN users u ON u.id = d.created_by
        WHERE d.tenant_id = $1 ORDER BY d.updated_at DESC`,
@@ -670,7 +670,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   server.get("/datasets/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
-    const { rows: [d] } = await pool.query(
+    const { rows: [d] } = await readPool.query(
       `SELECT d.*, u.first_name || ' ' || u.last_name AS created_by_name
        FROM report_datasets d LEFT JOIN users u ON u.id = d.created_by
        WHERE d.id=$1 AND d.tenant_id=$2`,

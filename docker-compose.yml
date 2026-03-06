@@ -55,6 +55,35 @@ services:
       timeout: 3s
       retries: 5
 
+  # ── PgBouncer (PostgreSQL connection pooler) ──────────────────────────────
+  # Routes all service DB connections through a shared pool, preventing
+  # connection exhaustion when multiple service instances run simultaneously.
+  # Services should connect to pgbouncer:5433 rather than postgres:5432.
+  # DATABASE_URL uses postgres:5432 directly only for migrations (session mode needed).
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: nexcrm-pgbouncer
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: nexcrm
+      DB_USER: nexcrm
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-nexcrm_dev}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "200"
+      DEFAULT_POOL_SIZE: "20"
+    ports:
+      - "127.0.0.1:5433:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U nexcrm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── MinIO (S3-compatible file storage) ────────────────────────────────────
   minio:
     image: minio/minio:latest
