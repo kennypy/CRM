@@ -15,20 +15,112 @@ type JoinType  = "LEFT" | "INNER";
 
 const SOURCE_LABELS: Record<SourceId, string> = {
   activities: "Activities",
-  deals:      "Deals",
+  deals:      "Opportunities",
   companies:  "Companies",
   contacts:   "Contacts",
   quotes:     "Quotes",
   users:      "Users",
 };
 
-const SOURCE_FIELDS: Record<SourceId, string[]> = {
-  activities: ["id","type","direction","subject","summary","sentiment","duration_seconds","occurred_at","deal_id","company_id","source","created_at"],
-  deals:      ["id","name","stage","value","currency","close_date","company_id","owner_id","reality_score","created_at","updated_at"],
-  companies:  ["id","name","domain","city","country","created_at"],
-  contacts:   ["id","firstName","lastName","fullName","email","title","seniority","isLead","created_at"],
-  quotes:     ["id","quote_number","title","status","company_name","contact_name","total","subtotal","currency","valid_until","created_at","updated_at"],
-  users:      ["id","first_name","last_name","email","role","can_quote"],
+const SOURCE_FIELDS: Record<SourceId, { key: string; label: string }[]> = {
+  activities: [
+    { key: "id",               label: "Activity ID" },
+    { key: "type",             label: "Type" },
+    { key: "direction",        label: "Direction" },
+    { key: "subject",          label: "Subject" },
+    { key: "summary",          label: "Summary" },
+    { key: "sentiment",        label: "Sentiment" },
+    { key: "duration_seconds", label: "Duration seconds" },
+    { key: "occurred_at",      label: "Created date" },
+    { key: "deal_id",          label: "Deal ID" },
+    { key: "company_id",       label: "Company ID" },
+    { key: "source",           label: "Source" },
+    { key: "created_at",       label: "Created date" },
+    { key: "created_by",       label: "Created By" },
+    { key: "related_to",       label: "Related To" },
+  ],
+  deals: [
+    { key: "id",                        label: "Deal ID" },
+    { key: "name",                      label: "Name" },
+    { key: "stage",                     label: "Stage" },
+    { key: "value",                     label: "Value" },
+    { key: "currency",                  label: "Currency" },
+    { key: "close_date",                label: "Close Date" },
+    { key: "company_id",                label: "Company ID" },
+    { key: "owner_id",                  label: "Owner ID" },
+    { key: "reality_score",             label: "Reality Score" },
+    { key: "created_at",                label: "Created date" },
+    { key: "updated_at",                label: "Last update date" },
+    { key: "created_by",                label: "Created by" },
+    { key: "line_item",                 label: "Line Item" },
+    { key: "value_usd",                 label: "Value ($)" },
+    { key: "value_eur",                 label: "Value (\u20ac) Converted" },
+    { key: "main_poc",                  label: "Main POC" },
+    { key: "last_opportunity_activity", label: "Last opportunity Activity" },
+  ],
+  companies: [
+    { key: "id",                    label: "Company ID" },
+    { key: "name",                  label: "Name" },
+    { key: "domain",                label: "Domain" },
+    { key: "city",                  label: "City" },
+    { key: "country",               label: "Country" },
+    { key: "sub_region",            label: "Sub Region" },
+    { key: "region",                label: "Region" },
+    { key: "created_at",            label: "Created Date" },
+    { key: "updated_at",            label: "Last update date" },
+    { key: "created_by",            label: "Created by" },
+    { key: "opportunities_name",    label: "Opportunity Name" },
+    { key: "last_company_activity", label: "Last Company Activity" },
+    { key: "linked_url",            label: "LinkedIn URL" },
+    { key: "industry",              label: "Industry" },
+    { key: "sub_industry",          label: "Sub Industry" },
+    { key: "revenue",               label: "Revenue ($)" },
+    { key: "employees",             label: "Employees" },
+    { key: "segment",               label: "Segment" },
+  ],
+  contacts: [
+    { key: "id",            label: "Contact ID" },
+    { key: "firstName",     label: "First Name" },
+    { key: "lastName",      label: "Last Name" },
+    { key: "fullName",      label: "Full Name" },
+    { key: "email",         label: "email" },
+    { key: "title",         label: "Title" },
+    { key: "seniority",     label: "Seniority" },
+    { key: "isLead",        label: "Previous Lead" },
+    { key: "created_at",    label: "Created date" },
+    { key: "updated_at",    label: "Last update date" },
+    { key: "created_by",    label: "Created by" },
+    { key: "last_activity", label: "Last Contact Activity" },
+  ],
+  quotes: [
+    { key: "id",           label: "Quote ID" },
+    { key: "quote_number", label: "Quote Number" },
+    { key: "title",        label: "Title" },
+    { key: "status",       label: "Status" },
+    { key: "company_name", label: "Company Name" },
+    { key: "contact_name", label: "Contact Name" },
+    { key: "total",        label: "Total" },
+    { key: "subtotal",     label: "Subtotal" },
+    { key: "currency",     label: "Currency" },
+    { key: "valid_until",  label: "Valid Until" },
+    { key: "created_at",   label: "Created At" },
+    { key: "updated_at",   label: "Updated At" },
+    { key: "created_by",   label: "Created By" },
+    { key: "related_to",   label: "Related To" },
+  ],
+  users: [
+    { key: "id",            label: "User ID" },
+    { key: "first_name",    label: "First Name" },
+    { key: "last_name",     label: "Last Name" },
+    { key: "email",         label: "email" },
+    { key: "role",          label: "Role" },
+    { key: "can_quote",     label: "Can Quote" },
+    { key: "country",       label: "Country" },
+    { key: "timezone",      label: "Timezone" },
+    { key: "language",      label: "language" },
+    { key: "phone",         label: "Phone" },
+    { key: "twilio_number", label: "Twilio Number" },
+  ],
 };
 
 // Common join suggestions (auto-populated when sources selected)
@@ -225,12 +317,12 @@ function Step1({ sources, setSources, joins, setJoins }: {
                 <span className="text-xs text-white/30">ON</span>
                 <select value={j.on.left} onChange={(e) => updateJoin(j.id, { on: { ...j.on, left: e.target.value } })}
                   className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
-                  {SOURCE_FIELDS[j.from].map((f) => <option key={f} value={f}>{f}</option>)}
+                  {SOURCE_FIELDS[j.from].map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                 </select>
                 <span className="text-xs text-white/30">=</span>
                 <select value={j.on.right} onChange={(e) => updateJoin(j.id, { on: { ...j.on, right: e.target.value } })}
                   className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
-                  {SOURCE_FIELDS[j.to].map((f) => <option key={f} value={f}>{f}</option>)}
+                  {SOURCE_FIELDS[j.to].map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                 </select>
                 <button onClick={() => setJoins(joins.filter((x) => x.id !== j.id))} className="ml-auto text-white/30 hover:text-red-400">
                   <X className="h-3.5 w-3.5" />
@@ -266,7 +358,7 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
 
   function addFilter() {
     setFilters([...filters, {
-      id: crypto.randomUUID(), source: sources[0], field: SOURCE_FIELDS[sources[0]][0], op: "eq", value: "",
+      id: crypto.randomUUID(), source: sources[0], field: SOURCE_FIELDS[sources[0]][0].key, op: "eq", value: "",
     }]);
   }
 
@@ -276,8 +368,8 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
 
   const dateFields = sources.flatMap((s) =>
     SOURCE_FIELDS[s]
-      .filter((f) => f.includes("_at") || f.includes("date"))
-      .map((f) => ({ key: `${s}.${f}`, label: `${SOURCE_LABELS[s]}.${f}` }))
+      .filter((f) => f.key.includes("_at") || f.key.includes("date"))
+      .map((f) => ({ key: `${s}.${f.key}`, label: `${SOURCE_LABELS[s]}.${f.label}` }))
   );
 
   return (
@@ -309,22 +401,22 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
                 <button
                   onClick={() => {
                     const all: Record<string, boolean> = { ...selectedFields };
-                    const allSelected = SOURCE_FIELDS[s].every((f) => selectedFields[`${s}.${f}`]);
-                    SOURCE_FIELDS[s].forEach((f) => { all[`${s}.${f}`] = !allSelected; });
+                    const allSelected = SOURCE_FIELDS[s].every((f) => selectedFields[`${s}.${f.key}`]);
+                    SOURCE_FIELDS[s].forEach((f) => { all[`${s}.${f.key}`] = !allSelected; });
                     setSelectedFields(all);
                   }}
                   className="text-xs text-white/30 hover:text-white/60"
                 >
-                  {SOURCE_FIELDS[s].every((f) => selectedFields[`${s}.${f}`]) ? "Deselect all" : "Select all"}
+                  {SOURCE_FIELDS[s].every((f) => selectedFields[`${s}.${f.key}`]) ? "Deselect all" : "Select all"}
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                 {SOURCE_FIELDS[s].map((f) => {
-                  const key = `${s}.${f}`;
+                  const key = `${s}.${f.key}`;
                   return (
                     <label key={key} className="flex cursor-pointer items-center gap-2 text-xs text-white/60 hover:text-white">
-                      <input type="checkbox" checked={!!selectedFields[key]} onChange={() => toggleField(s, f)} className="accent-violet-500" />
-                      {f}
+                      <input type="checkbox" checked={!!selectedFields[key]} onChange={() => toggleField(s, f.key)} className="accent-violet-500" />
+                      {f.label}
                     </label>
                   );
                 })}
@@ -359,13 +451,13 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
               )}
               <div className="flex flex-wrap items-center gap-2">
                 <select value={f.source}
-                  onChange={(e) => updateFilter(f.id, { source: e.target.value as SourceId, field: SOURCE_FIELDS[e.target.value as SourceId][0] })}
+                  onChange={(e) => updateFilter(f.id, { source: e.target.value as SourceId, field: SOURCE_FIELDS[e.target.value as SourceId][0].key })}
                   className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
                   {sources.map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
                 </select>
                 <select value={f.field} onChange={(e) => updateFilter(f.id, { field: e.target.value })}
                   className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
-                  {SOURCE_FIELDS[f.source].map((fld) => <option key={fld} value={fld}>{fld}</option>)}
+                  {SOURCE_FIELDS[f.source].map((fld) => <option key={fld.key} value={fld.key}>{fld.label}</option>)}
                 </select>
                 <select value={f.op} onChange={(e) => updateFilter(f.id, { op: e.target.value })}
                   className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
@@ -581,7 +673,7 @@ function BuilderContent() {
 
     const fields = allFields.length > 0
       ? allFields
-      : sources.flatMap((s) => SOURCE_FIELDS[s].slice(0, 5).map((f) => ({ source: s, field: f, alias: `${s}.${f}` })));
+      : sources.flatMap((s) => SOURCE_FIELDS[s].slice(0, 5).map((f) => ({ source: s, field: f.key, alias: `${s}.${f.key}` })));
 
     const conditions = filters
       .filter((f) => f.value || ["is_null","not_null"].includes(f.op))
