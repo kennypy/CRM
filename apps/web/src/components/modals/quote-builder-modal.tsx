@@ -83,7 +83,11 @@ export function QuoteBuilderModal({
       return existing.items.map((it) => ({ ...it, _key: crypto.randomUUID() }));
     }
     if (initialItems?.length) {
-      return initialItems.map((it) => ({ ...it, _key: crypto.randomUUID() }));
+      return initialItems.map((it) => ({
+        ...it,
+        _key: crypto.randomUUID(),
+        lineTotal: computeLineTotal(it.quantity, it.unitPrice, it.discountPct ?? 0),
+      }));
     }
     return [newDraftItem()];
   });
@@ -145,7 +149,8 @@ export function QuoteBuilderModal({
         contactId: contactId || existing?.contactId || undefined,
         companyId: companyId || existing?.companyId || undefined,
         items: items.map((it) => ({
-          productId:   it.productId   ?? undefined,
+          // Only send productId if it's a real UUID (demo catalog uses "prod-001" style IDs)
+          productId:   it.productId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(it.productId) ? it.productId : undefined,
           productName: it.productName,
           description: it.description ?? undefined,
           quantity:    it.quantity,
