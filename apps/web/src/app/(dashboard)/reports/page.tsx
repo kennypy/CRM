@@ -135,10 +135,12 @@ const SUGGESTED_JOINS = [
 
 const PERIOD_OPTIONS = [
   { value: "",              label: "All time" },
+  { value: "last_24_hours", label: "Last 24 hours" },
   { value: "last_7_days",   label: "Last 7 days" },
   { value: "last_30_days",  label: "Last 30 days" },
   { value: "last_90_days",  label: "Last 90 days" },
   { value: "last_year",     label: "Last year" },
+  { value: "custom",        label: "Custom…" },
 ];
 
 const FILTER_OPS = [
@@ -307,7 +309,7 @@ function SubscribeModal({ state, onClose }: { state: SubscribeModalState; onClos
           <input value={thField} onChange={(e) => setThField(e.target.value)} placeholder="field"
             className="flex-1 rounded bg-white/5 px-2 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
           <select value={thOp} onChange={(e) => setThOp(e.target.value)}
-            className="rounded bg-white/5 px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+            className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
             {FILTER_OPS.slice(0,8).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <input value={thValue} onChange={(e) => setThValue(e.target.value)} placeholder="value"
@@ -372,11 +374,42 @@ function SaveReportModal({ spec, onClose, onSaved }: {
   );
 }
 
+// ── Row Detail Modal ──────────────────────────────────────────────────────────
+
+function RowDetailModal({ row, columns, onClose }: {
+  row: Record<string, unknown>;
+  columns: string[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-xl border border-white/10 bg-[#0f0f1a] p-6 shadow-2xl max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-white">Row detail</h2>
+          <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="space-y-2">
+          {columns.map((col) => (
+            <div key={col} className="grid grid-cols-[40%_60%] gap-2 rounded-lg bg-white/[0.03] px-3 py-2">
+              <span className="text-xs font-medium text-white/50 truncate">{col}</span>
+              <span className="text-xs text-white break-words">
+                {row[col] == null ? <span className="text-white/20 italic">empty</span> : String(row[col])}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Results Table ─────────────────────────────────────────────────────────────
 
 function ResultsTable({ result, onDownload }: { result: QueryResult; onDownload: () => void }) {
-  const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortCol,     setSortCol]     = useState<string | null>(null);
+  const [sortAsc,     setSortAsc]     = useState(true);
+  const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null);
 
   const sorted = sortCol
     ? [...result.rows].sort((a, b) => {
@@ -397,7 +430,7 @@ function ResultsTable({ result, onDownload }: { result: QueryResult; onDownload:
   return (
     <div className="mt-4">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs text-white/40">{result.rowCount.toLocaleString()} rows</span>
+        <span className="text-xs text-white/40">{result.rowCount.toLocaleString()} rows · click a row to view full detail</span>
         <button onClick={onDownload} className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs text-white/60 hover:bg-white/5 hover:text-white">
           <Download className="h-3.5 w-3.5" />Download CSV
         </button>
@@ -419,7 +452,9 @@ function ResultsTable({ result, onDownload }: { result: QueryResult; onDownload:
           </thead>
           <tbody>
             {sorted.slice(0, 500).map((row, i) => (
-              <tr key={i} className="border-b border-white/5 hover:bg-white/5">
+              <tr key={i}
+                className="border-b border-white/5 hover:bg-white/10 cursor-pointer transition-colors"
+                onClick={() => setSelectedRow(row)}>
                 {result.columns.map((col) => (
                   <td key={col} className="max-w-[240px] truncate px-3 py-1.5 text-white/80">
                     {row[col] == null ? <span className="text-white/20">—</span> : String(row[col])}
@@ -433,6 +468,9 @@ function ResultsTable({ result, onDownload }: { result: QueryResult; onDownload:
           <p className="px-3 py-2 text-xs text-white/30">Showing first 500 rows — download CSV for full data.</p>
         )}
       </div>
+      {selectedRow && (
+        <RowDetailModal row={selectedRow} columns={result.columns} onClose={() => setSelectedRow(null)} />
+      )}
     </div>
   );
 }
@@ -576,17 +614,17 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
             <div key={f.id} className="flex items-center gap-2 flex-wrap">
               <select value={f.source}
                 onChange={(e) => setFilters((p) => p.map((r) => r.id === f.id ? { ...r, source: e.target.value as SourceId, field: SOURCE_FIELDS[e.target.value as SourceId][0].key } : r))}
-                className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                 {sources.map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
               </select>
               <select value={f.field}
                 onChange={(e) => setFilters((p) => p.map((r) => r.id === f.id ? { ...r, field: e.target.value } : r))}
-                className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                 {SOURCE_FIELDS[f.source].map((fld) => <option key={fld.key} value={fld.key}>{fld.label}</option>)}
               </select>
               <select value={f.op}
                 onChange={(e) => setFilters((p) => p.map((r) => r.id === f.id ? { ...r, op: e.target.value } : r))}
-                className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                 {FILTER_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               {!["is_null","not_null"].includes(f.op) && (
@@ -606,14 +644,21 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
       <div className="flex flex-wrap items-end gap-4">
         <div>
           <label className="mb-1 block text-xs text-white/50">Period</label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select value={period} onChange={(e) => setPeriod(e.target.value)}
-              className="rounded bg-white/5 px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+              className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
               {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            {period && dateFields.length > 0 && (
+            {period === "custom" && (
+              <input
+                placeholder="e.g. last 24 hours, next 7 days, due today"
+                className="w-56 rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500"
+                onChange={(e) => setPeriod(e.target.value === "" ? "custom" : e.target.value)}
+              />
+            )}
+            {period && period !== "custom" && dateFields.length > 0 && (
               <select value={periodField} onChange={(e) => setPeriodField(e.target.value)}
-                className="rounded bg-white/5 px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                 {dateFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
               </select>
             )}
@@ -622,7 +667,7 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
         <div>
           <label className="mb-1 block text-xs text-white/50">Row limit</label>
           <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}
-            className="rounded bg-white/5 px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+            className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
             {[100,500,1000,2000,5000].map((n) => <option key={n} value={n}>{n.toLocaleString()}</option>)}
           </select>
         </div>

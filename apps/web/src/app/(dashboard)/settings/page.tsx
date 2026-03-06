@@ -1078,6 +1078,21 @@ function SecurityTab() {
 
 const STORAGE_KEY_COMMS = "nexcrm_comms_config";
 
+const DEFAULT_EMAIL_TEMPLATES = {
+  welcome: {
+    subject: "Welcome to NexCRM, {{firstName}}!",
+    body: "Hi {{firstName}},\n\nYour workspace {{tenantName}} is ready.\n\nNexCRM captures your emails, calls, and meetings automatically — no manual data entry required.\n\nConnect your Google or Microsoft account in Settings → Integrations to start auto-capturing activities.\n\n{{loginUrl}}",
+  },
+  passwordReset: {
+    subject: "Reset your NexCRM password",
+    body: "Hi {{firstName}},\n\nWe received a request to reset your NexCRM password. Click the link below (expires in 1 hour):\n\n{{resetUrl}}\n\nIf you didn't request this, you can safely ignore this email.",
+  },
+  teamInvite: {
+    subject: "{{inviterName}} invited you to {{tenantName}} on NexCRM",
+    body: "Hi,\n\n{{inviterName}} has invited you to join {{tenantName}} on NexCRM.\n\nAccept your invitation here (expires in 7 days):\n{{acceptUrl}}",
+  },
+};
+
 function loadCommsConfig() {
   try {
     const stored = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_COMMS) : null;
@@ -1106,12 +1121,16 @@ function CommunicationsTab() {
     voipUrl: "",
   });
 
+  const [templates, setTemplates] = useState(DEFAULT_EMAIL_TEMPLATES);
+  const [activeTemplate, setActiveTemplate] = useState<"welcome" | "passwordReset" | "teamInvite">("welcome");
+
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     const cfg = loadCommsConfig();
     if (cfg?.email) setEmailCfg((prev) => ({ ...prev, ...cfg.email }));
     if (cfg?.dialler) setDiallerCfg((prev) => ({ ...prev, ...cfg.dialler }));
+    if (cfg?.templates) setTemplates((prev) => ({ ...prev, ...cfg.templates }));
   }, []);
 
   const setEmail = (k: keyof typeof emailCfg) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -1123,11 +1142,11 @@ function CommunicationsTab() {
   const save = async () => {
     // Persist locally for offline/fast access
     try {
-      localStorage.setItem(STORAGE_KEY_COMMS, JSON.stringify({ email: emailCfg, dialler: diallerCfg }));
+      localStorage.setItem(STORAGE_KEY_COMMS, JSON.stringify({ email: emailCfg, dialler: diallerCfg, templates }));
     } catch {}
     // Also sync to server so settings survive browser data clear
     try {
-      await api.patch("/api/v1/tenant", { settings: { comms: { email: emailCfg, dialler: diallerCfg } } });
+      await api.patch("/api/v1/tenant", { settings: { comms: { email: emailCfg, dialler: diallerCfg, templates } } });
     } catch { /* non-fatal — local copy is the fallback */ }
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -1262,6 +1281,81 @@ function CommunicationsTab() {
         </div>
       </section>
 
+      {/* Email Templates */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Mail className="h-4 w-4 text-primary" />
+          <h3 className="text-base font-semibold">Email Templates</h3>
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Customise the transactional emails sent to users. Available variables are shown as{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono">{"{{variable}}"}</code>.
+        </p>
+
+        {/* Template tabs */}
+        <div className="mb-4 flex gap-1 rounded-lg border bg-muted/30 p-1 w-fit">
+          {([
+            { id: "welcome"       as const, label: "Welcome"        },
+            { id: "passwordReset" as const, label: "Password Reset" },
+            { id: "teamInvite"    as const, label: "Team Invite"    },
+          ]).map(({ id, label }) => (
+            <button key={id} onClick={() => setActiveTemplate(id)}
+              className={cn("rounded px-3 py-1 text-xs font-medium transition-colors",
+                activeTemplate === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="rounded-xl border bg-card p-5 space-y-4">
+          {activeTemplate === "welcome" && (
+            <p className="text-xs text-muted-foreground">
+              Sent when a new user registers. Variables:{" "}
+              <code className="font-mono">{"{{firstName}}"}</code>,{" "}
+              <code className="font-mono">{"{{tenantName}}"}</code>,{" "}
+              <code className="font-mono">{"{{loginUrl}}"}</code>
+            </p>
+          )}
+          {activeTemplate === "passwordReset" && (
+            <p className="text-xs text-muted-foreground">
+              Sent when a user requests a password reset. Variables:{" "}
+              <code className="font-mono">{"{{firstName}}"}</code>,{" "}
+              <code className="font-mono">{"{{resetUrl}}"}</code>
+            </p>
+          )}
+          {activeTemplate === "teamInvite" && (
+            <p className="text-xs text-muted-foreground">
+              Sent when an admin invites a team member. Variables:{" "}
+              <code className="font-mono">{"{{inviterName}}"}</code>,{" "}
+              <code className="font-mono">{"{{tenantName}}"}</code>,{" "}
+              <code className="font-mono">{"{{acceptUrl}}"}</code>
+            </p>
+          )}
+          <div>
+            <label className={labelCls}>Subject line</label>
+            <input
+              value={templates[activeTemplate].subject}
+              onChange={(e) => setTemplates((prev) => ({ ...prev, [activeTemplate]: { ...prev[activeTemplate], subject: e.target.value } }))}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Body</label>
+            <textarea
+              rows={8}
+              value={templates[activeTemplate].body}
+              onChange={(e) => setTemplates((prev) => ({ ...prev, [activeTemplate]: { ...prev[activeTemplate], body: e.target.value } }))}
+              className={cn(inputCls, "resize-y font-mono text-xs")}
+            />
+          </div>
+          <button
+            onClick={() => setTemplates((prev) => ({ ...prev, [activeTemplate]: DEFAULT_EMAIL_TEMPLATES[activeTemplate] }))}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2">
+            Reset to default
+          </button>
+        </div>
+      </section>
+
       <div className="flex items-center gap-3">
         <button onClick={save}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
@@ -1301,6 +1395,12 @@ function SettingsInner() {
   const [tab,  setTab]  = useState<Tab>(initialTab);
   const [user, setUser] = useState<StoredUser | null>(null);
   useEffect(() => { setUser(getStoredUser()); }, []);
+
+  // Sync tab with URL search params so dropdown nav links work without remounting
+  useEffect(() => {
+    const raw = searchParams.get("tab") as Tab | null;
+    if (raw && VALID_TABS.has(raw)) setTab(raw);
+  }, [searchParams]);
 
   const isAdmin = ["admin", "super_admin", "manager"].includes(user?.role ?? "");
   const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin);

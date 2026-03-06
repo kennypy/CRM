@@ -134,11 +134,13 @@ const JOIN_SUGGESTIONS: Array<{ from: SourceId; to: SourceId; label: string; on:
 ];
 
 const PERIOD_OPTIONS = [
-  { value: "",             label: "All time" },
-  { value: "last_7_days",  label: "Last 7 days" },
-  { value: "last_30_days", label: "Last 30 days" },
-  { value: "last_90_days", label: "Last 90 days" },
-  { value: "last_year",    label: "Last year" },
+  { value: "",              label: "All time" },
+  { value: "last_24_hours", label: "Last 24 hours" },
+  { value: "last_7_days",   label: "Last 7 days" },
+  { value: "last_30_days",  label: "Last 30 days" },
+  { value: "last_90_days",  label: "Last 90 days" },
+  { value: "last_year",     label: "Last year" },
+  { value: "custom",        label: "Custom…" },
 ];
 
 const FILTER_OPS = [
@@ -302,26 +304,26 @@ function Step1({ sources, setSources, joins, setJoins }: {
             {joins.map((j) => (
               <div key={j.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
                 <select value={j.from} onChange={(e) => updateJoin(j.id, { from: e.target.value as SourceId })}
-                  className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                   {sources.map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
                 </select>
                 <select value={j.type} onChange={(e) => updateJoin(j.id, { type: e.target.value as JoinType })}
-                  className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                   <option value="LEFT">LEFT JOIN</option>
                   <option value="INNER">INNER JOIN</option>
                 </select>
                 <select value={j.to} onChange={(e) => updateJoin(j.id, { to: e.target.value as SourceId })}
-                  className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                   {sources.filter((s) => s !== j.from).map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
                 </select>
                 <span className="text-xs text-white/30">ON</span>
                 <select value={j.on.left} onChange={(e) => updateJoin(j.id, { on: { ...j.on, left: e.target.value } })}
-                  className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                   {SOURCE_FIELDS[j.from].map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                 </select>
                 <span className="text-xs text-white/30">=</span>
                 <select value={j.on.right} onChange={(e) => updateJoin(j.id, { on: { ...j.on, right: e.target.value } })}
-                  className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                   {SOURCE_FIELDS[j.to].map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                 </select>
                 <button onClick={() => setJoins(joins.filter((x) => x.id !== j.id))} className="ml-auto text-white/30 hover:text-red-400">
@@ -380,14 +382,21 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
         <p className="mb-4 text-xs text-white/40">Leave all unchecked to auto-include the top fields from each source.</p>
 
         {/* Period filter */}
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <select value={period} onChange={(e) => setPeriod(e.target.value)}
-            className="rounded bg-white/5 px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+            className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
             {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          {period && dateFields.length > 0 && (
+          {period === "custom" && (
+            <input
+              placeholder="e.g. last 24 hours, next 7 days, due today"
+              className="w-56 rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500"
+              onChange={(e) => setPeriod(e.target.value === "" ? "custom" : e.target.value)}
+            />
+          )}
+          {period && period !== "custom" && dateFields.length > 0 && (
             <select value={periodField} onChange={(e) => setPeriodField(e.target.value)}
-              className="rounded bg-white/5 px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+              className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
               {dateFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
             </select>
           )}
@@ -452,15 +461,15 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
               <div className="flex flex-wrap items-center gap-2">
                 <select value={f.source}
                   onChange={(e) => updateFilter(f.id, { source: e.target.value as SourceId, field: SOURCE_FIELDS[e.target.value as SourceId][0].key })}
-                  className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                   {sources.map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
                 </select>
                 <select value={f.field} onChange={(e) => updateFilter(f.id, { field: e.target.value })}
-                  className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                   {SOURCE_FIELDS[f.source].map((fld) => <option key={fld.key} value={fld.key}>{fld.label}</option>)}
                 </select>
                 <select value={f.op} onChange={(e) => updateFilter(f.id, { op: e.target.value })}
-                  className="rounded bg-white/5 px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500">
+                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
                   {FILTER_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
                 {!["is_null","not_null"].includes(f.op) && (
