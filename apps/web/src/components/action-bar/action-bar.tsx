@@ -450,6 +450,7 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
           companyId={String(quotePreFill.companyId ?? companyId ?? "")}
           companyName={String(quotePreFill.companyName ?? companyName ?? "")}
           contactId={String(quotePreFill.contactId ?? contactId ?? "")}
+          initialItems={quotePreFill.items as Parameters<typeof QuoteBuilderModal>[0]["initialItems"]}
           onClose={() => setShowQuoteBuilder(false)}
           onSaved={() => setShowQuoteBuilder(false)}
         />

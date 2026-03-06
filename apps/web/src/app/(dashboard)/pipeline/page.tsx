@@ -316,11 +316,11 @@ export default function PipelinePage() {
     const nextIdx    = direction === "next" ? currentIdx + 1 : currentIdx - 1;
     if (nextIdx < 0 || nextIdx >= STAGE_ORDER.length) return;
     const newStage = STAGE_ORDER[nextIdx];
-    setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: newStage } : d));
+    setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: newStage, updatedAt: new Date().toISOString() } : d));
     try {
       await api.patch(`/api/v1/deals/${id}`, { stage: newStage });
     } catch {
-      setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: deal.stage } : d));
+      setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: deal.stage, updatedAt: deal.updatedAt } : d));
     }
   }, [deals]);
 

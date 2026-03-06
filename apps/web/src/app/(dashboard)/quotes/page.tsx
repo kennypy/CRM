@@ -4,12 +4,12 @@ import { useState, useEffect } from "react";
 import {
   FileText, Plus, Download, Search, Filter,
   CheckCircle2, Clock, Send, Eye, ThumbsDown,
-  TrendingUp, DollarSign,
+  TrendingUp, DollarSign, X, Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
-  STATUS_COLORS, STATUS_LABELS, fmtCurrency,
+  STATUS_COLORS, STATUS_LABELS, fmtCurrency, computeQuoteTotals,
   type Quote, type QuoteStatus,
 } from "@/lib/quotes";
 import { QuoteBuilderModal } from "@/components/modals/quote-builder-modal";
@@ -87,11 +87,139 @@ const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "expired",          label: "Expired" },
 ];
 
+// ── In-browser quote preview ──────────────────────────────────────────────────
+
+function QuotePreviewModal({
+  quote,
+  onClose,
+  onEdit,
+}: {
+  quote: Quote;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const totals = computeQuoteTotals(quote.items, quote.discountType, quote.discountValue, quote.taxRate);
+  const canEdit = ["draft", "pending_approval"].includes(quote.status);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 flex w-full max-w-3xl flex-col rounded-2xl border bg-card shadow-2xl" style={{ maxHeight: "92vh" }}>
+        {/* Header */}
+        <div className="flex shrink-0 items-start justify-between border-b px-6 py-4">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <span className="font-mono text-xs text-muted-foreground">{quote.quoteNumber}</span>
+              <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", STATUS_COLORS[quote.status])}>
+                {STATUS_LABELS[quote.status]}
+              </span>
+            </div>
+            <h2 className="text-lg font-semibold">{quote.title}</h2>
+            <div className="mt-1 flex flex-wrap gap-4 text-xs text-muted-foreground">
+              {quote.companyName && <span>Company: <strong className="text-foreground">{quote.companyName}</strong></span>}
+              {quote.createdByName && <span>Rep: <strong className="text-foreground">{quote.createdByName}</strong></span>}
+              {quote.validUntil && <span>Valid until: <strong className="text-foreground">{new Date(quote.validUntil).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</strong></span>}
+            </div>
+          </div>
+          <button onClick={onClose} className="ml-4 shrink-0 text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Line items */}
+        <div className="flex-1 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+              <tr>
+                {["Product / Description", "Qty", "Unit Price", "Disc %", "Line Total"].map((h) => (
+                  <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground last:text-right">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {quote.items.map((item, i) => (
+                <tr key={i} className="hover:bg-muted/20">
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{item.productName}</p>
+                    {item.description && <p className="text-xs text-muted-foreground">{item.description}</p>}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">{item.quantity}</td>
+                  <td className="px-4 py-3 tabular-nums">{fmtCurrency(item.unitPrice, quote.currency)}</td>
+                  <td className="px-4 py-3 tabular-nums">{item.discountPct > 0 ? `${item.discountPct}%` : "—"}</td>
+                  <td className="px-4 py-3 text-right font-semibold tabular-nums">{fmtCurrency(item.lineTotal, quote.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Totals */}
+          <div className="border-t bg-muted/20 px-6 py-4">
+            <div className="ml-auto w-56 space-y-1 text-sm">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Subtotal</span><span>{fmtCurrency(totals.subtotal, quote.currency)}</span>
+              </div>
+              {totals.orderDiscount > 0 && (
+                <div className="flex justify-between text-green-700">
+                  <span>Discount</span><span>−{fmtCurrency(totals.orderDiscount, quote.currency)}</span>
+                </div>
+              )}
+              {quote.taxRate > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Tax ({quote.taxRate}%)</span><span>{fmtCurrency(totals.tax, quote.currency)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t pt-1.5 text-base font-bold">
+                <span>Total</span><span>{fmtCurrency(totals.total, quote.currency)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes / Terms */}
+          {(quote.notes || quote.terms) && (
+            <div className="border-t px-6 py-4 space-y-3">
+              {quote.notes && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
+                  <p className="text-sm whitespace-pre-wrap">{quote.notes}</p>
+                </div>
+              )}
+              {quote.terms && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Terms & Conditions</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{quote.terms}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 border-t px-6 py-4 flex items-center justify-between">
+          <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Close</button>
+          <div className="flex gap-2">
+            {canEdit && (
+              <button onClick={onEdit}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </button>
+            )}
+            <button onClick={() => generateQuotePDF(quote)}
+              className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
+              <Download className="h-3.5 w-3.5" /> Download PDF
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function QuotesPage() {
   const [quotes,      setQuotes]      = useState<Quote[]>(DEMO_QUOTES);
   const [loading,     setLoading]     = useState(true);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editQuote,   setEditQuote]   = useState<Quote | null>(null);
+  const [viewQuote,   setViewQuote]   = useState<Quote | null>(null);
   const [search,      setSearch]      = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -158,6 +286,13 @@ export default function QuotesPage() {
           existing={editQuote ?? undefined}
           onClose={() => { setShowBuilder(false); setEditQuote(null); }}
           onSaved={(q) => { handleSaved(q); setShowBuilder(false); setEditQuote(null); }}
+        />
+      )}
+      {viewQuote && (
+        <QuotePreviewModal
+          quote={viewQuote}
+          onClose={() => setViewQuote(null)}
+          onEdit={() => { setEditQuote(viewQuote); setViewQuote(null); }}
         />
       )}
 
@@ -260,6 +395,10 @@ export default function QuotesPage() {
                   <td className="px-4 py-3 text-muted-foreground">{q.createdByName ?? "—"}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
+                      <button onClick={() => setViewQuote(q)} title="View quote"
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
                       {["draft","pending_approval"].includes(q.status) && (
                         <button onClick={() => setEditQuote(q)} title="Edit"
                           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground text-xs">

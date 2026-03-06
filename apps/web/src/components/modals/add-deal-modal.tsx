@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Briefcase, Search, AlertCircle, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { getStoredUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const STAGES = [
@@ -77,6 +78,8 @@ export function AddDealModal({ companyId, companyName, defaultCurrency = "USD", 
       if (notes)           body.notes        = notes;
       if (companyId)       body.companyId    = companyId;
       if (selectedPoc?.id) body.primaryContactId = selectedPoc.id;
+      const currentUser = getStoredUser();
+      if (currentUser?.id) body.ownerId = currentUser.id;
 
       const res = await api.post("/api/v1/deals", body);
       if (!res.ok) {

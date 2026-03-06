@@ -268,18 +268,30 @@ type UserFormMode = "create" | "edit";
 interface UserFormProps {
   mode: UserFormMode;
   user?: TeamUser;
+  allUsers: TeamUser[];
   onClose: () => void;
   onSaved: (u: TeamUser) => void;
 }
 
-function UserFormModal({ mode, user, onClose, onSaved }: UserFormProps) {
-  const [firstName, setFirstName] = useState(user?.firstName ?? "");
-  const [lastName,  setLastName]  = useState(user?.lastName  ?? "");
-  const [email,     setEmail]     = useState(user?.email     ?? "");
-  const [role,      setRole]      = useState<TeamUser["role"]>(user?.role ?? "rep");
-  const [password,  setPassword]  = useState("");
-  const [saving,    setSaving]    = useState(false);
-  const [error,     setError]     = useState<string | null>(null);
+function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps) {
+  const [firstName,   setFirstName]   = useState(user?.firstName ?? "");
+  const [lastName,    setLastName]    = useState(user?.lastName  ?? "");
+  const [email,       setEmail]       = useState(user?.email     ?? "");
+  const [role,        setRole]        = useState<TeamUser["role"]>(user?.role ?? "rep");
+  const [password,    setPassword]    = useState("");
+  const [canQuote,    setCanQuote]    = useState<boolean>(user?.canQuote ?? false);
+  const [managerId,   setManagerId]   = useState<string | null>(user?.managerId ?? null);
+  const [saving,      setSaving]      = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+
+  // When role changes to admin/manager, auto-enable quoting
+  const handleRoleChange = (r: TeamUser["role"]) => {
+    setRole(r);
+    if (["admin", "manager"].includes(r)) setCanQuote(true);
+  };
+
+  const managerUser = allUsers.find((u) => u.id === managerId);
+  const potentialManagers = allUsers.filter((u) => u.id !== user?.id && ["admin", "manager"].includes(u.role));
 
   const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
   const labelCls = "mb-1.5 block text-sm font-medium";
@@ -292,9 +304,9 @@ function UserFormModal({ mode, user, onClose, onSaved }: UserFormProps) {
     try {
       let res: Response;
       if (mode === "create") {
-        res = await api.post("/api/v1/users", { firstName, lastName, email, password, role });
+        res = await api.post("/api/v1/users", { firstName, lastName, email, password, role, canQuote, managerId: managerId || null });
       } else {
-        const body: Record<string, string> = { firstName, lastName, email, role };
+        const body: Record<string, unknown> = { firstName, lastName, email, role, canQuote, managerId: managerId || null };
         if (password.trim()) body.password = password;
         res = await api.patch(`/api/v1/users/${user!.id}`, body);
       }
@@ -313,7 +325,7 @@ function UserFormModal({ mode, user, onClose, onSaved }: UserFormProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl">
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
@@ -338,7 +350,7 @@ function UserFormModal({ mode, user, onClose, onSaved }: UserFormProps) {
           </div>
           <div>
             <label className={labelCls}>Role *</label>
-            <select value={role} onChange={(e) => setRole(e.target.value as TeamUser["role"])} className={inputCls}>
+            <select value={role} onChange={(e) => handleRoleChange(e.target.value as TeamUser["role"])} className={inputCls}>
               {(["admin", "manager", "rep", "read_only"] as const).map((r) => (
                 <option key={r} value={r}>{ROLE_LABELS[r]}</option>
               ))}
@@ -350,6 +362,46 @@ function UserFormModal({ mode, user, onClose, onSaved }: UserFormProps) {
               {role === "read_only" && "Read-only access to CRM data. Cannot create or edit."}
             </p>
           </div>
+          {/* Manager */}
+          <div>
+            <label className={labelCls}>Reports to (manager)</label>
+            <select
+              value={managerId ?? ""}
+              onChange={(e) => setManagerId(e.target.value || null)}
+              className={inputCls}>
+              <option value="">— No manager —</option>
+              {potentialManagers.map((m) => (
+                <option key={m.id} value={m.id}>{m.firstName} {m.lastName} ({ROLE_LABELS[m.role]})</option>
+              ))}
+            </select>
+            {managerUser && (
+              <p className="mt-1 text-xs text-muted-foreground">Reports to: {managerUser.firstName} {managerUser.lastName}</p>
+            )}
+          </div>
+          {/* Can Quote */}
+          <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Can create quotes</p>
+              <p className="text-xs text-muted-foreground">Allow this user to create and send quotes</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCanQuote(!canQuote)}
+              disabled={["admin", "manager"].includes(role)}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none",
+                canQuote ? "bg-primary" : "bg-muted",
+                ["admin", "manager"].includes(role) && "opacity-60 cursor-not-allowed"
+              )}>
+              <span className={cn(
+                "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                canQuote ? "translate-x-5" : "translate-x-0"
+              )} />
+            </button>
+          </div>
+          {["admin", "manager"].includes(role) && (
+            <p className="text-xs text-muted-foreground -mt-2">Admins and managers always have quoting enabled.</p>
+          )}
           <div>
             <label className={labelCls}>{mode === "create" ? "Password *" : "New password"} {mode === "edit" && <span className="font-normal text-muted-foreground">(leave blank to keep current)</span>}</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
@@ -375,15 +427,46 @@ function UserFormModal({ mode, user, onClose, onSaved }: UserFormProps) {
   );
 }
 
+// ── Org Tree ──────────────────────────────────────────────────────────────────
+
+function OrgNode({ user, allUsers, depth = 0 }: { user: TeamUser; allUsers: TeamUser[]; depth?: number }) {
+  const children = allUsers.filter((u) => u.managerId === user.id);
+  return (
+    <div className={cn("relative", depth > 0 && "ml-6 border-l border-border pl-4")}>
+      <div className={cn("flex items-center gap-3 py-2", depth > 0 && "before:absolute before:-left-4 before:top-1/2 before:h-px before:w-4 before:bg-border")}>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
+          {(user.firstName?.[0] ?? "") + (user.lastName?.[0] ?? "")}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">{user.firstName} {user.lastName}</p>
+          <p className="text-xs text-muted-foreground">{user.email}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", ROLE_COLORS[user.role])}>
+            {ROLE_LABELS[user.role]}
+          </span>
+          {user.canQuote && (
+            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Quotes</span>
+          )}
+        </div>
+      </div>
+      {children.map((child) => (
+        <OrgNode key={child.id} user={child} allUsers={allUsers} depth={depth + 1} />
+      ))}
+    </div>
+  );
+}
+
 // ── Tab: Users ─────────────────────────────────────────────────────────────────
 
 function UsersTab() {
-  const [users,      setUsers]      = useState<TeamUser[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [editUser,   setEditUser]   = useState<TeamUser | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [users,        setUsers]        = useState<TeamUser[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [showCreate,   setShowCreate]   = useState(false);
+  const [editUser,     setEditUser]     = useState<TeamUser | null>(null);
+  const [deletingId,   setDeletingId]   = useState<string | null>(null);
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
+  const [viewMode,     setViewMode]     = useState<"list" | "org">("list");
 
   useEffect(() => {
     api.get("/api/v1/users")
@@ -403,7 +486,6 @@ function UsersTab() {
     try {
       const res = await api.patch(`/api/v1/users/${id}`, { role });
       if (!res.ok) {
-        // revert on failure
         if (prev) setUsers((us) => us.map((u) => u.id === id ? prev : u));
       }
     } catch {
@@ -424,82 +506,116 @@ function UsersTab() {
 
   if (loading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading users…</div>;
 
+  // Org chart root nodes: users with no managerId or whose manager isn't in the list
+  const userIds = new Set(users.map((u) => u.id));
+  const roots = users.filter((u) => !u.managerId || !userIds.has(u.managerId));
+
   return (
     <div className="space-y-4">
-      {showCreate && <UserFormModal mode="create" onClose={() => setShowCreate(false)} onSaved={handleCreated} />}
-      {editUser   && <UserFormModal mode="edit"   user={editUser} onClose={() => setEditUser(null)} onSaved={handleUpdated} />}
+      {showCreate && <UserFormModal mode="create" allUsers={users} onClose={() => setShowCreate(false)} onSaved={handleCreated} />}
+      {editUser   && <UserFormModal mode="edit" user={editUser} allUsers={users} onClose={() => setEditUser(null)} onSaved={handleUpdated} />}
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{users.length} team member{users.length !== 1 ? "s" : ""}</p>
-        <button onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> Create user
-        </button>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+          {(["list", "org"] as const).map((v) => (
+            <button key={v} onClick={() => setViewMode(v)}
+              className={cn("rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                viewMode === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+              {v === "list" ? "List" : "Org Chart"}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">{users.length} team member{users.length !== 1 ? "s" : ""}</p>
+          <button onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+            <Plus className="h-4 w-4" /> Create user
+          </button>
+        </div>
       </div>
 
-      <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              {["User", "Role", "Last active", "Status", "Actions"].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {users.map((u) => (
-              <tr key={u.id} className="hover:bg-muted/20 transition-colors">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
-                      {(u.firstName?.[0] ?? "") + (u.lastName?.[0] ?? "")}
-                    </div>
-                    <div>
-                      <p className="font-medium">{u.firstName} {u.lastName}</p>
-                      <p className="text-xs text-muted-foreground">{u.email}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  {/* Inline role dropdown */}
-                  <select
-                    value={u.role}
-                    disabled={roleChanging === u.id}
-                    onChange={(e) => handleRoleChange(u.id, e.target.value as TeamUser["role"])}
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs font-medium border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
-                      ROLE_COLORS[u.role]
-                    )}>
-                    {(["admin", "manager", "rep", "read_only"] as const).map((r) => (
-                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">{u.lastLoginAt ?? "Never"}</td>
-                <td className="px-4 py-3">
-                  {u.status === "active"
-                    ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 className="h-3 w-3" /> Active</span>
-                    : <span className="flex items-center gap-1 text-xs text-yellow-600"><Mail className="h-3 w-3" /> Invited</span>}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setEditUser(u)} title="Edit user"
-                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button onClick={() => handleDelete(u.id)} disabled={deletingId === u.id} title="Delete user"
-                      className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
+      {viewMode === "org" ? (
+        <div className="rounded-lg border bg-card p-4 space-y-1">
+          {roots.length === 0
+            ? <p className="text-sm text-muted-foreground italic">No users yet.</p>
+            : roots.map((u) => <OrgNode key={u.id} user={u} allUsers={users} />)
+          }
+        </div>
+      ) : (
+        <div className="rounded-lg border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                {["User", "Role", "Manager", "Quotes", "Last active", "Status", "Actions"].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {users.map((u) => {
+                const manager = users.find((m) => m.id === u.managerId);
+                return (
+                  <tr key={u.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
+                          {(u.firstName?.[0] ?? "") + (u.lastName?.[0] ?? "")}
+                        </div>
+                        <div>
+                          <p className="font-medium">{u.firstName} {u.lastName}</p>
+                          <p className="text-xs text-muted-foreground">{u.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={u.role}
+                        disabled={roleChanging === u.id}
+                        onChange={(e) => handleRoleChange(u.id, e.target.value as TeamUser["role"])}
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-xs font-medium border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
+                          ROLE_COLORS[u.role]
+                        )}>
+                        {(["admin", "manager", "rep", "read_only"] as const).map((r) => (
+                          <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {manager ? `${manager.firstName} ${manager.lastName}` : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.canQuote || ["admin","manager"].includes(u.role)
+                        ? <span className="text-xs text-green-600">✓</span>
+                        : <span className="text-xs text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{u.lastLoginAt ?? "Never"}</td>
+                    <td className="px-4 py-3">
+                      {u.status === "active"
+                        ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 className="h-3 w-3" /> Active</span>
+                        : <span className="flex items-center gap-1 text-xs text-yellow-600"><Mail className="h-3 w-3" /> Invited</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setEditUser(u)} title="Edit user"
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button onClick={() => handleDelete(u.id)} disabled={deletingId === u.id} title="Delete user"
+                          className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <p className="text-xs text-muted-foreground">
         Role changes take effect on the user&apos;s next login. Admins can create, edit, and delete any team member.

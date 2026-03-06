@@ -22,6 +22,8 @@ interface Props {
   companyName?: string;
   contactId?:   string;
   contactName?: string;
+  /** NL-parsed items to pre-fill (from ActionBar) */
+  initialItems?: Omit<DraftItem, "_key">[];
   /** Edit mode */
   existing?:    Quote;
   /** Discount approval threshold (from tenant settings, default 10) */
@@ -51,13 +53,21 @@ function newDraftItem(product?: Product): DraftItem {
 
 export function QuoteBuilderModal({
   dealId, dealName, companyId, companyName, contactId, contactName,
-  existing, discountThreshold = 10,
+  initialItems, existing, discountThreshold = 10,
   onClose, onSaved,
 }: Props) {
   const isEdit = !!existing;
 
   // ── Form state ─────────────────────────────────────────────────────────────
-  const [title,         setTitle]         = useState(existing?.title        ?? (dealName ? `Quote for ${dealName}` : companyName ? `Quote for ${companyName}` : "New Quote"));
+  const [title, setTitle] = useState(() => {
+    if (existing?.title) return existing.title;
+    const base = dealName ?? companyName;
+    if (initialItems?.[0]) {
+      const p = initialItems[0];
+      return `${base ?? "Quote"} — ${p.productName}${p.quantity !== 1 ? ` × ${p.quantity}` : ""}`;
+    }
+    return base ? `Quote for ${base}` : "New Quote";
+  });
   const [currency,      setCurrency]      = useState(existing?.currency     ?? "GBP");
   const [notes,         setNotes]         = useState(existing?.notes        ?? "");
   const [terms,         setTerms]         = useState(existing?.terms        ?? DEFAULT_TERMS);
@@ -68,11 +78,15 @@ export function QuoteBuilderModal({
   const [discountType,  setDiscountType]  = useState<"none"|"percent"|"fixed">(existing?.discountType  ?? "none");
   const [discountValue, setDiscountValue] = useState(existing?.discountValue ?? 0);
 
-  const [items, setItems] = useState<DraftItem[]>(() =>
-    existing?.items?.length
-      ? existing.items.map((it) => ({ ...it, _key: crypto.randomUUID() }))
-      : [newDraftItem()]
-  );
+  const [items, setItems] = useState<DraftItem[]>(() => {
+    if (existing?.items?.length) {
+      return existing.items.map((it) => ({ ...it, _key: crypto.randomUUID() }));
+    }
+    if (initialItems?.length) {
+      return initialItems.map((it) => ({ ...it, _key: crypto.randomUUID() }));
+    }
+    return [newDraftItem()];
+  });
 
   // ── Product picker ─────────────────────────────────────────────────────────
   const [products,      setProducts]      = useState<Product[]>(DEMO_PRODUCTS);

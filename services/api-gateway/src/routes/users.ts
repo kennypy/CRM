@@ -18,19 +18,23 @@ const UpdateMeSchema = z.object({
 });
 
 const CreateUserSchema = z.object({
-  firstName: z.string().min(1).max(100),
-  lastName:  z.string().min(0).max(100).default(""),
-  email:     z.string().email(),
-  password:  z.string().min(8, "Password must be at least 8 characters"),
-  role:      z.enum(["admin", "manager", "rep", "read_only"]),
+  firstName:  z.string().min(1).max(100),
+  lastName:   z.string().min(0).max(100).default(""),
+  email:      z.string().email(),
+  password:   z.string().min(8, "Password must be at least 8 characters"),
+  role:       z.enum(["admin", "manager", "rep", "read_only"]),
+  canQuote:   z.boolean().optional(),
+  managerId:  z.string().uuid().nullable().optional(),
 });
 
 const UpdateUserSchema = z.object({
-  firstName: z.string().min(1).max(100).optional(),
-  lastName:  z.string().min(0).max(100).optional(),
-  email:     z.string().email().optional(),
-  role:      z.enum(["admin", "manager", "rep", "read_only"]).optional(),
-  password:  z.string().min(8).optional(),
+  firstName:  z.string().min(1).max(100).optional(),
+  lastName:   z.string().min(0).max(100).optional(),
+  email:      z.string().email().optional(),
+  role:       z.enum(["admin", "manager", "rep", "read_only"]).optional(),
+  password:   z.string().min(8).optional(),
+  canQuote:   z.boolean().optional(),
+  managerId:  z.string().uuid().nullable().optional(),
 });
 
 const InviteSchema = z.object({
@@ -49,6 +53,8 @@ function toUser(row: Record<string, unknown>) {
     lastLoginAt: row.last_login_at ?? null,
     status:      row.password_hash === null ? "invited" : "active",
     createdAt:   row.created_at,
+    canQuote:    row.can_quote ?? false,
+    managerId:   row.manager_id ?? null,
   };
 }
 
@@ -57,7 +63,7 @@ export async function usersRoutes(server: FastifyInstance) {
   server.get("/", { preHandler: [requireAdmin] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
-      `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at
+      `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id
        FROM users
        WHERE tenant_id = $1
        ORDER BY created_at ASC`,
@@ -93,7 +99,7 @@ export async function usersRoutes(server: FastifyInstance) {
     const { rows } = await pool.query(
       `UPDATE users SET ${sets.join(", ")}
        WHERE id = $1 AND tenant_id = $2
-       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at`,
+       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id`,
       vals
     );
 
@@ -139,7 +145,7 @@ export async function usersRoutes(server: FastifyInstance) {
       });
     }
 
-    const { firstName, lastName, email, password, role } = parsed.data;
+    const { firstName, lastName, email, password, role, canQuote, managerId } = parsed.data;
     const { tenantId } = request.user;
 
     const existing = await pool.query(
@@ -154,11 +160,13 @@ export async function usersRoutes(server: FastifyInstance) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
+    // Admins and managers get quoting enabled by default
+    const effectiveCanQuote = canQuote ?? ["admin", "manager"].includes(role);
     const { rows } = await pool.query(
-      `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at`,
-      [tenantId, email.toLowerCase(), passwordHash, firstName, lastName, role]
+      `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role, can_quote, manager_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id`,
+      [tenantId, email.toLowerCase(), passwordHash, firstName, lastName, role, effectiveCanQuote, managerId ?? null]
     );
 
     return reply.status(201).send({ success: true, data: toUser(rows[0]) });
@@ -178,15 +186,17 @@ export async function usersRoutes(server: FastifyInstance) {
       });
     }
 
-    const { firstName, lastName, email, role, password } = parsed.data;
+    const { firstName, lastName, email, role, password, canQuote, managerId } = parsed.data;
     const sets: string[] = ["updated_at = NOW()"];
     const vals: unknown[] = [id, tenantId];
 
-    if (firstName !== undefined) { vals.push(firstName); sets.push(`first_name = $${vals.length}`); }
-    if (lastName  !== undefined) { vals.push(lastName);  sets.push(`last_name  = $${vals.length}`); }
-    if (email     !== undefined) { vals.push(email.toLowerCase()); sets.push(`email = $${vals.length}`); }
-    if (role      !== undefined) { vals.push(role); sets.push(`role = $${vals.length}`); }
-    if (password  !== undefined) {
+    if (firstName  !== undefined) { vals.push(firstName); sets.push(`first_name = $${vals.length}`); }
+    if (lastName   !== undefined) { vals.push(lastName);  sets.push(`last_name  = $${vals.length}`); }
+    if (email      !== undefined) { vals.push(email.toLowerCase()); sets.push(`email = $${vals.length}`); }
+    if (role       !== undefined) { vals.push(role); sets.push(`role = $${vals.length}`); }
+    if (canQuote   !== undefined) { vals.push(canQuote); sets.push(`can_quote = $${vals.length}`); }
+    if (managerId  !== undefined) { vals.push(managerId); sets.push(`manager_id = $${vals.length}`); }
+    if (password   !== undefined) {
       const hash = await bcrypt.hash(password, 12);
       vals.push(hash); sets.push(`password_hash = $${vals.length}`);
     }
@@ -198,7 +208,7 @@ export async function usersRoutes(server: FastifyInstance) {
     const { rows } = await pool.query(
       `UPDATE users SET ${sets.join(", ")}
        WHERE id = $1 AND tenant_id = $2
-       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at`,
+       RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id`,
       vals
     );
 

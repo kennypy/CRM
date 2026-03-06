@@ -174,6 +174,23 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [error, setError]     = useState<string | null>(null);
   const [done, setDone]       = useState(false);
   const [linkedEntity, setLinkedEntity] = useState<{ id: string; name: string; email: string; type: "contact" | "lead" } | null>(null);
+  const [linkedDeal, setLinkedDeal]     = useState<{ id: string; name: string; stage: string } | null>(null);
+  const [dealOptions, setDealOptions]   = useState<{ id: string; name: string; stage: string }[]>([]);
+  const [dealOpen, setDealOpen]         = useState(false);
+
+  useEffect(() => {
+    if (!linkedEntity) { setDealOptions([]); setLinkedDeal(null); return; }
+    api.get("/api/v1/deals?limit=50")
+      .then((r) => r.json())
+      .then((j) => {
+        setDealOptions(
+          (j.data ?? []).filter((d: { stage: string }) =>
+            !["closed_won", "closed_lost"].includes(d.stage)
+          )
+        );
+      })
+      .catch(() => {});
+  }, [linkedEntity]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,6 +209,7 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
         if (linkedEntity.type === "contact") body.contactId = linkedEntity.id;
         else body.leadId = linkedEntity.id;
       }
+      if (linkedDeal) body.dealId = linkedDeal.id;
       const res = await api.post("/api/v1/activities", body);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -243,6 +261,48 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
               <ContactLeadSearch onSelect={setLinkedEntity} />
             )}
           </div>
+
+          {/* Opportunity link — appears after a contact/lead is selected */}
+          {linkedEntity && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">Link to opportunity <span className="text-muted-foreground font-normal">(optional)</span></label>
+              {linkedDeal ? (
+                <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium">{linkedDeal.name}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{linkedDeal.stage.replace("_", " ")}</p>
+                  </div>
+                  <button type="button" onClick={() => setLinkedDeal(null)} className="text-muted-foreground hover:text-red-600">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <button type="button"
+                    onClick={() => setDealOpen((o) => !o)}
+                    className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-left text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
+                    {dealOptions.length === 0 ? "No open opportunities found" : "Select an opportunity…"}
+                  </button>
+                  {dealOpen && dealOptions.length > 0 && (
+                    <div className="absolute top-full mt-1 z-10 w-full rounded-xl border bg-card shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+                      {dealOptions.map((d) => (
+                        <button key={d.id} type="button"
+                          onClick={() => { setLinkedDeal(d); setDealOpen(false); }}
+                          className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-muted transition-colors">
+                          <Briefcase className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                          <div>
+                            <p className="text-sm font-medium">{d.name}</p>
+                            <p className="text-xs text-muted-foreground capitalize">{d.stage.replace("_", " ")}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Type selector */}
           <div>

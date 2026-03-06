@@ -210,7 +210,21 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (!rows.length) {
       return reply.status(404).send({ success: false, error: { code: "NOT_FOUND", message: "Deal not found" } });
     }
-    return reply.send({ success: true, data: toDealResponse(rows[0]) });
+    const deal = toDealResponse(rows[0]) as Record<string, unknown>;
+    if (deal.ownerId) {
+      const { rows: uRows } = await pool.query(
+        `SELECT first_name, last_name, email FROM users WHERE id = $1`,
+        [deal.ownerId]
+      );
+      if (uRows[0]) {
+        deal.owner = {
+          id:    deal.ownerId,
+          name:  `${uRows[0].first_name} ${uRows[0].last_name}`.trim(),
+          email: uRows[0].email,
+        };
+      }
+    }
+    return reply.send({ success: true, data: deal });
   });
 
   server.patch("/:id", async (request, reply) => {
