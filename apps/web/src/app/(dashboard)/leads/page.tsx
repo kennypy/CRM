@@ -5,6 +5,7 @@ import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
+import { ActionBar } from "@/components/action-bar/action-bar";
 import {
   TrendingUp, Search, RefreshCw, AlertCircle, Plus,
   ChevronLeft, ChevronRight, Flame, Minus, Snowflake,
@@ -311,6 +312,7 @@ export default function LeadsPage() {
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">Leads</h1>
+          <ActionBar context="leads" />
           {!loading && <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{total.toLocaleString()}</span>}
         </div>
         <div className="flex gap-2">

@@ -7,7 +7,7 @@ import {
   Zap, Home, Briefcase, Users, Building2, Activity,
   TrendingUp, CheckSquare, BarChart3, Layers, AlertCircle,
   Settings, Bell, ChevronDown, LogOut, User, Search,
-  MoreHorizontal, Shield, CreditCard, X, Mail,
+  MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
@@ -25,6 +25,7 @@ const PRIMARY_NAV = [
 
 const MORE_NAV = [
   { href: "/tasks",     icon: CheckSquare, label: "Tasks"        },
+  { href: "/quotes",    icon: FileText,    label: "Quotes"       },
   { href: "/sequences", icon: Mail,        label: "Sequences"    },
   { href: "/reports",   icon: BarChart3,   label: "Reports"      },
   { href: "/review",    icon: AlertCircle, label: "Review Queue" },

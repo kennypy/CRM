@@ -224,7 +224,60 @@ const GROUP_BY_OPTIONS_BY_TYPE: Record<string, string[]> = {
   "Sequence Performance":   ["Sequence", "Step", "Status", "Rep"],
 };
 
-const PERIODS = ["Last 7 days", "Last 30 days", "Last 90 days", "Last year", "Custom"];
+// ── Period options (historical + future) ─────────────────────────────────────
+const PERIODS = [
+  // Past
+  "Today", "Yesterday",
+  "This week", "Last week",
+  "Last 7 days", "Last 30 days", "Last 90 days",
+  "This month", "Last month",
+  "This quarter", "Last quarter", "Last year",
+  "Q1", "Q2", "Q3", "Q4",
+  // Future (Opportunities-specific)
+  "Closing this week", "Closing this month", "Closing next month", "Closing this quarter",
+  "Next week", "Next month", "Next quarter",
+  "Custom",
+];
+
+// Map period label to ISO date range for filtering (relative to 2026-03-06)
+function periodToDateRange(period: string): { from?: string; to?: string; closeFrom?: string; closeTo?: string } {
+  const now    = new Date("2026-03-06");
+  const fmt    = (d: Date) => d.toISOString().slice(0, 10);
+  const add    = (d: Date, days: number) => { const x = new Date(d); x.setDate(x.getDate() + days); return x; };
+  const monday = (d: Date) => { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+  const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+  const endOfMonth   = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  const startOfQ = (d: Date) => new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1);
+  const endOfQ   = (d: Date) => { const q = Math.floor(d.getMonth() / 3); return new Date(d.getFullYear(), q * 3 + 3, 0); };
+
+  switch (period) {
+    case "Today":       return { from: fmt(now),          to: fmt(now) };
+    case "Yesterday":   return { from: fmt(add(now,-1)),  to: fmt(add(now,-1)) };
+    case "This week":   return { from: fmt(monday(now)),  to: fmt(add(monday(now), 6)) };
+    case "Last week":   return { from: fmt(add(monday(now),-7)), to: fmt(add(monday(now),-1)) };
+    case "Last 7 days": return { from: fmt(add(now,-7)),  to: fmt(now) };
+    case "Last 30 days":return { from: fmt(add(now,-30)), to: fmt(now) };
+    case "Last 90 days":return { from: fmt(add(now,-90)), to: fmt(now) };
+    case "This month":  return { from: fmt(startOfMonth(now)), to: fmt(endOfMonth(now)) };
+    case "Last month":  { const lm = new Date(now.getFullYear(), now.getMonth()-1, 1); return { from: fmt(lm), to: fmt(endOfMonth(lm)) }; }
+    case "This quarter":return { from: fmt(startOfQ(now)), to: fmt(endOfQ(now)) };
+    case "Last quarter":{ const lq = new Date(now.getFullYear(), Math.floor(now.getMonth()/3)*3-3, 1); return { from: fmt(startOfQ(lq)), to: fmt(endOfQ(lq)) }; }
+    case "Last year":   return { from: fmt(new Date(now.getFullYear()-1,0,1)), to: fmt(new Date(now.getFullYear()-1,11,31)) };
+    case "Q1": return { from: fmt(new Date(now.getFullYear(),0,1)),  to: fmt(new Date(now.getFullYear(),2,31)) };
+    case "Q2": return { from: fmt(new Date(now.getFullYear(),3,1)),  to: fmt(new Date(now.getFullYear(),5,30)) };
+    case "Q3": return { from: fmt(new Date(now.getFullYear(),6,1)),  to: fmt(new Date(now.getFullYear(),8,30)) };
+    case "Q4": return { from: fmt(new Date(now.getFullYear(),9,1)),  to: fmt(new Date(now.getFullYear(),11,31)) };
+    // Opportunity close date ranges
+    case "Closing this week":    return { closeFrom: fmt(monday(now)),         closeTo: fmt(add(monday(now), 6)) };
+    case "Closing this month":   return { closeFrom: fmt(startOfMonth(now)),   closeTo: fmt(endOfMonth(now)) };
+    case "Closing next month":   { const nm = new Date(now.getFullYear(), now.getMonth()+1, 1); return { closeFrom: fmt(nm), closeTo: fmt(endOfMonth(nm)) }; }
+    case "Closing this quarter": return { closeFrom: fmt(startOfQ(now)),       closeTo: fmt(endOfQ(now)) };
+    case "Next week":  return { from: fmt(add(monday(now),7)),  to: fmt(add(monday(now),13)) };
+    case "Next month": { const nm = new Date(now.getFullYear(), now.getMonth()+1, 1); return { from: fmt(nm), to: fmt(endOfMonth(nm)) }; }
+    case "Next quarter":{ const nq = new Date(now.getFullYear(), Math.floor(now.getMonth()/3)*3+3, 1); return { from: fmt(startOfQ(nq)), to: fmt(endOfQ(nq)) }; }
+    default: return {};
+  }
+}
 const STAGES_LIST = ["Discovery", "Proposal", "Negotiation", "Closed Won", "Closed Lost"];
 const SOURCES_LIST = ["Inbound referral", "Outbound email", "Event / webinar", "Partner channel", "Auto-captured"];
 const ACTIVITY_TYPES = ["Email", "Call", "Meeting", "Task"];
@@ -302,11 +355,37 @@ function parseNLQuery(query: string, currentFilters: ReportFilters): Partial<Rep
   const q = query.toLowerCase();
   const patch: Partial<ReportFilters> & { type?: string } = {};
 
-  // Period detection
-  if (/last\s+7\s+days?|this\s+week/.test(q))        patch.period = "Last 7 days";
-  else if (/last\s+30\s+days?|this\s+month/.test(q)) patch.period = "Last 30 days";
-  else if (/last\s+90\s+days?|quarter/.test(q))      patch.period = "Last 90 days";
-  else if (/last\s+year|annual|yearly/.test(q))       patch.period = "Last year";
+  // ── Period detection — ordered most-specific first ─────────────────────────
+  if (/\byesterday\b/.test(q))                                             patch.period = "Yesterday";
+  else if (/\btoday\b/.test(q))                                            patch.period = "Today";
+  else if (/closing\s+this\s+week/.test(q))                                patch.period = "Closing this week";
+  else if (/closing\s+this\s+month/.test(q))                               patch.period = "Closing this month";
+  else if (/closing\s+next\s+month/.test(q))                               patch.period = "Closing next month";
+  else if (/closing\s+this\s+quarter/.test(q))                             patch.period = "Closing this quarter";
+  else if (/what.*(closing|close|due)\s+this\s+week/.test(q))              patch.period = "Closing this week";
+  else if (/next\s+quarter/.test(q))                                       patch.period = "Next quarter";
+  else if (/next\s+month/.test(q))                                         patch.period = "Next month";
+  else if (/next\s+week/.test(q))                                          patch.period = "Next week";
+  else if (/last\s+week\b/.test(q))                                        patch.period = "Last week";
+  else if (/this\s+week\b/.test(q))                                        patch.period = "This week";
+  else if (/last\s+7\s+days?/.test(q))                                     patch.period = "Last 7 days";
+  else if (/last\s+30\s+days?/.test(q))                                    patch.period = "Last 30 days";
+  else if (/last\s+90\s+days?/.test(q))                                    patch.period = "Last 90 days";
+  else if (/this\s+month\b/.test(q))                                       patch.period = "This month";
+  else if (/last\s+month\b/.test(q))                                       patch.period = "Last month";
+  else if (/this\s+quarter\b/.test(q))                                     patch.period = "This quarter";
+  else if (/last\s+quarter\b/.test(q))                                     patch.period = "Last quarter";
+  else if (/last\s+year|annual|yearly/.test(q))                            patch.period = "Last year";
+  else if (/\bq1\b/.test(q))                                               patch.period = "Q1";
+  else if (/\bq2\b/.test(q))                                               patch.period = "Q2";
+  else if (/\bq3\b/.test(q))                                               patch.period = "Q3";
+  else if (/\bq4\b/.test(q))                                               patch.period = "Q4";
+
+  // "my team" → clear rep filter (show all — current user is manager)
+  if (/\b(my\s+team|the\s+team|all\s+reps?)\b/.test(q)) {
+    patch.rep = "";
+    patch.assignedRep = "";
+  }
 
   // Report type detection — check most specific first
   if (/win.*loss|loss.*win|win\s+rate|won.*lost/.test(q))              patch.type = "Win/Loss";
@@ -1206,10 +1285,14 @@ export default function ReportsPage() {
   const [activeReport, setActiveReport] = useState<SavedReport | null>(null);
 
   const PERIOD_MAP: Record<string, Period> = {
-    "Last 7 days":  "7d",
-    "Last 30 days": "30d",
-    "Last 90 days": "90d",
-    "Last year":    "1y",
+    "Today": "7d", "Yesterday": "7d",
+    "This week": "7d", "Last week": "7d", "Last 7 days": "7d",
+    "This month": "30d", "Last month": "30d", "Last 30 days": "30d",
+    "This quarter": "90d", "Last quarter": "90d", "Last 90 days": "90d",
+    "Last year": "1y", "Q1": "1y", "Q2": "1y", "Q3": "1y", "Q4": "1y",
+    "Closing this week": "7d", "Closing this month": "30d",
+    "Closing next month": "30d", "Closing this quarter": "90d",
+    "Next week": "7d", "Next month": "30d", "Next quarter": "90d",
   };
 
   // Which chart sections to show when a saved report is active

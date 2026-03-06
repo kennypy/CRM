@@ -10,6 +10,7 @@ import {
   Settings, Users, Plug, CreditCard, Shield, User,
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
+  FileText, Package, ChevronDown,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -21,6 +22,8 @@ interface TeamUser {
   id: string; firstName: string; lastName: string; email: string;
   role: "admin" | "manager" | "rep" | "read_only";
   lastLoginAt?: string; status: "active" | "invited";
+  managerId?: string | null;
+  canQuote?: boolean;
 }
 
 const DEMO_USERS: TeamUser[] = [
@@ -56,7 +59,7 @@ const SUPPORTED_TIMEZONES  = [
   "Asia/Tokyo", "Australia/Sydney",
 ];
 
-type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "security" | "communications";
+type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products";
 
 // ── Theme Selector ─────────────────────────────────────────────────────────────
 
@@ -505,6 +508,215 @@ function UsersTab() {
   );
 }
 
+// ── Tab: Quoting ───────────────────────────────────────────────────────────────
+
+function QuotingTab() {
+  const [threshold,  setThreshold]  = useState(10);
+  const [validDays,  setValidDays]  = useState(30);
+  const [sendMethod, setSendMethod] = useState("email");
+  const [users,      setUsers]      = useState<TeamUser[]>([]);
+  const [saving,     setSaving]     = useState(false);
+  const [saved,      setSaved]      = useState(false);
+  const [quotingMap, setQuotingMap] = useState<Record<string, boolean>>({});
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+
+  useEffect(() => {
+    api.get("/api/v1/users")
+      .then((r) => r.json())
+      .then((j) => {
+        const u: TeamUser[] = j.data?.length ? j.data : DEMO_USERS;
+        setUsers(u);
+        const map: Record<string, boolean> = {};
+        u.forEach((user) => { map[user.id] = ["admin","manager"].includes(user.role); });
+        setQuotingMap(map);
+      })
+      .catch(() => {
+        setUsers(DEMO_USERS);
+        const map: Record<string, boolean> = {};
+        DEMO_USERS.forEach((u) => { map[u.id] = ["admin","manager"].includes(u.role); });
+        setQuotingMap(map);
+      });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.patch("/api/v1/tenant", { discountApprovalThreshold: threshold, quoteValidDays: validDays, quoteSendMethod: sendMethod });
+      // Update quoting skill per user
+      for (const [id, canQuote] of Object.entries(quotingMap)) {
+        await api.patch(`/api/v1/users/${id}`, { canQuote }).catch(() => {});
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch { /* silent */ }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      {/* Approval thresholds */}
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Approval Rules</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Discount approval threshold (%)</label>
+            <input type="number" min="0" max="100" step="1" value={threshold}
+              onChange={(e) => setThreshold(parseInt(e.target.value) || 0)} className={inputCls} />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Discounts above this % require a manager to approve before the quote can be sent.
+              Set to 100 to disable approval requirement.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Default quote validity (days)</label>
+            <input type="number" min="1" max="365" step="1" value={validDays}
+              onChange={(e) => setValidDays(parseInt(e.target.value) || 30)} className={inputCls} />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">Default send method</label>
+          <select value={sendMethod} onChange={(e) => setSendMethod(e.target.value)} className={inputCls}>
+            <option value="email">Email from CRM (rep's address)</option>
+            <option value="link">Shareable link</option>
+            <option value="both">Email + Shareable link</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Per-user quoting skill */}
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <div>
+          <h3 className="font-semibold flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Quoting Permissions</h3>
+          <p className="text-xs text-muted-foreground mt-1">Control which users can create and send quotes. Admins and managers always have this permission.</p>
+        </div>
+        <div className="divide-y divide-border rounded-lg border overflow-hidden">
+          {users.map((u) => {
+            const isAlwaysOn = ["admin","manager","super_admin"].includes(u.role);
+            return (
+              <div key={u.id} className="flex items-center gap-4 px-4 py-3 bg-card">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
+                  {(u.firstName?.[0] ?? "") + (u.lastName?.[0] ?? "")}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{u.firstName} {u.lastName}</p>
+                  <p className="text-xs text-muted-foreground">{ROLE_LABELS[u.role]} · {u.email}</p>
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={isAlwaysOn || (quotingMap[u.id] ?? false)}
+                    disabled={isAlwaysOn}
+                    onChange={(e) => setQuotingMap((prev) => ({ ...prev, [u.id]: e.target.checked }))}
+                    className="h-4 w-4 accent-primary rounded"
+                  />
+                  Can quote
+                </label>
+                {isAlwaysOn && <span className="text-xs text-muted-foreground">(always)</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {saved && (
+        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          <CheckCircle2 className="h-4 w-4" /> Quoting settings saved
+        </div>
+      )}
+      <button onClick={handleSave} disabled={saving}
+        className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+        {saving ? "Saving…" : "Save quoting settings"}
+      </button>
+    </div>
+  );
+}
+
+// ── Tab: Products ──────────────────────────────────────────────────────────────
+
+function ProductsTab() {
+  const { DEMO_PRODUCTS: demoProd, BILLING_CYCLE_LABELS, fmtCurrency } = (() => {
+    const { DEMO_PRODUCTS, BILLING_CYCLE_LABELS, fmtCurrency } = require("@/lib/quotes");
+    return { DEMO_PRODUCTS, BILLING_CYCLE_LABELS, fmtCurrency };
+  })();
+
+  const [products,    setProducts]    = useState<Record<string, unknown>[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [showForm,    setShowForm]    = useState(false);
+  const [editProduct, setEditProduct] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    api.get("/api/v1/products")
+      .then((r) => r.json())
+      .then((j) => setProducts(j.data?.length ? j.data : demoProd))
+      .catch(() => setProducts(demoProd))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+
+  if (loading) return <div className="py-12 text-center text-sm text-muted-foreground">Loading products…</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{products.length} product{products.length !== 1 ? "s" : ""} in catalog</p>
+        <div className="flex gap-2">
+          <button className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
+            Import CSV (coming soon)
+          </button>
+          <button onClick={() => { setEditProduct(null); setShowForm(true); }}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90">
+            <Plus className="h-3.5 w-3.5" /> Add product
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              {["SKU", "Name", "Price", "Cycle", "Status", ""].map((h) => (
+                <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border bg-card">
+            {products.map((p: Record<string, unknown>) => (
+              <tr key={String(p.id)} className="hover:bg-muted/20 transition-colors">
+                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{String(p.sku ?? "—")}</td>
+                <td className="px-4 py-3">
+                  <p className="font-medium">{String(p.name)}</p>
+                  {!!p.description && <p className="text-xs text-muted-foreground truncate max-w-xs">{String(p.description)}</p>}
+                </td>
+                <td className="px-4 py-3 font-semibold">{fmtCurrency(Number(p.unitPrice ?? p.unit_price ?? 0), String(p.currency ?? "GBP"))}</td>
+                <td className="px-4 py-3 text-muted-foreground">{BILLING_CYCLE_LABELS[String(p.billingCycle ?? p.billing_cycle ?? "one_time")]}</td>
+                <td className="px-4 py-3">
+                  <span className={p.active ? "text-green-700 text-xs font-medium" : "text-muted-foreground text-xs"}>
+                    {p.active ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <button onClick={() => { setEditProduct(p); setShowForm(true); }}
+                    className="text-xs text-primary hover:underline">Edit</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-lg border border-dashed border-border p-4 text-center">
+        <Package className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+        <p className="text-sm font-medium text-muted-foreground">CSV / Excel import</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Upload your product catalog from a spreadsheet. Field mapping will be available in a future release.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Tab: Integrations ──────────────────────────────────────────────────────────
 
 function IntegrationsTab() {
@@ -908,6 +1120,8 @@ const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }>; ad
   { id: "general",      label: "Company",      icon: Building2, adminOnly: true },
   { id: "users",        label: "Users",        icon: Users,     adminOnly: true },
   { id: "integrations",   label: "Integrations",   icon: Plug,      adminOnly: true },
+  { id: "quoting",        label: "Quoting",        icon: FileText,  adminOnly: true },
+  { id: "products",       label: "Products",       icon: Package,   adminOnly: true },
   { id: "communications", label: "Communications", icon: Phone,     adminOnly: true },
   { id: "billing",        label: "Billing",        icon: CreditCard, adminOnly: true },
 ];
@@ -966,6 +1180,8 @@ function SettingsInner() {
         {tab === "general"      && <GeneralTab user={user} />}
         {tab === "users"        && <UsersTab />}
         {tab === "integrations"   && <IntegrationsTab />}
+        {tab === "quoting"        && <QuotingTab />}
+        {tab === "products"       && <ProductsTab />}
         {tab === "communications" && <CommunicationsTab />}
         {tab === "billing"        && <BillingTab />}
       </div>

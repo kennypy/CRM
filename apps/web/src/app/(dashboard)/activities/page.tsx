@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { ActionBar } from "@/components/action-bar/action-bar";
 import {
   Zap, RefreshCw, AlertCircle, Mail, Phone, Video,
   FileText, MessageSquare, Users, Briefcase,
@@ -398,6 +399,7 @@ export default function ActivitiesPage() {
         <div className="flex items-center gap-2">
           <Zap className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">Activity Feed</h1>
+          <ActionBar context="activities" />
           {!loading && activities.length > 0 && (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               {activities.length}{hasMore ? "+" : ""} shown
