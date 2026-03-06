@@ -78,7 +78,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     if (isLead === "false") where.push("(p.is_lead IS NULL OR p.is_lead = false)");
     if (search) {
       where.push(
-        "(p.first_name CONTAINS $search OR p.last_name CONTAINS $search OR p.email CONTAINS $search)"
+        "(toLower(p.first_name) CONTAINS toLower($search) OR toLower(p.last_name) CONTAINS toLower($search) OR toLower(p.email) CONTAINS toLower($search) OR toLower(p.first_name + ' ' + p.last_name) CONTAINS toLower($search))"
       );
       params.search = search;
     }

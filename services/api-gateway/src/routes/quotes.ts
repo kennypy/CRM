@@ -281,7 +281,9 @@ export async function quotesRoutes(server: FastifyInstance) {
            title=$3, deal_id=$4, contact_id=$5, company_id=$6,
            currency=$7, subtotal=$8, discount_type=$9, discount_value=$10,
            tax_rate=$11, total=$12, notes=$13, terms=$14, valid_until=$15,
-           status=$16, approval_required=$17, updated_at=NOW()
+           status=$16, approval_required=$17,
+           company_name=$18, contact_name=$19,
+           updated_at=NOW()
          WHERE id=$1 AND tenant_id=$2`,
         [id, tenantId,
           p.title     ?? quote.title,
@@ -293,7 +295,9 @@ export async function quotesRoutes(server: FastifyInstance) {
           p.notes  !== undefined ? (p.notes  ?? null) : quote.notes,
           p.terms  !== undefined ? (p.terms  ?? null) : quote.terms,
           p.validUntil !== undefined ? (p.validUntil ?? null) : quote.valid_until,
-          status, approvalRequired]
+          status, approvalRequired,
+          p.companyName !== undefined ? (p.companyName ?? null) : quote.company_name,
+          p.contactName !== undefined ? (p.contactName ?? null) : quote.contact_name]
       );
 
       if (items.length) {

@@ -48,6 +48,7 @@ interface Props {
   companyId?:   string;
   companyName?: string;
   contactId?:   string;
+  contactName?: string;
   onQuoteSaved?: (q: Quote) => void;
 }
 
@@ -63,7 +64,7 @@ type BarState =
   | "success"
   | "error";
 
-export function ActionBar({ context, dealId, dealName, companyId, companyName, contactId, onQuoteSaved }: Props) {
+export function ActionBar({ context, dealId, dealName, companyId, companyName, contactId, contactName, onQuoteSaved }: Props) {
   const router = useRouter();
 
   const [open,     setOpen]     = useState(false);
@@ -168,7 +169,7 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
           companyName: company?.name   || companyName,
           dealId,  dealName,
           contactId:   resolvedContact?.id   || contactId,
-          contactName: resolvedContact?.name || undefined,
+          contactName: resolvedContact?.name || contactName,
           orderDiscount,
           items: p.products.length > 0
             ? p.products.map((prod) => {
@@ -244,7 +245,7 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
         setQuotePreFill({
           companyId:   selectedCompany?.id || companyId,
           companyName: selectedCompany?.name || companyName,
-          dealId, dealName, contactId,
+          dealId, dealName, contactId, contactName,
           items: parsed.products.map((prod) => {
             const catalogMatch = DEMO_PRODUCTS.find((cp) =>
               cp.name.toLowerCase().includes(prod.name.toLowerCase()) ||
