@@ -162,8 +162,7 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
                   productName: catalogMatch?.name ?? prod.name,
                   quantity:    prod.quantity,
                   unitPrice:   catalogMatch?.unitPrice ?? 0,
-                  // No per-line discount when there's an order-level one
-                  discountPct: orderDiscount ? 0 : (prod.discountPct ?? 0),
+                  discountPct: prod.discountPct ?? 0,
                 };
               })
             : undefined,

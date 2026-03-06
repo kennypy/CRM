@@ -143,13 +143,23 @@ export function QuoteBuilderModal({
     }
     setSaving(true); setError(null);
     try {
+      // If per-line discounts already match the order discount, don't double-apply.
+      // Send only the per-line discount (clear order level) so totals are correct.
+      const allLinesMatchOrder =
+        discountType === "percent" &&
+        discountValue > 0 &&
+        items.every((it) => Math.abs(it.discountPct - discountValue) < 0.001);
+
       const body = {
         title, currency, notes: notes || undefined, terms: terms || undefined,
         validUntil: validUntil || undefined,
-        taxRate, discountType, discountValue,
-        dealId:    dealId    || existing?.dealId    || undefined,
-        contactId: contactId || existing?.contactId || undefined,
-        companyId: companyId || existing?.companyId || undefined,
+        taxRate,
+        discountType:  allLinesMatchOrder ? "none" : discountType,
+        discountValue: allLinesMatchOrder ? 0      : discountValue,
+        dealId:       dealId       || existing?.dealId       || undefined,
+        contactId:    contactId    || existing?.contactId    || undefined,
+        companyId:    companyId    || existing?.companyId    || undefined,
+        companyName:  companyName  || existing?.companyName  || undefined,
         items: items.map((it) => ({
           // Only send productId if it's a real UUID (demo catalog uses "prod-001" style IDs)
           productId:   it.productId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(it.productId) ? it.productId : undefined,

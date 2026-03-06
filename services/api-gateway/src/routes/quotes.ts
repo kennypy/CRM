@@ -28,6 +28,8 @@ const CreateQuoteSchema = z.object({
   dealId:       z.string().uuid().optional(),
   contactId:    z.string().uuid().optional(),
   companyId:    z.string().uuid().optional(),
+  companyName:  z.string().max(300).optional(),   // denormalised — graph entity name
+  contactName:  z.string().max(300).optional(),   // denormalised — graph entity name
   currency:     z.string().length(3).default("USD"),
   notes:        z.string().max(5000).optional(),
   terms:        z.string().max(5000).optional(),
@@ -79,7 +81,10 @@ function toQuote(r: Record<string, unknown>, items: Record<string, unknown>[] = 
     dealId:           r.deal_id ?? null,
     contactId:        r.contact_id ?? null,
     companyId:        r.company_id ?? null,
+    companyName:      r.company_name ?? null,
+    contactName:      r.contact_name ?? null,
     createdBy:        r.created_by,
+    createdByName:    r.created_by_name ?? null,
     assignedTo:       r.assigned_to ?? null,
     currency:         r.currency,
     subtotal:         parseFloat(String(r.subtotal)),
@@ -125,20 +130,16 @@ export async function quotesRoutes(server: FastifyInstance) {
 
     const { rows } = await pool.query(
       `SELECT q.*,
-              u.first_name || ' ' || u.last_name AS created_by_name,
-              co.name AS company_name,
-              c.first_name || ' ' || c.last_name AS contact_name
+              u.first_name || ' ' || u.last_name AS created_by_name
        FROM quotes q
-       LEFT JOIN users    u  ON u.id  = q.created_by
-       LEFT JOIN companies co ON co.id = q.company_id
-       LEFT JOIN contacts  c  ON c.id  = q.contact_id
+       LEFT JOIN users u ON u.id = q.created_by
        WHERE ${conditions.join(" AND ")}
        ORDER BY q.created_at DESC
        LIMIT 200`,
       vals
     );
 
-    return reply.send({ success: true, data: rows.map((r) => ({ ...toQuote(r), createdByName: r.created_by_name, companyName: r.company_name, contactName: r.contact_name })) });
+    return reply.send({ success: true, data: rows.map((r) => toQuote(r)) });
   });
 
   // ── POST /api/v1/quotes ──────────────────────────────────────────────────
@@ -147,7 +148,7 @@ export async function quotesRoutes(server: FastifyInstance) {
     if (!parsed.success)
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
 
-    const { title, dealId, contactId, companyId, currency, notes, terms, validUntil, items, discountType, discountValue, taxRate } = parsed.data;
+    const { title, dealId, contactId, companyId, companyName, contactName, currency, notes, terms, validUntil, items, discountType, discountValue, taxRate } = parsed.data;
     const { tenantId, sub: userId } = request.user;
 
     // Check quoting permission
@@ -174,13 +175,15 @@ export async function quotesRoutes(server: FastifyInstance) {
       const { rows: [quote] } = await client.query(
         `INSERT INTO quotes
            (tenant_id, quote_number, title, deal_id, contact_id, company_id,
+            company_name, contact_name,
             created_by, assigned_to, status, approval_required,
             currency, subtotal, discount_type, discount_value, tax_rate, total,
             notes, terms, valid_until)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
          RETURNING *`,
         [tenantId, quoteNumber, title,
           dealId ?? null, contactId ?? null, companyId ?? null,
+          companyName ?? null, contactName ?? null,
           userId, status, approvalRequired,
           currency, subtotal, discountType, discountValue, taxRate, total,
           notes ?? null, terms ?? null, validUntil ?? null]
@@ -218,13 +221,9 @@ export async function quotesRoutes(server: FastifyInstance) {
 
     const { rows: [quote] } = await pool.query(
       `SELECT q.*,
-              u.first_name || ' ' || u.last_name AS created_by_name,
-              co.name AS company_name,
-              c.first_name || ' ' || c.last_name AS contact_name
+              u.first_name || ' ' || u.last_name AS created_by_name
        FROM quotes q
-       LEFT JOIN users     u  ON u.id  = q.created_by
-       LEFT JOIN companies co ON co.id = q.company_id
-       LEFT JOIN contacts  c  ON c.id  = q.contact_id
+       LEFT JOIN users u ON u.id = q.created_by
        WHERE q.id=$1 AND q.tenant_id=$2`, [id, tenantId]
     );
     if (!quote) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
@@ -233,7 +232,7 @@ export async function quotesRoutes(server: FastifyInstance) {
       `SELECT * FROM quote_items WHERE quote_id=$1 ORDER BY sort_order`, [id]
     );
 
-    return reply.send({ success: true, data: { ...toQuote(quote, items), createdByName: quote.created_by_name, companyName: quote.company_name, contactName: quote.contact_name } });
+    return reply.send({ success: true, data: toQuote(quote, items) });
   });
 
   // ── PATCH /api/v1/quotes/:id ─────────────────────────────────────────────
