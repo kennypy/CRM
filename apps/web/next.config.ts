@@ -82,9 +82,10 @@ export default withSentryConfig(nextConfig, {
   // Suppress verbose Sentry CLI output during builds
   silent: !process.env.CI,
   // Upload source maps only in CI to avoid bloating local builds
-  disableServerWebpackPlugin: process.env.CI !== "true",
-  disableClientWebpackPlugin: process.env.CI !== "true",
+  sourcemaps: {
+    disable: process.env.CI !== "true",
+  },
   widenClientFileUpload: true,
   hideSourceMaps: true,
-  automaticVercelMonitors: true,
+  automaticVercelMonitors: false,
 });
