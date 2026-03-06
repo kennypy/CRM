@@ -24,6 +24,7 @@ import { workflowsRoutes } from "./routes/workflows";
 import { usersRoutes }     from "./routes/users";
 import { quotesRoutes }    from "./routes/quotes";
 import { productsRoutes }  from "./routes/products";
+import { reportsRoutes }   from "./routes/reports";
 import { errorHandler } from "./middleware/error-handler";
 import { authMiddleware } from "./middleware/auth";
 import { typeDefs } from "./graphql/schema";
@@ -127,6 +128,7 @@ async function bootstrap() {
   await server.register(usersRoutes,        { prefix: "/api/v1/users" });
   await server.register(quotesRoutes,       { prefix: "/api/v1/quotes" });
   await server.register(productsRoutes,     { prefix: "/api/v1/products" });
+  await server.register(reportsRoutes,      { prefix: "/api/v1" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
