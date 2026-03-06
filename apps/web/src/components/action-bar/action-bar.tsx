@@ -111,9 +111,9 @@ export function ActionBar({ context, dealId, dealName, companyId, companyName, c
       if (!hit) return null;
       return {
         id:          String(hit.id),
-        name:        `${hit.first_name ?? ""} ${hit.last_name ?? ""}`.trim(),
-        companyId:   hit.company_id   ? String(hit.company_id)   : undefined,
-        companyName: hit.company_name ? String(hit.company_name) : undefined,
+        name:        String(hit.fullName ?? `${hit.firstName ?? ""} ${hit.lastName ?? ""}`).trim(),
+        companyId:   hit.company?.id   ? String((hit.company as Record<string,unknown>).id)   : undefined,
+        companyName: hit.company?.name ? String((hit.company as Record<string,unknown>).name) : undefined,
       };
     } catch { return null; }
   };

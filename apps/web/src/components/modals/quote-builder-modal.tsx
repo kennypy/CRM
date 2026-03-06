@@ -116,7 +116,7 @@ export function QuoteBuilderModal({
         const j   = await res.json();
         setContactResults((j.data ?? []).map((c: Record<string, unknown>) => ({
           id:    String(c.id),
-          name:  `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim(),
+          name:  String(c.fullName ?? `${c.firstName ?? ""} ${c.lastName ?? ""}`).trim(),
           email: String(c.email ?? ""),
         })));
         setContactOpen(true);
