@@ -88,25 +88,24 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
   const [merging, setMerging] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      api.get(`/api/admin/tenants/${id}`),
-      api.get(`/api/admin/tenants/${id}/users`),
-      api.get(`/api/admin/tenants/${id}/stats`),
-    ]).then(async ([tenantRes, usersRes, statsRes]) => {
-      if (tenantRes.ok) {
-        const t = (await tenantRes.json()).data;
+    const loadTenant = api.get(`/api/admin/tenants/${id}`).then(async (res) => {
+      if (res.ok) {
+        const t = (await res.json()).data;
         setTenant(t);
         setEditName(t.name);
         setEditPlan(t.plan);
       }
-      if (usersRes.ok) {
-        setUsers((await usersRes.json()).data ?? []);
-      }
-      if (statsRes.ok) {
-        setStats((await statsRes.json()).data ?? null);
-      }
-      setLoading(false);
-    });
+    }).catch(() => {});
+
+    const loadUsers = api.get(`/api/admin/tenants/${id}/users`).then(async (res) => {
+      if (res.ok) setUsers((await res.json()).data ?? []);
+    }).catch(() => {});
+
+    const loadStats = api.get(`/api/admin/tenants/${id}/stats`).then(async (res) => {
+      if (res.ok) setStats((await res.json()).data ?? null);
+    }).catch(() => {});
+
+    Promise.all([loadTenant, loadUsers, loadStats]).finally(() => setLoading(false));
   }, [id]);
 
   const saveBasicInfo = async () => {

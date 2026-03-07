@@ -29,8 +29,7 @@ export default function WorkspacesPage() {
         const json = await res.json();
         setTenants(json.data ?? []);
       }
-      setLoading(false);
-    });
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   // Build hierarchical structure: parents first, children indented

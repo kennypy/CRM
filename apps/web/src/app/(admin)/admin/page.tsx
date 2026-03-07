@@ -38,20 +38,15 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      api.get("/api/admin/tenants"),
-      api.get("/api/admin/stats/platform"),
-    ]).then(async ([tenantsRes, statsRes]) => {
-      if (tenantsRes.ok) {
-        const json = await tenantsRes.json();
-        setTenants(json.data ?? []);
-      }
-      if (statsRes.ok) {
-        const json = await statsRes.json();
-        setPlatformStats(json.data ?? null);
-      }
-      setLoading(false);
-    });
+    const loadTenants = api.get("/api/admin/tenants").then(async (res) => {
+      if (res.ok) setTenants((await res.json()).data ?? []);
+    }).catch(() => {});
+
+    const loadStats = api.get("/api/admin/stats/platform").then(async (res) => {
+      if (res.ok) setPlatformStats((await res.json()).data ?? null);
+    }).catch(() => {});
+
+    Promise.all([loadTenants, loadStats]).finally(() => setLoading(false));
   }, []);
 
   const totalUsers = tenants.reduce((sum, t) => sum + t.userCount, 0);

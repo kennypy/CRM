@@ -45,8 +45,16 @@ export async function adminRoutes(server: FastifyInstance) {
 
   /** GET /admin/tenants — list all workspaces */
   server.get("/tenants", async (_request, reply) => {
-    const tenants = await listAllTenants();
-    return reply.send({ success: true, data: tenants });
+    try {
+      const tenants = await listAllTenants();
+      return reply.send({ success: true, data: tenants });
+    } catch (err: any) {
+      server.log.error({ err: err.message }, "admin.tenants.list_failed");
+      return reply.status(500).send({
+        success: false,
+        error: { code: "QUERY_ERROR", message: err.message },
+      });
+    }
   });
 
   /** GET /admin/tenants/:id — single workspace detail */
@@ -245,26 +253,36 @@ export async function adminRoutes(server: FastifyInstance) {
 
   /** GET /admin/tenants/:id/stats — workspace usage statistics */
   server.get<{ Params: { id: string } }>("/tenants/:id/stats", async (request, reply) => {
-    const tenant = await getTenantDetail(request.params.id);
-    if (!tenant) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: "NOT_FOUND", message: "Workspace not found" },
-      });
+    try {
+      const tenant = await getTenantDetail(request.params.id);
+      if (!tenant) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: "NOT_FOUND", message: "Workspace not found" },
+        });
+      }
+
+      const stats = await getWorkspaceStats(request.params.id);
+      const childStats = tenant.children.length > 0
+        ? await aggregateChildStats(request.params.id)
+        : undefined;
+
+      return reply.send({ success: true, data: { ...stats, childStats } });
+    } catch (err: any) {
+      server.log.error({ err: err.message }, "admin.tenant.stats_failed");
+      return reply.send({ success: true, data: { current: { period: "", apiCalls: 0, aiEvents: 0, aiTokens: 0, emailsSent: 0, callsMade: 0, storageBytes: 0 }, history: [] } });
     }
-
-    const stats = await getWorkspaceStats(request.params.id);
-    const childStats = tenant.children.length > 0
-      ? await aggregateChildStats(request.params.id)
-      : undefined;
-
-    return reply.send({ success: true, data: { ...stats, childStats } });
   });
 
   /** GET /admin/stats/platform — platform-wide stats */
   server.get("/stats/platform", async (_request, reply) => {
-    const stats = await getPlatformStats();
-    return reply.send({ success: true, data: stats });
+    try {
+      const stats = await getPlatformStats();
+      return reply.send({ success: true, data: stats });
+    } catch (err: any) {
+      server.log.error({ err: err.message }, "admin.platform_stats_failed");
+      return reply.send({ success: true, data: { period: "", apiCalls: 0, aiEvents: 0, aiTokens: 0, emailsSent: 0, callsMade: 0, storageBytes: 0 } });
+    }
   });
 
   // ── Workspace merging ───────────────────────────────────────────────────────

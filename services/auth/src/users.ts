@@ -184,58 +184,100 @@ export async function listAllTenants(): Promise<Array<{
   childCount: number;
   createdAt: string;
 }>> {
-  const { rows } = await pool.query(
-    `SELECT t.id, t.name, t.slug, t.plan, t.data_region, t.settings, t.created_at,
-            t.parent_tenant_id,
-            COUNT(DISTINCT u.id)::int AS user_count,
-            (SELECT COUNT(*)::int FROM tenants c WHERE c.parent_tenant_id = t.id AND c.deleted_at IS NULL) AS child_count
-     FROM tenants t
-     LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
-     WHERE t.slug != '_platform' AND t.deleted_at IS NULL
-     GROUP BY t.id
-     ORDER BY t.parent_tenant_id NULLS FIRST, t.created_at DESC`
-  );
-  return rows.map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    slug: r.slug,
-    plan: r.plan,
-    dataRegion: r.data_region,
-    settings: r.settings,
-    parentTenantId: r.parent_tenant_id,
-    userCount: r.user_count,
-    childCount: r.child_count,
-    createdAt: r.created_at,
-  }));
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.id, t.name, t.slug, t.plan, t.data_region, t.settings, t.created_at,
+              t.parent_tenant_id,
+              COUNT(DISTINCT u.id)::int AS user_count,
+              (SELECT COUNT(*)::int FROM tenants c WHERE c.parent_tenant_id = t.id AND c.deleted_at IS NULL) AS child_count
+       FROM tenants t
+       LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
+       WHERE t.slug != '_platform' AND t.deleted_at IS NULL
+       GROUP BY t.id
+       ORDER BY t.parent_tenant_id NULLS FIRST, t.created_at DESC`
+    );
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      plan: r.plan,
+      dataRegion: r.data_region,
+      settings: r.settings,
+      parentTenantId: r.parent_tenant_id ?? null,
+      userCount: r.user_count,
+      childCount: r.child_count ?? 0,
+      createdAt: r.created_at,
+    }));
+  } catch {
+    // Fallback: migration 022 may not have been applied yet (parent_tenant_id missing)
+    const { rows } = await pool.query(
+      `SELECT t.id, t.name, t.slug, t.plan, t.data_region, t.settings, t.created_at,
+              COUNT(u.id)::int AS user_count
+       FROM tenants t
+       LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
+       WHERE t.slug != '_platform' AND t.deleted_at IS NULL
+       GROUP BY t.id
+       ORDER BY t.created_at DESC`
+    );
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      plan: r.plan,
+      dataRegion: r.data_region,
+      settings: r.settings,
+      parentTenantId: null,
+      userCount: r.user_count,
+      childCount: 0,
+      createdAt: r.created_at,
+    }));
+  }
 }
 
 /** Get a single tenant with user count, parent info, and children. */
 export async function getTenantDetail(tenantId: string) {
-  const { rows } = await pool.query(
-    `SELECT t.*,
-            COUNT(DISTINCT u.id)::int AS user_count,
-            p.name AS parent_name,
-            p.slug AS parent_slug
-     FROM tenants t
-     LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
-     LEFT JOIN tenants p ON p.id = t.parent_tenant_id AND p.deleted_at IS NULL
-     WHERE t.id = $1 AND t.deleted_at IS NULL
-     GROUP BY t.id, p.name, p.slug`,
-    [tenantId]
-  );
-  if (!rows[0]) return null;
-  const r = rows[0] as any;
+  let r: any;
+  let children: any[] = [];
 
-  // Fetch children
-  const { rows: children } = await pool.query(
-    `SELECT c.id, c.name, c.slug, c.plan, COUNT(u.id)::int AS user_count
-     FROM tenants c
-     LEFT JOIN users u ON u.tenant_id = c.id AND u.deleted_at IS NULL
-     WHERE c.parent_tenant_id = $1 AND c.deleted_at IS NULL
-     GROUP BY c.id
-     ORDER BY c.created_at`,
-    [tenantId]
-  );
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.*,
+              COUNT(DISTINCT u.id)::int AS user_count,
+              p.name AS parent_name,
+              p.slug AS parent_slug
+       FROM tenants t
+       LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
+       LEFT JOIN tenants p ON p.id = t.parent_tenant_id AND p.deleted_at IS NULL
+       WHERE t.id = $1 AND t.deleted_at IS NULL
+       GROUP BY t.id, p.name, p.slug`,
+      [tenantId]
+    );
+    if (!rows[0]) return null;
+    r = rows[0];
+
+    const { rows: childRows } = await pool.query(
+      `SELECT c.id, c.name, c.slug, c.plan, COUNT(u.id)::int AS user_count
+       FROM tenants c
+       LEFT JOIN users u ON u.tenant_id = c.id AND u.deleted_at IS NULL
+       WHERE c.parent_tenant_id = $1 AND c.deleted_at IS NULL
+       GROUP BY c.id
+       ORDER BY c.created_at`,
+      [tenantId]
+    );
+    children = childRows;
+  } catch {
+    // Fallback: migration 022 may not have been applied yet
+    const { rows } = await pool.query(
+      `SELECT t.*, COUNT(u.id)::int AS user_count
+       FROM tenants t
+       LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
+       WHERE t.id = $1 AND t.deleted_at IS NULL
+       GROUP BY t.id`,
+      [tenantId]
+    );
+    if (!rows[0]) return null;
+    r = rows[0];
+  }
 
   return {
     id: r.id,
@@ -244,7 +286,7 @@ export async function getTenantDetail(tenantId: string) {
     plan: r.plan,
     dataRegion: r.data_region,
     settings: r.settings,
-    parentTenantId: r.parent_tenant_id,
+    parentTenantId: r.parent_tenant_id ?? null,
     parentName: r.parent_name ?? null,
     parentSlug: r.parent_slug ?? null,
     userCount: r.user_count,
