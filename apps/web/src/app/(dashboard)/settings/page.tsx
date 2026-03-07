@@ -268,7 +268,7 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
   };
 
   return (
-    <div className="space-y-6 max-w-lg">
+    <div className="space-y-6 max-w-lg" suppressHydrationWarning>
       <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-700">
         <Building2 className="h-4 w-4 shrink-0" />
         <p>These settings apply to your entire workspace. Only admins can change them.</p>
@@ -278,12 +278,12 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
         <div className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium">Organisation name</label>
-            <input value={orgName} onChange={(e) => setOrgName(e.target.value)}
+            <input value={orgName} onChange={(e) => setOrgName(e.target.value)} suppressHydrationWarning
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium flex items-center gap-2"><Globe className="h-4 w-4" />Timezone</label>
-            <select value={timezone} onChange={(e) => setTimezone(e.target.value)}
+            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} suppressHydrationWarning
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
               {SUPPORTED_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
             </select>
@@ -291,7 +291,7 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
           <div>
             <label className="mb-1.5 block text-sm font-medium">Default currency</label>
             <p className="mb-2 text-xs text-muted-foreground">All new deals default to this currency.</p>
-            <select value={currency} onChange={(e) => setCurrency(e.target.value)}
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)} suppressHydrationWarning
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
               {SUPPORTED_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -300,7 +300,7 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
       </div>
       {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
       <div className="flex items-center gap-3">
-        <button onClick={save} disabled={saving}
+        <button onClick={save} disabled={saving} suppressHydrationWarning
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
           {saving ? "Saving…" : "Save changes"}
         </button>
