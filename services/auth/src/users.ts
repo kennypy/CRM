@@ -159,3 +159,108 @@ export function toPublicTenant(t: { id: string; name: string; slug: string; plan
 export function scopesForRole(role: UserRole): string[] {
   return SCOPES_MAP[role] ?? [];
 }
+
+/** Find a super_admin user by email (checks the _platform tenant). */
+export async function findSuperAdminByEmail(email: string): Promise<DBUser | null> {
+  const { rows } = await pool.query<DBUser>(
+    `SELECT u.* FROM users u
+     JOIN tenants t ON u.tenant_id = t.id
+     WHERE t.slug = '_platform' AND u.email = $1 AND u.role = 'super_admin' AND u.deleted_at IS NULL`,
+    [email.toLowerCase()]
+  );
+  return rows[0] ?? null;
+}
+
+/** List all tenants with user counts (excludes _platform). */
+export async function listAllTenants(): Promise<Array<{
+  id: string;
+  name: string;
+  slug: string;
+  plan: string;
+  dataRegion: string;
+  settings: Record<string, unknown>;
+  userCount: number;
+  createdAt: string;
+}>> {
+  const { rows } = await pool.query(
+    `SELECT t.id, t.name, t.slug, t.plan, t.data_region, t.settings, t.created_at,
+            COUNT(u.id)::int AS user_count
+     FROM tenants t
+     LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
+     WHERE t.slug != '_platform' AND t.deleted_at IS NULL
+     GROUP BY t.id
+     ORDER BY t.created_at DESC`
+  );
+  return rows.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    plan: r.plan,
+    dataRegion: r.data_region,
+    settings: r.settings,
+    userCount: r.user_count,
+    createdAt: r.created_at,
+  }));
+}
+
+/** Get a single tenant with user count. */
+export async function getTenantDetail(tenantId: string) {
+  const { rows } = await pool.query(
+    `SELECT t.*, COUNT(u.id)::int AS user_count
+     FROM tenants t
+     LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
+     WHERE t.id = $1 AND t.deleted_at IS NULL
+     GROUP BY t.id`,
+    [tenantId]
+  );
+  if (!rows[0]) return null;
+  const r = rows[0] as any;
+  return {
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    plan: r.plan,
+    dataRegion: r.data_region,
+    settings: r.settings,
+    userCount: r.user_count,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+/** Update tenant settings (merges into the existing JSONB). */
+export async function updateTenantSettings(
+  tenantId: string,
+  settings: Record<string, unknown>
+): Promise<void> {
+  await pool.query(
+    `UPDATE tenants SET settings = settings || $2::jsonb WHERE id = $1`,
+    [tenantId, JSON.stringify(settings)]
+  );
+}
+
+/** Update tenant basic info (name, plan). */
+export async function updateTenant(
+  tenantId: string,
+  data: { name?: string; plan?: string }
+): Promise<void> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let idx = 1;
+  if (data.name) { sets.push(`name = $${++idx}`); vals.push(data.name); }
+  if (data.plan) { sets.push(`plan = $${++idx}`); vals.push(data.plan); }
+  if (sets.length === 0) return;
+  await pool.query(
+    `UPDATE tenants SET ${sets.join(", ")} WHERE id = $1`,
+    [tenantId, ...vals]
+  );
+}
+
+/** List users belonging to a tenant. */
+export async function listTenantUsers(tenantId: string): Promise<DBUser[]> {
+  const { rows } = await pool.query<DBUser>(
+    `SELECT * FROM users WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
+    [tenantId]
+  );
+  return rows;
+}

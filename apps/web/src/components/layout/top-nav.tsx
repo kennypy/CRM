@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
 import { useCommandBarStore } from "@/stores/command-bar-store";
+import { usePermissions } from "@/lib/permissions";
 import type { StoredUser } from "@/lib/auth";
 
 const PRIMARY_NAV = [
@@ -261,6 +262,16 @@ export function TopNav() {
         <span className="hidden md:block">Search…</span>
         <kbd className="hidden md:inline rounded border bg-background px-1.5 py-0.5 font-mono text-xs">⌘K</kbd>
       </button>
+
+      {/* Admin — super_admin only */}
+      {usePermissions().isSuperAdmin && (
+        <Link href="/admin"
+          className={cn("rounded-md p-2 text-red-600 hover:bg-red-50 transition-colors",
+            pathname.startsWith("/admin") && "bg-red-100")}
+          title="Platform Admin">
+          <Shield className="h-4 w-4" />
+        </Link>
+      )}
 
       {/* Settings */}
       <Link href="/settings"
