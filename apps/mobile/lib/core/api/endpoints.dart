@@ -16,12 +16,12 @@ class Endpoints {
     defaultValue: 'http://10.0.2.2:4001',
   );
 
-  // Auth
-  static String get login => '$authUrl/auth/login';
-  static String get register => '$authUrl/auth/register';
-  static String get refresh => '$authUrl/auth/refresh';
-  static String get forgotPassword => '$authUrl/auth/forgot-password';
-  static String get me => '$authUrl/auth/me';
+  // Auth — routed through the API gateway so CORS is handled in one place.
+  static String get login => '$apiUrl/auth/login';
+  static String get register => '$apiUrl/auth/register';
+  static String get refresh => '$apiUrl/auth/refresh';
+  static String get forgotPassword => '$apiUrl/auth/forgot-password';
+  static String get me => '$apiUrl/auth/me';
 
   // CRM
   static String get contacts => '$apiUrl/api/v1/contacts';

@@ -94,7 +94,10 @@ async function bootstrap() {
   });
 
   await server.register(cors, {
-    origin: process.env.APP_URL ?? "http://localhost:3000",
+    origin:
+      process.env.NODE_ENV === "production"
+        ? process.env.APP_URL ?? "http://localhost:3000"
+        : true, // allow any origin in development (Flutter web uses random ports)
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
