@@ -5,13 +5,13 @@
 
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
-const ENCRYPTION_KEY = process.env.OAUTH_ENCRYPTION_KEY ?? process.env.ENCRYPTION_KEY ?? "";
+const ENCRYPTION_KEY = process.env.OAUTH_ENCRYPTION_KEY ?? "";
 
 function getKey(): Buffer {
-  if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length < 32) {
-    throw new Error("OAUTH_ENCRYPTION_KEY must be a 32+ character hex string");
+  if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 64) {
+    throw new Error("OAUTH_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)");
   }
-  return Buffer.from(ENCRYPTION_KEY.slice(0, 64), "hex");
+  return Buffer.from(ENCRYPTION_KEY, "hex");
 }
 
 /**
