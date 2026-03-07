@@ -11,9 +11,13 @@ import {
   updateTenantSettings,
   updateTenant,
   createTenantWithAdmin,
+  createSubWorkspace,
+  listChildTenants,
   listTenantUsers,
   toPublicUser,
 } from "../users";
+import { getWorkspaceStats, aggregateChildStats, getPlatformStats } from "../stats";
+import { createMerge, getMerge, previewMerge, saveResolutions, executeMerge, cancelMerge } from "../merge";
 
 function isSuperAdmin(request: any): boolean {
   const jwt = request.user as { role?: string } | undefined;
@@ -170,5 +174,187 @@ export async function adminRoutes(server: FastifyInstance) {
   server.get<{ Params: { id: string } }>("/tenants/:id/users", async (request, reply) => {
     const users = await listTenantUsers(request.params.id);
     return reply.send({ success: true, data: users.map(toPublicUser) });
+  });
+
+  // ── Sub-workspaces ──────────────────────────────────────────────────────────
+
+  /** GET /admin/tenants/:id/children — list direct sub-workspaces */
+  server.get<{ Params: { id: string } }>("/tenants/:id/children", async (request, reply) => {
+    const children = await listChildTenants(request.params.id);
+    return reply.send({ success: true, data: children });
+  });
+
+  /** POST /admin/tenants/:id/sub-workspaces — create a sub-workspace */
+  server.post<{ Params: { id: string } }>("/tenants/:id/sub-workspaces", async (request, reply) => {
+    const parent = await getTenantDetail(request.params.id);
+    if (!parent) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Parent workspace not found" },
+      });
+    }
+
+    const schema = z.object({
+      tenantName: z.string().min(2).max(100),
+      tenantSlug: z
+        .string()
+        .min(2)
+        .max(50)
+        .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens only"),
+      firstName: z.string().min(1).max(50),
+      lastName: z.string().min(1).max(50),
+      email: z.string().email(),
+      password: z
+        .string()
+        .min(12, "Password must be at least 12 characters")
+        .regex(/[a-z]/, "Must contain a lowercase letter")
+        .regex(/[A-Z]/, "Must contain an uppercase letter")
+        .regex(/[0-9]/, "Must contain a number")
+        .regex(/[^a-zA-Z0-9]/, "Must contain a special character"),
+      plan: z.enum(["starter", "growth", "enterprise"]).optional(),
+    });
+
+    const body = schema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
+      });
+    }
+
+    try {
+      const result = await createSubWorkspace({
+        parentId: request.params.id,
+        ...body.data,
+      });
+      const tenant = await getTenantDetail(result.tenantId);
+      server.log.info({ tenantId: result.tenantId, parentId: request.params.id }, "admin.sub_workspace.created");
+      return reply.status(201).send({ success: true, data: tenant });
+    } catch (err: any) {
+      if (err.code === "23505") {
+        return reply.status(409).send({
+          success: false,
+          error: { code: "SLUG_TAKEN", message: "That organisation slug is already taken" },
+        });
+      }
+      throw err;
+    }
+  });
+
+  // ── Workspace stats ─────────────────────────────────────────────────────────
+
+  /** GET /admin/tenants/:id/stats — workspace usage statistics */
+  server.get<{ Params: { id: string } }>("/tenants/:id/stats", async (request, reply) => {
+    const tenant = await getTenantDetail(request.params.id);
+    if (!tenant) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Workspace not found" },
+      });
+    }
+
+    const stats = await getWorkspaceStats(request.params.id);
+    const childStats = tenant.children.length > 0
+      ? await aggregateChildStats(request.params.id)
+      : undefined;
+
+    return reply.send({ success: true, data: { ...stats, childStats } });
+  });
+
+  /** GET /admin/stats/platform — platform-wide stats */
+  server.get("/stats/platform", async (_request, reply) => {
+    const stats = await getPlatformStats();
+    return reply.send({ success: true, data: stats });
+  });
+
+  // ── Workspace merging ───────────────────────────────────────────────────────
+
+  /** POST /admin/merges — start a merge (preview conflicts) */
+  server.post("/merges", async (request, reply) => {
+    const schema = z.object({
+      sourceId: z.string().uuid(),
+      targetId: z.string().uuid(),
+    });
+
+    const body = schema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
+      });
+    }
+
+    if (body.data.sourceId === body.data.targetId) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "INVALID_MERGE", message: "Cannot merge a workspace with itself" },
+      });
+    }
+
+    const jwt = request.user as { sub: string };
+    const mergeId = await createMerge(body.data.sourceId, body.data.targetId, jwt.sub);
+    const report = await previewMerge(mergeId, body.data.sourceId, body.data.targetId);
+    const merge = await getMerge(mergeId);
+
+    server.log.info({ mergeId, sourceId: body.data.sourceId, targetId: body.data.targetId }, "admin.merge.created");
+    return reply.status(201).send({ success: true, data: { ...merge, conflicts: report.conflicts, stats: report.stats } });
+  });
+
+  /** GET /admin/merges/:id — get merge details */
+  server.get<{ Params: { id: string } }>("/merges/:id", async (request, reply) => {
+    const merge = await getMerge(request.params.id);
+    if (!merge) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Merge not found" },
+      });
+    }
+    return reply.send({ success: true, data: merge });
+  });
+
+  /** PATCH /admin/merges/:id — submit resolutions */
+  server.patch<{ Params: { id: string } }>("/merges/:id", async (request, reply) => {
+    const schema = z.object({
+      resolutions: z.array(z.object({
+        entityType: z.string(),
+        matchKey: z.string(),
+        action: z.enum(["keep_source", "keep_target", "merge_fields"]),
+        fieldOverrides: z.record(z.string(), z.enum(["source", "target"])).optional(),
+      })),
+    });
+
+    const body = schema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
+      });
+    }
+
+    await saveResolutions(request.params.id, body.data.resolutions);
+    const merge = await getMerge(request.params.id);
+    return reply.send({ success: true, data: merge });
+  });
+
+  /** POST /admin/merges/:id/execute — execute an approved merge */
+  server.post<{ Params: { id: string } }>("/merges/:id/execute", async (request, reply) => {
+    try {
+      await executeMerge(request.params.id);
+      const merge = await getMerge(request.params.id);
+      server.log.info({ mergeId: request.params.id }, "admin.merge.executed");
+      return reply.send({ success: true, data: merge });
+    } catch (err: any) {
+      return reply.status(500).send({
+        success: false,
+        error: { code: "MERGE_FAILED", message: err.message },
+      });
+    }
+  });
+
+  /** POST /admin/merges/:id/cancel — cancel a merge */
+  server.post<{ Params: { id: string } }>("/merges/:id/cancel", async (request, reply) => {
+    await cancelMerge(request.params.id);
+    const merge = await getMerge(request.params.id);
+    return reply.send({ success: true, data: merge });
   });
 }

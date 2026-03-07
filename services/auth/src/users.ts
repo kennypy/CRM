@@ -171,7 +171,7 @@ export async function findSuperAdminByEmail(email: string): Promise<DBUser | nul
   return rows[0] ?? null;
 }
 
-/** List all tenants with user counts (excludes _platform). */
+/** List all tenants with user counts and child counts (excludes _platform). */
 export async function listAllTenants(): Promise<Array<{
   id: string;
   name: string;
@@ -179,17 +179,21 @@ export async function listAllTenants(): Promise<Array<{
   plan: string;
   dataRegion: string;
   settings: Record<string, unknown>;
+  parentTenantId: string | null;
   userCount: number;
+  childCount: number;
   createdAt: string;
 }>> {
   const { rows } = await pool.query(
     `SELECT t.id, t.name, t.slug, t.plan, t.data_region, t.settings, t.created_at,
-            COUNT(u.id)::int AS user_count
+            t.parent_tenant_id,
+            COUNT(DISTINCT u.id)::int AS user_count,
+            (SELECT COUNT(*)::int FROM tenants c WHERE c.parent_tenant_id = t.id AND c.deleted_at IS NULL) AS child_count
      FROM tenants t
      LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
      WHERE t.slug != '_platform' AND t.deleted_at IS NULL
      GROUP BY t.id
-     ORDER BY t.created_at DESC`
+     ORDER BY t.parent_tenant_id NULLS FIRST, t.created_at DESC`
   );
   return rows.map((r: any) => ({
     id: r.id,
@@ -198,23 +202,41 @@ export async function listAllTenants(): Promise<Array<{
     plan: r.plan,
     dataRegion: r.data_region,
     settings: r.settings,
+    parentTenantId: r.parent_tenant_id,
     userCount: r.user_count,
+    childCount: r.child_count,
     createdAt: r.created_at,
   }));
 }
 
-/** Get a single tenant with user count. */
+/** Get a single tenant with user count, parent info, and children. */
 export async function getTenantDetail(tenantId: string) {
   const { rows } = await pool.query(
-    `SELECT t.*, COUNT(u.id)::int AS user_count
+    `SELECT t.*,
+            COUNT(DISTINCT u.id)::int AS user_count,
+            p.name AS parent_name,
+            p.slug AS parent_slug
      FROM tenants t
      LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
+     LEFT JOIN tenants p ON p.id = t.parent_tenant_id AND p.deleted_at IS NULL
      WHERE t.id = $1 AND t.deleted_at IS NULL
-     GROUP BY t.id`,
+     GROUP BY t.id, p.name, p.slug`,
     [tenantId]
   );
   if (!rows[0]) return null;
   const r = rows[0] as any;
+
+  // Fetch children
+  const { rows: children } = await pool.query(
+    `SELECT c.id, c.name, c.slug, c.plan, COUNT(u.id)::int AS user_count
+     FROM tenants c
+     LEFT JOIN users u ON u.tenant_id = c.id AND u.deleted_at IS NULL
+     WHERE c.parent_tenant_id = $1 AND c.deleted_at IS NULL
+     GROUP BY c.id
+     ORDER BY c.created_at`,
+    [tenantId]
+  );
+
   return {
     id: r.id,
     name: r.name,
@@ -222,7 +244,17 @@ export async function getTenantDetail(tenantId: string) {
     plan: r.plan,
     dataRegion: r.data_region,
     settings: r.settings,
+    parentTenantId: r.parent_tenant_id,
+    parentName: r.parent_name ?? null,
+    parentSlug: r.parent_slug ?? null,
     userCount: r.user_count,
+    children: children.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      plan: c.plan,
+      userCount: c.user_count,
+    })),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -263,4 +295,82 @@ export async function listTenantUsers(tenantId: string): Promise<DBUser[]> {
     [tenantId]
   );
   return rows;
+}
+
+/** Create a sub-workspace under a parent tenant. */
+export async function createSubWorkspace(input: {
+  parentId: string;
+  tenantName: string;
+  tenantSlug: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  plan?: string;
+}): Promise<{ tenantId: string; userId: string }> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const plan = input.plan ?? "starter";
+    const { rows: [tenant] } = await client.query(
+      `INSERT INTO tenants (name, slug, plan, data_region, parent_tenant_id, settings)
+       VALUES ($1, $2, $3, 'us', $4, $5)
+       RETURNING id`,
+      [
+        input.tenantName,
+        input.tenantSlug,
+        plan,
+        input.parentId,
+        JSON.stringify({
+          aiEnabled: true,
+          aiMonthlyBudgetEvents: 10000,
+          aiEventsUsedThisMonth: 0,
+          confidenceThreshold: 0.75,
+          autoApproveThreshold: 0.90,
+          features: { commandBar: true, realityScore: true, reviewQueue: true },
+        }),
+      ]
+    );
+
+    const pwHash = await hashPassword(input.password);
+    const { rows: [user] } = await client.query(
+      `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role)
+       VALUES ($1, $2, $3, $4, $5, 'admin')
+       RETURNING id`,
+      [tenant.id, input.email.toLowerCase(), pwHash, input.firstName, input.lastName]
+    );
+
+    await client.query("COMMIT");
+    return { tenantId: tenant.id, userId: user.id };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** List direct children of a tenant. */
+export async function listChildTenants(parentId: string) {
+  const { rows } = await pool.query(
+    `SELECT t.id, t.name, t.slug, t.plan, t.data_region, t.settings, t.created_at,
+            COUNT(u.id)::int AS user_count
+     FROM tenants t
+     LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
+     WHERE t.parent_tenant_id = $1 AND t.deleted_at IS NULL
+     GROUP BY t.id
+     ORDER BY t.created_at`,
+    [parentId]
+  );
+  return rows.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    plan: r.plan,
+    dataRegion: r.data_region,
+    settings: r.settings,
+    userCount: r.user_count,
+    createdAt: r.created_at,
+  }));
 }

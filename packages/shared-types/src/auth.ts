@@ -28,11 +28,66 @@ export interface User {
 export interface Tenant {
   id: string;
   name: string;
+  slug: string;
   domain?: string;
   plan: "starter" | "growth" | "enterprise";
   dataRegion: "us" | "eu" | "apac";
   settings: TenantSettings;
+  parentTenantId?: string | null;
   createdAt: string;
+}
+
+// ── Workspace merge types ───────────────────────────────────────────────────
+
+export type MergeStatus = "pending" | "previewing" | "approved" | "in_progress" | "completed" | "failed" | "cancelled";
+
+export interface MergeConflict {
+  entityType: "user" | "company" | "contact" | "sequence" | "automation" | "custom_object" | "custom_field";
+  sourceRecord: { id: string; label: string; fields: Record<string, unknown> };
+  targetRecord: { id: string; label: string; fields: Record<string, unknown> };
+  matchKey: string;
+  conflictingFields: string[];
+}
+
+export interface MergeResolution {
+  entityType: string;
+  matchKey: string;
+  action: "keep_source" | "keep_target" | "merge_fields";
+  fieldOverrides?: Record<string, "source" | "target">;
+}
+
+export interface WorkspaceMerge {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  sourceName?: string;
+  targetName?: string;
+  initiatedBy: string;
+  status: MergeStatus;
+  conflicts: MergeConflict[];
+  resolutions: MergeResolution[];
+  summary?: { moved: number; merged: number; skipped: number };
+  errorMessage?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+// ── Workspace stats types ───────────────────────────────────────────────────
+
+export interface WorkspaceUsageStats {
+  period: string;
+  apiCalls: number;
+  aiEvents: number;
+  aiTokens: number;
+  emailsSent: number;
+  callsMade: number;
+  storageBytes: number;
+}
+
+export interface WorkspaceStatsResponse {
+  current: WorkspaceUsageStats;
+  history: WorkspaceUsageStats[];
+  childStats?: Array<{ tenantId: string; tenantName: string; stats: WorkspaceUsageStats }>;
 }
 
 export interface TenantSettings {

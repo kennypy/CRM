@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Building2, Users, ArrowRight } from "lucide-react";
+import { Building2, Users, ArrowRight, Activity, Brain, Mail, Phone } from "lucide-react";
 import { api } from "@/lib/api";
 
 interface TenantSummary {
@@ -11,24 +11,52 @@ interface TenantSummary {
   slug: string;
   plan: string;
   userCount: number;
+  childCount: number;
+  parentTenantId: string | null;
   createdAt: string;
+}
+
+interface PlatformStats {
+  period: string;
+  apiCalls: number;
+  aiEvents: number;
+  aiTokens: number;
+  emailsSent: number;
+  callsMade: number;
+  storageBytes: number;
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
 }
 
 export default function AdminDashboardPage() {
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
+  const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/api/admin/tenants").then(async (res) => {
-      if (res.ok) {
-        const json = await res.json();
+    Promise.all([
+      api.get("/api/admin/tenants"),
+      api.get("/api/admin/stats/platform"),
+    ]).then(async ([tenantsRes, statsRes]) => {
+      if (tenantsRes.ok) {
+        const json = await tenantsRes.json();
         setTenants(json.data ?? []);
+      }
+      if (statsRes.ok) {
+        const json = await statsRes.json();
+        setPlatformStats(json.data ?? null);
       }
       setLoading(false);
     });
   }, []);
 
   const totalUsers = tenants.reduce((sum, t) => sum + t.userCount, 0);
+  const topLevel = tenants.filter(t => !t.parentTenantId);
+  const subWorkspaces = tenants.filter(t => t.parentTenantId);
   const planCounts = tenants.reduce(
     (acc, t) => { acc[t.plan] = (acc[t.plan] ?? 0) + 1; return acc; },
     {} as Record<string, number>
@@ -47,12 +75,15 @@ export default function AdminDashboardPage() {
         <div className="text-sm text-muted-foreground">Loading...</div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <div className="rounded-xl border bg-card p-5">
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Workspaces</p>
-                  <p className="mt-1 text-2xl font-bold">{tenants.length}</p>
+                  <p className="mt-1 text-2xl font-bold">{topLevel.length}</p>
+                  {subWorkspaces.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-0.5">+ {subWorkspaces.length} sub</p>
+                  )}
                 </div>
                 <div className="rounded-lg bg-blue-100 p-2.5 text-blue-600">
                   <Building2 className="h-5 w-5" />
@@ -85,6 +116,38 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
             </div>
+
+            {platformStats && (
+              <div className="rounded-xl border bg-card p-5">
+                <p className="text-sm text-muted-foreground">This Month</p>
+                <div className="mt-2 space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-1.5">
+                      <Activity className="h-3.5 w-3.5 text-blue-500" /> API Calls
+                    </span>
+                    <span className="font-medium">{formatNumber(platformStats.apiCalls)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-1.5">
+                      <Brain className="h-3.5 w-3.5 text-purple-500" /> AI Events
+                    </span>
+                    <span className="font-medium">{formatNumber(platformStats.aiEvents)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3.5 text-green-500" /> Emails
+                    </span>
+                    <span className="font-medium">{formatNumber(platformStats.emailsSent)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-1.5">
+                      <Phone className="h-3.5 w-3.5 text-orange-500" /> Calls
+                    </span>
+                    <span className="font-medium">{formatNumber(platformStats.callsMade)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border bg-card">
@@ -106,7 +169,14 @@ export default function AdminDashboardPage() {
                 >
                   <div>
                     <p className="font-medium text-sm">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">{t.slug}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t.slug}
+                      {t.childCount > 0 && (
+                        <span className="ml-1.5 text-primary">
+                          &middot; {t.childCount} sub-workspace{t.childCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span>{t.userCount} users</span>
