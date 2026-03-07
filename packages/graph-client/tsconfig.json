@@ -7,11 +7,11 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "rootDirs": ["src", "../../packages/shared-types/src"],
-    "baseUrl": ".",
+    "rootDir": "src",
     "skipLibCheck": true,
+    "declaration": true,
     "paths": {
-      "@nexcrm/shared-types": ["../../packages/shared-types/src"]
+      "@nexcrm/shared-types": ["../shared-types/src"]
     }
   },
   "include": ["src/**/*"],

@@ -400,8 +400,8 @@ async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
         switch (agg.func) {
           case "COUNT":          aggRow[agg.alias] = _rows.length; break;
           case "COUNT_DISTINCT": aggRow[agg.alias] = new Set(vals).size; break;
-          case "SUM":            aggRow[agg.alias] = vals.reduce((s, v) => s + Number(v), 0); break;
-          case "AVG":            aggRow[agg.alias] = vals.length ? vals.reduce((s, v) => s + Number(v), 0) / vals.length : null; break;
+          case "SUM":            aggRow[agg.alias] = vals.reduce<number>((s, v) => s + Number(v), 0); break;
+          case "AVG":            aggRow[agg.alias] = vals.length ? vals.reduce<number>((s, v) => s + Number(v), 0) / vals.length : null; break;
           case "MIN":            aggRow[agg.alias] = vals.length ? vals.reduce((a, b) => Number(a) < Number(b) ? a : b) : null; break;
           case "MAX":            aggRow[agg.alias] = vals.length ? vals.reduce((a, b) => Number(a) > Number(b) ? a : b) : null; break;
         }
@@ -444,13 +444,16 @@ async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
   // 9. Limit
   rows = rows.slice(0, spec.limit ?? 1000);
 
-  // 10. Build column list (plain strings — frontend uses these as React keys + headers)
-  const columns: string[] = hasAgg
+  // 10. Build column list — frontend uses these as React keys + headers
+  const columns: { key: string; label: string }[] = hasAgg
     ? [
-        ...(spec.groupBy ?? []).map((g) => `${g.source}.${g.field}`),
-        ...(spec.aggregations ?? []).map((a) => a.alias),
+        ...(spec.groupBy ?? []).map((g) => ({ key: `${g.source}.${g.field}`, label: `${g.source}.${g.field}` })),
+        ...(spec.aggregations ?? []).map((a) => ({ key: a.alias, label: a.alias })),
       ]
-    : spec.fields.map((f) => f.alias ?? `${f.source}.${f.field}`);
+    : spec.fields.map((f) => {
+        const key = f.alias ?? `${f.source}.${f.field}`;
+        return { key, label: key };
+      });
 
   return { rows, columns, rowCount: rows.length };
 }

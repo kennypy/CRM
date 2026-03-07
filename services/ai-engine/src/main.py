@@ -37,7 +37,7 @@ log = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_telemetry()
+    setup_telemetry(app)
     log.info("ai_engine.starting")
     await get_pool()   # warm up DB connection pool
     yield

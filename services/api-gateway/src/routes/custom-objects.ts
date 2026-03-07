@@ -126,6 +126,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     const d = parsed.data;
     const { tenantId, sub: userId } = request.user;
 
+    let objId: string;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -139,6 +140,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
       );
 
       const obj = rows[0];
+      objId = obj.id;
 
       // Create associations
       for (const assoc of d.associations) {
@@ -179,7 +181,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
        LEFT JOIN custom_object_associations coa ON coa.custom_object_id = cod.id
        WHERE cod.id = $1
        GROUP BY cod.id`,
-      [obj.id]
+      [objId]
     );
 
     return reply.status(201).send({ success: true, data: toObjectDef(full[0]) });

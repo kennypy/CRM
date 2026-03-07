@@ -141,7 +141,7 @@ export function startWebhookDeliveryWorker(): void {
                       next_attempt_at = NOW() + ($4 * INTERVAL '1 second'),
                       updated_at = NOW()
                 WHERE id = $5`,
-              [job.attemptsMade + 1, lastError.slice(0, 500), responseStatus, Math.pow(5, job.attemptsMade + 1), deliveryId],
+              [job.attemptsMade + 1, lastError!.slice(0, 500), responseStatus, Math.pow(5, job.attemptsMade + 1), deliveryId],
             );
           }
         } catch (dbErr: any) {

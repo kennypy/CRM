@@ -36,7 +36,7 @@ log = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_telemetry()
+    setup_telemetry(app)
     log.info("ingestion_service.starting", version="0.1.0")
     # Workers are started via Celery separately; this service handles HTTP
     yield
