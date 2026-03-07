@@ -50,25 +50,32 @@ export async function bulkRoutes(server: FastifyInstance) {
     const errors: Array<{ id: string; error: string }> = [];
 
     if (GRAPH_ENTITIES.has(entity_type)) {
-      // Proxy to graph-core for graph entities
-      for (const id of ids) {
-        try {
-          const resp = await fetch(
-            `${GRAPH_CORE}/${entity_type === "contact" ? "contacts" : entity_type === "company" ? "companies" : "deals"}/${id}?tenantId=${tenantId}`,
-            {
-              method: "PATCH",
-              headers: {
-                "Content-Type": "application/json",
-                "x-user-id": userId,
-                "x-tenant-id": tenantId,
-              },
-              body: JSON.stringify(changes),
-            }
-          );
-          if (resp.ok) updated++;
-          else errors.push({ id, error: `HTTP ${resp.status}` });
-        } catch (err: any) {
-          errors.push({ id, error: err.message });
+      const path = entity_type === "contact" ? "contacts" : entity_type === "company" ? "companies" : "deals";
+      // Process in concurrent batches of 20 to avoid overwhelming graph-core
+      const concurrency = 20;
+      for (let i = 0; i < ids.length; i += concurrency) {
+        const batch = ids.slice(i, i + concurrency);
+        const results = await Promise.allSettled(
+          batch.map(async (id) => {
+            const resp = await fetch(
+              `${GRAPH_CORE}/${path}/${id}?tenantId=${tenantId}`,
+              {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-user-id": userId,
+                  "x-tenant-id": tenantId,
+                },
+                body: JSON.stringify(changes),
+              }
+            );
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            return id;
+          })
+        );
+        for (const [j, r] of results.entries()) {
+          if (r.status === "fulfilled") updated++;
+          else errors.push({ id: batch[j], error: r.reason?.message ?? "Unknown error" });
         }
       }
     } else {
@@ -134,22 +141,29 @@ export async function bulkRoutes(server: FastifyInstance) {
     const errors: Array<{ id: string; error: string }> = [];
 
     if (GRAPH_ENTITIES.has(entity_type)) {
-      for (const id of ids) {
-        try {
-          const resp = await fetch(
-            `${GRAPH_CORE}/${entity_type === "contact" ? "contacts" : entity_type === "company" ? "companies" : "deals"}/${id}?tenantId=${tenantId}`,
-            {
-              method: "DELETE",
-              headers: {
-                "x-user-id": userId,
-                "x-tenant-id": tenantId,
-              },
-            }
-          );
-          if (resp.ok) deleted++;
-          else errors.push({ id, error: `HTTP ${resp.status}` });
-        } catch (err: any) {
-          errors.push({ id, error: err.message });
+      const path = entity_type === "contact" ? "contacts" : entity_type === "company" ? "companies" : "deals";
+      const concurrency = 20;
+      for (let i = 0; i < ids.length; i += concurrency) {
+        const batch = ids.slice(i, i + concurrency);
+        const results = await Promise.allSettled(
+          batch.map(async (id) => {
+            const resp = await fetch(
+              `${GRAPH_CORE}/${path}/${id}?tenantId=${tenantId}`,
+              {
+                method: "DELETE",
+                headers: {
+                  "x-user-id": userId,
+                  "x-tenant-id": tenantId,
+                },
+              }
+            );
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            return id;
+          })
+        );
+        for (const [j, r] of results.entries()) {
+          if (r.status === "fulfilled") deleted++;
+          else errors.push({ id: batch[j], error: r.reason?.message ?? "Unknown error" });
         }
       }
     } else {

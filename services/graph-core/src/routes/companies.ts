@@ -314,41 +314,41 @@ export async function companiesRoutes(server: FastifyInstance) {
       return reply.status(404).send({ success: false, error: { code: "NOT_FOUND", message: "Company not found" } });
     }
 
-    const contactRows = await cypher(
-      `MATCH (p:Person {tenant_id: $tenantId})-[:WORKS_AT]->(c:Company {id: $id})
-       RETURN {
-         id: p.id, first_name: p.first_name, last_name: p.last_name,
-         email: p.email, title: p.title, seniority: p.seniority,
-         influence_score: p.influence_score, last_activity_at: p.last_activity_at,
-         created_at: p.created_at
-       }
-       ORDER BY p.last_name, p.first_name
-       LIMIT 50`,
-      { id, tenantId }
-    );
-
-    const dealRows = await cypher(
-      `MATCH (c:Company {id: $id, tenant_id: $tenantId})-[:INVOLVED_IN]->(d:Deal {tenant_id: $tenantId})
-       RETURN {
-         id: d.id, name: d.name, value: d.value, currency: d.currency,
-         stage: d.stage, probability: d.probability, close_date: d.close_date,
-         created_at: d.created_at, updated_at: d.updated_at
-       }
-       ORDER BY d.updated_at DESC
-       LIMIT 20`,
-      { id, tenantId }
-    );
-
-    const activityRows = await cypher(
-      `MATCH (a:Activity {tenant_id: $tenantId})-[:PARTICIPATED_IN]->(c:Company {id: $id})
-       RETURN {
-         id: a.id, type: a.type, subject: a.subject,
-         occurred_at: a.occurred_at, created_at: a.created_at
-       }
-       ORDER BY a.occurred_at DESC
-       LIMIT 10`,
-      { id, tenantId }
-    );
+    const [contactRows, dealRows, activityRows] = await Promise.all([
+      cypher(
+        `MATCH (p:Person {tenant_id: $tenantId})-[:WORKS_AT]->(c:Company {id: $id})
+         RETURN {
+           id: p.id, first_name: p.first_name, last_name: p.last_name,
+           email: p.email, title: p.title, seniority: p.seniority,
+           influence_score: p.influence_score, last_activity_at: p.last_activity_at,
+           created_at: p.created_at
+         }
+         ORDER BY p.last_name, p.first_name
+         LIMIT 50`,
+        { id, tenantId }
+      ),
+      cypher(
+        `MATCH (c:Company {id: $id, tenant_id: $tenantId})-[:INVOLVED_IN]->(d:Deal {tenant_id: $tenantId})
+         RETURN {
+           id: d.id, name: d.name, value: d.value, currency: d.currency,
+           stage: d.stage, probability: d.probability, close_date: d.close_date,
+           created_at: d.created_at, updated_at: d.updated_at
+         }
+         ORDER BY d.updated_at DESC
+         LIMIT 20`,
+        { id, tenantId }
+      ),
+      cypher(
+        `MATCH (a:Activity {tenant_id: $tenantId})-[:PARTICIPATED_IN]->(c:Company {id: $id})
+         RETURN {
+           id: a.id, type: a.type, subject: a.subject,
+           occurred_at: a.occurred_at, created_at: a.created_at
+         }
+         ORDER BY a.occurred_at DESC
+         LIMIT 10`,
+        { id, tenantId }
+      ),
+    ]);
 
     // Compute derived fields from already-fetched related data
     const lastCompanyActivity = activityRows[0]?.occurred_at ?? null;
