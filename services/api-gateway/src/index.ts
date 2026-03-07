@@ -28,6 +28,7 @@ import { usersRoutes }     from "./routes/users";
 import { quotesRoutes }    from "./routes/quotes";
 import { productsRoutes }  from "./routes/products";
 import { reportsRoutes }          from "./routes/reports";
+import { adminReportsRoutes }     from "./routes/admin-reports";
 import { outboundWebhooksRoutes } from "./routes/outbound-webhooks";
 import { billingRoutes }          from "./routes/billing";
 import { exportRoutes }           from "./routes/export";
@@ -146,6 +147,7 @@ async function bootstrap() {
   await server.register(quotesRoutes,       { prefix: "/api/v1/quotes" });
   await server.register(productsRoutes,     { prefix: "/api/v1/products" });
   await server.register(reportsRoutes,          { prefix: "/api/v1" });
+  await server.register(adminReportsRoutes,     { prefix: "/api/v1/admin-reports" });
   await server.register(outboundWebhooksRoutes, { prefix: "/api/v1/webhooks" });
   await server.register(billingRoutes,          { prefix: "/api/v1/billing" });
   await server.register(exportRoutes,           { prefix: "/api/v1/export" });
