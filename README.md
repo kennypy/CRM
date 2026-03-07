@@ -142,9 +142,9 @@ Services will be available at:
 
 ---
 
-## MVP Scope (Phase 1 — Months 1–6)
+## Phase 1 — Months 1–6: Pilot (Complete)
 
-> **Status as of 2026-03-04 — Phase 1 complete.**
+> **Status: Complete as of 2026-03-04.**
 
 ### Completed
 - [x] Project scaffold + monorepo (Turborepo, Docker Compose, OTel)
@@ -170,8 +170,29 @@ Services will be available at:
 - [x] Workflows page scaffold (`/workflows` — UI shell, Phase 2 logic)
 - [x] Mobile-responsive web
 
-### Explicitly Out of Phase 1 Scope
-Native mobile app · Workflow builder logic · Marketplace · Multi-currency · Territories · Quote/CPQ · Advanced forecasting · SAML/SCIM · Zoom/Slack ingestion
+---
+
+## Phase 2 — Months 7–12: Expansion (In Progress)
+
+> **Status as of 2026-03-07 — Phase 2 in progress. 6 of 12 items delivered early.**
+
+### Completed (built ahead of schedule)
+- [x] Quotes/CPQ basics — quote creation, line items, discounts, NL action bar integration (`/quotes`)
+- [x] Sequence/cadence builder — full sequence engine with outreach service (`/sequences`)
+- [x] Smart email compose — embedded email with templates
+- [x] Advanced reporting — cross-object joins, report builder, scheduled delivery (`/reports`)
+- [x] Dialer integration — embedded phone dialer
+- [x] Email templates — configurable outreach templates
+
+### Remaining
+- [ ] Zoom transcript ingestion + extraction
+- [ ] Slack integration (channel monitoring)
+- [ ] Workflow builder (no-code automations — UI shell exists)
+- [ ] AI lead scoring (ML model on engagement signals)
+- [ ] Predictive close analytics with explainability
+- [ ] Anomaly detection (at-risk accounts, stalled deals)
+- [ ] Marketplace foundation (first 5 partner integrations)
+- [ ] Native mobile app (React Native) v1
 
 ---
 

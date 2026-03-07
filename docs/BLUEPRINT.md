@@ -573,23 +573,32 @@ Sandbox: dev environment never touches prod data.
 | Mobile-responsive web | Tailwind responsive layout throughout |
 
 #### NOT in Phase 1 Scope
-Native mobile app · Workflow builder logic · Marketplace / plugins · Multi-currency · Territories · Quote/CPQ · Advanced forecasting models · SAML/SCIM · Zoom / Slack ingestion
+Native mobile app · Workflow builder logic · Marketplace / plugins · Multi-currency · Territories · Advanced forecasting models · SAML/SCIM · Zoom / Slack ingestion
 
 ### Phase 2 — Months 7–12: Expansion
 **Goal**: 100+ customers, self-serve growth, workflow automation driving viral adoption.
 
-- Zoom transcript ingestion + extraction
-- Slack integration (channel monitoring)
-- Workflow builder (no-code automations)
-- AI lead scoring (ML model on engagement signals)
-- Predictive close analytics with explainability
-- Smart email compose + reply suggestions
-- Anomaly detection (at-risk accounts, stalled deals)
-- Marketplace foundation (first 5 partner integrations)
-- Advanced reporting + scheduled delivery
-- Sequence / cadence builder
-- Native mobile app (React Native) v1
-- Dialer integration (Aircall / RingCentral)
+> **Status as of 2026-03-07 — In progress. 6 of 12 items delivered early (pulled forward during Phase 1 hardening).**
+
+#### Built ✅
+| Item | Notes |
+|------|-------|
+| Quotes / CPQ basics | Quote creation with line items, discounts, NL action bar integration; `/quotes` page |
+| Sequence / cadence builder | Full sequence engine + outreach service; `/sequences` page |
+| Smart email compose | Embedded email with configurable templates |
+| Advanced reporting + scheduled delivery | Cross-object joins, report builder UI, enhanced `/reports` |
+| Dialer integration | Embedded phone dialer in contact/deal views |
+| Email templates | Configurable outreach templates for sequences and manual sends |
+
+#### Remaining
+- [ ] Zoom transcript ingestion + extraction
+- [ ] Slack integration (channel monitoring)
+- [ ] Workflow builder (no-code automations — UI shell exists from Phase 1)
+- [ ] AI lead scoring (ML model on engagement signals)
+- [ ] Predictive close analytics with explainability
+- [ ] Anomaly detection (at-risk accounts, stalled deals)
+- [ ] Marketplace foundation (first 5 partner integrations)
+- [ ] Native mobile app (React Native) v1
 
 ### Phase 3 — Months 13–18: Enterprise
 **Goal**: Land $100K+ ACV deals; pass SOC 2 Type II.
@@ -605,7 +614,6 @@ Native mobile app · Workflow builder logic · Marketplace / plugins · Multi-cu
 - GDPR DSR workflow automation
 - Custom roles + permissions builder
 - Embedded analytics (iframe / white-label reports)
-- CPQ basics (quote generation, approval flows)
 
 ---
 
