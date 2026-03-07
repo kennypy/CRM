@@ -151,28 +151,8 @@ export async function customObjectsRoutes(server: FastifyInstance) {
       }
 
       await client.query("COMMIT");
-
-      // Re-fetch with associations
-      const { rows: full } = await pool.query(
-        `SELECT cod.*,
-                COALESCE(
-                  json_agg(json_build_object(
-                    'id', coa.id,
-                    'targetEntityType', coa.target_entity_type,
-                    'relationshipType', coa.relationship_type
-                  )) FILTER (WHERE coa.id IS NOT NULL),
-                  '[]'
-                ) AS associations
-         FROM custom_object_definitions cod
-         LEFT JOIN custom_object_associations coa ON coa.custom_object_id = cod.id
-         WHERE cod.id = $1
-         GROUP BY cod.id`,
-        [obj.id]
-      );
-
-      return reply.status(201).send({ success: true, data: toObjectDef(full[0]) });
     } catch (err: any) {
-      await client.query("ROLLBACK");
+      await client.query("ROLLBACK").catch(() => {});
       if (err.constraint === "custom_object_definitions_tenant_id_object_key_key") {
         return reply.status(409).send({
           success: false,
@@ -183,6 +163,26 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     } finally {
       client.release();
     }
+
+    // Re-fetch with associations (outside transaction — commit already succeeded)
+    const { rows: full } = await pool.query(
+      `SELECT cod.*,
+              COALESCE(
+                json_agg(json_build_object(
+                  'id', coa.id,
+                  'targetEntityType', coa.target_entity_type,
+                  'relationshipType', coa.relationship_type
+                )) FILTER (WHERE coa.id IS NOT NULL),
+                '[]'
+              ) AS associations
+       FROM custom_object_definitions cod
+       LEFT JOIN custom_object_associations coa ON coa.custom_object_id = cod.id
+       WHERE cod.id = $1
+       GROUP BY cod.id`,
+      [obj.id]
+    );
+
+    return reply.status(201).send({ success: true, data: toObjectDef(full[0]) });
   });
 
   server.patch("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
