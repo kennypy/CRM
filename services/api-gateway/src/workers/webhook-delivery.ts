@@ -13,6 +13,7 @@
 import { createHmac } from "crypto";
 import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
+import { decrypt } from "../lib/oauth-exchange";
 
 const QUEUE_NAME = "nexcrm-webhook-deliveries";
 
@@ -62,8 +63,9 @@ export function startWebhookDeliveryWorker(): void {
         return;
       }
 
-      const body      = JSON.stringify(payload);
-      const signature = createHmac("sha256", wh.secret).update(body).digest("hex");
+      const body        = JSON.stringify(payload);
+      const plainSecret = decrypt(wh.secret);
+      const signature   = createHmac("sha256", plainSecret).update(body).digest("hex");
 
       // Create or update the delivery record.
       const { rows: [delivery] } = await pool.query<{ id: string }>(
