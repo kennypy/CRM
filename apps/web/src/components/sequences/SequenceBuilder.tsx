@@ -52,6 +52,7 @@ export function SequenceBuilder({ sequenceId, onSaved, onCancel }: SequenceBuild
   const [saving,      setSaving]      = useState(false);
   const [loading,     setLoading]     = useState(!!sequenceId);
   const [error,       setError]       = useState<string | null>(null);
+  const [originalStepIds, setOriginalStepIds] = useState<string[]>([]);
 
   // Load existing sequence for editing
   useEffect(() => {
@@ -65,7 +66,9 @@ export function SequenceBuilder({ sequenceId, onSaved, onCancel }: SequenceBuild
       setDescription(seq.description ?? "");
       setGoal(seq.goal ?? "");
       setSettings({ ...DEFAULT_SETTINGS, ...(seq.settings ?? {}) });
-      setSteps((stepsJson.data ?? []).map((s: any) => ({
+      const loadedSteps = (stepsJson.data ?? []) as any[];
+      setOriginalStepIds(loadedSteps.map((s: any) => s.id));
+      setSteps(loadedSteps.map((s: any) => ({
         id:              s.id,
         stepNumber:      s.step_number,
         type:            s.type,
@@ -149,6 +152,13 @@ export function SequenceBuilder({ sequenceId, onSaved, onCancel }: SequenceBuild
           aiSuggestions:   step.aiSuggestions,
         });
         if (!res.ok) { const j = await res.json(); throw new Error(j.error?.message ?? `Step ${step.stepNumber} failed`); }
+      }
+
+      // Delete steps that were removed in the UI
+      const currentIds = new Set(steps.filter((s) => s.id).map((s) => s.id));
+      const removed = originalStepIds.filter((sid) => !currentIds.has(sid));
+      for (const stepId of removed) {
+        await api.delete(`/api/v1/outreach/sequences/${id}/steps/${stepId}`);
       }
 
       onSaved(id!);

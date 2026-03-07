@@ -218,6 +218,15 @@ export async function sequencesRoutes(fastify: FastifyInstance) {
   fastify.delete("/:id/steps/:stepId", async (request, reply) => {
     const { id: sequenceId, stepId } = request.params as { id: string; stepId: string };
     const tenantId = tenantOf(request);
+
+    // Skip any pending/scheduled executions for this step before deleting it
+    await pool.query(
+      `UPDATE sequence_step_executions
+          SET status = 'skipped', executed_at = NOW(), updated_at = NOW()
+        WHERE step_id = $1 AND tenant_id = $2 AND status IN ('pending', 'scheduled')`,
+      [stepId, tenantId],
+    );
+
     await pool.query(
       `DELETE FROM sequence_steps WHERE id=$1 AND sequence_id=$2 AND tenant_id=$3`,
       [stepId, sequenceId, tenantId],
