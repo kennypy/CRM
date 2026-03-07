@@ -32,11 +32,18 @@ import { outboundWebhooksRoutes } from "./routes/outbound-webhooks";
 import { billingRoutes }          from "./routes/billing";
 import { exportRoutes }           from "./routes/export";
 import { apiKeysRoutes }          from "./routes/api-keys";
+import { leadScoringRoutes }     from "./routes/lead-scoring";
+import { forecastingRoutes }     from "./routes/forecasting";
+import { anomaliesRoutes }       from "./routes/anomalies";
+import { marketplaceRoutes }     from "./routes/marketplace";
+import { zoomRoutes }            from "./routes/zoom";
+import { slackRoutes }           from "./routes/slack";
 import { errorHandler }           from "./middleware/error-handler";
 import { authMiddleware }         from "./middleware/auth";
 import { typeDefs }               from "./graphql/schema";
 import { resolvers }              from "./graphql/resolvers";
 import { startWebhookDeliveryWorker } from "./workers/webhook-delivery";
+import { startWorkflowEngine }        from "./workers/workflow-engine";
 
 const server = Fastify({
   logger: {
@@ -141,6 +148,12 @@ async function bootstrap() {
   await server.register(billingRoutes,          { prefix: "/api/v1/billing" });
   await server.register(exportRoutes,           { prefix: "/api/v1/export" });
   await server.register(apiKeysRoutes,          { prefix: "/api/v1/api-keys" });
+  await server.register(leadScoringRoutes,     { prefix: "/api/v1/lead-scoring" });
+  await server.register(forecastingRoutes,     { prefix: "/api/v1/forecasting" });
+  await server.register(anomaliesRoutes,       { prefix: "/api/v1/anomalies" });
+  await server.register(marketplaceRoutes,     { prefix: "/api/v1/marketplace" });
+  await server.register(zoomRoutes,            { prefix: "/api/v1/integrations/zoom" });
+  await server.register(slackRoutes,           { prefix: "/api/v1/integrations/slack" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
@@ -166,6 +179,7 @@ async function bootstrap() {
 
   // ── Background workers ────────────────────────────────────────────────────
   startWebhookDeliveryWorker();
+  startWorkflowEngine();
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

@@ -8,6 +8,7 @@ import {
   TrendingUp, CheckSquare, BarChart3, Layers, AlertCircle,
   Settings, Bell, ChevronDown, LogOut, User, Search,
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
+  Target, LineChart, ShieldAlert, Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
@@ -24,12 +25,16 @@ const PRIMARY_NAV = [
 ];
 
 const MORE_NAV = [
-  { href: "/tasks",     icon: CheckSquare, label: "Tasks"        },
-  { href: "/quotes",    icon: FileText,    label: "Quotes"       },
-  { href: "/sequences", icon: Mail,        label: "Sequences"    },
-  { href: "/reports",   icon: BarChart3,   label: "Reports"      },
-  { href: "/review",    icon: AlertCircle, label: "Review Queue" },
-  { href: "/workflows", icon: Layers,      label: "Workflows"    },
+  { href: "/tasks",       icon: CheckSquare,  label: "Tasks"        },
+  { href: "/quotes",      icon: FileText,     label: "Quotes"       },
+  { href: "/sequences",   icon: Mail,         label: "Sequences"    },
+  { href: "/reports",     icon: BarChart3,     label: "Reports"      },
+  { href: "/review",      icon: AlertCircle,   label: "Review Queue" },
+  { href: "/workflows",   icon: Layers,        label: "Workflows"    },
+  { href: "/lead-scoring", icon: Target,       label: "Lead Scoring" },
+  { href: "/forecasting", icon: LineChart,     label: "Forecasting"  },
+  { href: "/anomalies",   icon: ShieldAlert,   label: "Anomalies"    },
+  { href: "/marketplace", icon: Store,         label: "Marketplace"  },
 ];
 
 interface Notification {
