@@ -18,6 +18,7 @@ import 'features/deals/deal_form_screen.dart';
 import 'features/activities/activities_screen.dart';
 import 'features/tasks/tasks_screen.dart';
 import 'features/sequences/sequences_screen.dart';
+import 'features/sequences/sequence_form_screen.dart';
 import 'features/quotes/quotes_screen.dart';
 import 'features/quotes/quote_form_screen.dart';
 import 'features/reports/reports_screen.dart';
@@ -30,7 +31,19 @@ import 'features/settings/profile_settings_screen.dart';
 import 'features/settings/workspace_settings_screen.dart';
 import 'features/settings/integrations_settings_screen.dart';
 import 'features/settings/notifications_settings_screen.dart';
+import 'features/settings/security_settings_screen.dart';
+import 'features/settings/users_settings_screen.dart';
+import 'features/settings/billing_settings_screen.dart';
+import 'features/settings/quoting_settings_screen.dart';
+import 'features/settings/products_settings_screen.dart';
+import 'features/settings/communications_settings_screen.dart';
+import 'features/settings/custom_fields_settings_screen.dart';
+import 'features/settings/custom_objects_settings_screen.dart';
+import 'features/settings/permissions_settings_screen.dart';
 import 'features/admin/admin_screen.dart';
+import 'features/leads/leads_screen.dart';
+import 'features/review/review_queue_screen.dart';
+import 'features/import/import_screen.dart';
 
 class NexCRMApp extends ConsumerWidget {
   const NexCRMApp({super.key});
@@ -110,7 +123,13 @@ class NexCRMApp extends ConsumerWidget {
         ),
         GoRoute(path: '/activities', builder: (_, __) => const ActivitiesScreen()),
         GoRoute(path: '/tasks', builder: (_, __) => const TasksScreen()),
-        GoRoute(path: '/sequences', builder: (_, __) => const SequencesScreen()),
+        GoRoute(
+          path: '/sequences',
+          builder: (_, __) => const SequencesScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const SequenceFormScreen()),
+          ],
+        ),
         GoRoute(
           path: '/quotes',
           builder: (_, __) => const QuotesScreen(),
@@ -138,12 +157,24 @@ class NexCRMApp extends ConsumerWidget {
           builder: (_, __) => const SettingsScreen(),
           routes: [
             GoRoute(path: 'profile', builder: (_, __) => const ProfileSettingsScreen()),
-            GoRoute(path: 'workspace', builder: (_, __) => const WorkspaceSettingsScreen()),
-            GoRoute(path: 'integrations', builder: (_, __) => const IntegrationsSettingsScreen()),
+            GoRoute(path: 'security', builder: (_, __) => const SecuritySettingsScreen()),
             GoRoute(path: 'notifications', builder: (_, __) => const NotificationsSettingsScreen()),
+            GoRoute(path: 'workspace', builder: (_, __) => const WorkspaceSettingsScreen()),
+            GoRoute(path: 'users', builder: (_, __) => const UsersSettingsScreen()),
+            GoRoute(path: 'integrations', builder: (_, __) => const IntegrationsSettingsScreen()),
+            GoRoute(path: 'quoting', builder: (_, __) => const QuotingSettingsScreen()),
+            GoRoute(path: 'products', builder: (_, __) => const ProductsSettingsScreen()),
+            GoRoute(path: 'communications', builder: (_, __) => const CommunicationsSettingsScreen()),
+            GoRoute(path: 'billing', builder: (_, __) => const BillingSettingsScreen()),
+            GoRoute(path: 'custom-fields', builder: (_, __) => const CustomFieldsSettingsScreen()),
+            GoRoute(path: 'custom-objects', builder: (_, __) => const CustomObjectsSettingsScreen()),
+            GoRoute(path: 'permissions', builder: (_, __) => const PermissionsSettingsScreen()),
           ],
         ),
         GoRoute(path: '/admin', builder: (_, __) => const AdminScreen()),
+        GoRoute(path: '/leads', builder: (_, __) => const LeadsScreen()),
+        GoRoute(path: '/review', builder: (_, __) => const ReviewQueueScreen()),
+        GoRoute(path: '/import', builder: (_, __) => const ImportScreen()),
 
         // Deal routes (top-level since pipeline is a shell branch)
         GoRoute(path: '/deals/new', builder: (_, __) => const DealFormScreen()),
@@ -225,12 +256,15 @@ class _MoreScreen extends ConsumerWidget {
           _MoreTile(icon: Icons.business, label: 'Companies', route: '/companies'),
           _MoreTile(icon: Icons.timeline, label: 'Activities', route: '/activities'),
           _MoreTile(icon: Icons.task_alt, label: 'Tasks', route: '/tasks'),
+          _MoreTile(icon: Icons.trending_up, label: 'Leads', route: '/leads'),
           const Divider(),
           _MoreTile(icon: Icons.autorenew, label: 'Sequences', route: '/sequences'),
           _MoreTile(icon: Icons.request_quote, label: 'Quotes', route: '/quotes'),
           _MoreTile(icon: Icons.account_tree, label: 'Workflows', route: '/workflows'),
           const Divider(),
           _MoreTile(icon: Icons.bar_chart, label: 'Reports', route: '/reports'),
+          _MoreTile(icon: Icons.rate_review, label: 'Review Queue', route: '/review'),
+          _MoreTile(icon: Icons.upload_file, label: 'Import', route: '/import'),
           _MoreTile(icon: Icons.auto_awesome, label: 'AI Assistant', route: '/ai'),
           const Divider(),
           _MoreTile(icon: Icons.settings, label: 'Settings', route: '/settings'),

@@ -43,7 +43,36 @@ class Endpoints {
   static String get aiNl => '$apiUrl/api/v1/ai/nl';
   static String get aiReviewQueue => '$apiUrl/api/v1/ai/review-queue';
 
-  // Admin reports
+  // Import / Export
+  static String get import_ => '$apiUrl/api/v1/import';
+  static String get export_ => '$apiUrl/api/v1/export';
+
+  // Custom fields / objects
+  static String get customFields => '$apiUrl/api/v1/custom-fields';
+  static String get customObjects => '$apiUrl/api/v1/custom-objects';
+
+  // Permissions
+  static String get permissions => '$apiUrl/api/v1/permissions';
+
+  // Products
+  static String get products => '$apiUrl/api/v1/products';
+
+  // Billing
+  static String get billing => '$apiUrl/api/v1/billing';
+
+  // API Keys
+  static String get apiKeys => '$apiUrl/api/v1/api-keys';
+
+  // Bulk
+  static String get bulk => '$apiUrl/api/v1/bulk';
+
+  // Leads (contacts with lead stage)
+  static String get leads => '$apiUrl/api/v1/contacts';
+
+  // Admin
+  static String get adminTenants => '$apiUrl/api/admin/tenants';
+  static String get adminStats => '$apiUrl/api/admin/stats/platform';
+  static String get adminMerges => '$apiUrl/api/admin/merges';
   static String get adminReportTypes => '$apiUrl/api/v1/admin-reports/types';
   static String get adminReportRun => '$apiUrl/api/v1/admin-reports/run';
 }

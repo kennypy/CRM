@@ -59,24 +59,24 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(),
 
-          // Settings sections
+          // Personal
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Text('Personal',
+                style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant)),
+          ),
           _SettingsTile(
             icon: Icons.person_outline,
-            title: 'Profile',
-            subtitle: 'Edit your name, avatar, and preferences',
+            title: 'My Profile',
+            subtitle: 'Name, email, preferences',
             onTap: () => context.push('/settings/profile'),
           ),
           _SettingsTile(
-            icon: Icons.business,
-            title: 'Workspace',
-            subtitle: 'Manage workspace settings',
-            onTap: () => context.push('/settings/workspace'),
-          ),
-          _SettingsTile(
-            icon: Icons.integration_instructions,
-            title: 'Integrations',
-            subtitle: 'Google, Microsoft, Slack, Zoom',
-            onTap: () => context.push('/settings/integrations'),
+            icon: Icons.shield_outlined,
+            title: 'Security',
+            subtitle: 'Password, API keys',
+            onTap: () => context.push('/settings/security'),
           ),
           _SettingsTile(
             icon: Icons.notifications_outlined,
@@ -89,17 +89,87 @@ class SettingsScreen extends ConsumerWidget {
             const Divider(),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text('Admin',
+              child: Text('Workspace',
                   style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant)),
             ),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    'These settings apply to your entire workspace. Only admins can change them.',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary, fontSize: 11),
+                  )),
+                ],
+              ),
+            ),
             _SettingsTile(
-              icon: Icons.shield_outlined,
-              title: 'Admin Panel',
-              subtitle: 'Manage workspaces, users, and platform settings',
-              onTap: () => context.push('/admin'),
-              trailing: Icon(Icons.open_in_new, size: 16,
-                  color: theme.colorScheme.onSurfaceVariant),
+              icon: Icons.business,
+              title: 'Company',
+              subtitle: 'Organisation name, timezone, currency',
+              onTap: () => context.push('/settings/workspace'),
+            ),
+            _SettingsTile(
+              icon: Icons.people_outline,
+              title: 'Users',
+              subtitle: 'Manage team members and roles',
+              onTap: () => context.push('/settings/users'),
+            ),
+            _SettingsTile(
+              icon: Icons.integration_instructions,
+              title: 'Integrations',
+              subtitle: 'Google, Microsoft, Slack, Zoom, Stripe',
+              onTap: () => context.push('/settings/integrations'),
+            ),
+            _SettingsTile(
+              icon: Icons.request_quote_outlined,
+              title: 'Quoting',
+              subtitle: 'Approval rules, send method, permissions',
+              onTap: () => context.push('/settings/quoting'),
+            ),
+            _SettingsTile(
+              icon: Icons.inventory_2_outlined,
+              title: 'Products',
+              subtitle: 'Product catalog for quotes',
+              onTap: () => context.push('/settings/products'),
+            ),
+            _SettingsTile(
+              icon: Icons.phone_outlined,
+              title: 'Communications',
+              subtitle: 'Email, dialler configuration',
+              onTap: () => context.push('/settings/communications'),
+            ),
+            _SettingsTile(
+              icon: Icons.credit_card,
+              title: 'Billing',
+              subtitle: 'Plan, usage, payment',
+              onTap: () => context.push('/settings/billing'),
+            ),
+            _SettingsTile(
+              icon: Icons.view_column_outlined,
+              title: 'Custom Fields',
+              subtitle: 'Add fields to entities',
+              onTap: () => context.push('/settings/custom-fields'),
+            ),
+            _SettingsTile(
+              icon: Icons.widgets_outlined,
+              title: 'Custom Objects',
+              subtitle: 'Create custom entity types',
+              onTap: () => context.push('/settings/custom-objects'),
+            ),
+            _SettingsTile(
+              icon: Icons.lock_outline,
+              title: 'Permissions',
+              subtitle: 'Field access, record rules',
+              onTap: () => context.push('/settings/permissions'),
             ),
           ],
 

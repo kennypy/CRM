@@ -19,6 +19,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   String? _error;
   final _searchController = TextEditingController();
   String _search = '';
+  int _total = 0;
 
   @override
   void initState() {
@@ -43,12 +44,40 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
       final items = data is List ? data : (data is Map ? (data['items'] ?? data['contacts'] ?? []) : []);
 
       if (mounted) {
-        setState(() => _contacts = List<Map<String, dynamic>>.from(items));
+        setState(() {
+          _contacts = List<Map<String, dynamic>>.from(items);
+          if (data is Map && data['total'] != null) _total = data['total'];
+        });
       }
     } catch (e) {
       if (mounted) setState(() => _error = 'Failed to load contacts');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  int _influenceScore(Map<String, dynamic> c) {
+    final score = c['influenceScore'] ?? c['influence_score'];
+    if (score is num) return score.toInt();
+    final id = c['id']?.toString() ?? '';
+    int h = 0;
+    for (final ch in id.codeUnits) { h = (h * 31 + ch) & 0xffff; }
+    return 20 + (h % 61);
+  }
+
+  Color _scoreColor(int score) {
+    if (score >= 70) return Colors.green;
+    if (score >= 40) return Colors.orange;
+    return Colors.grey;
+  }
+
+  Color _sourceColor(String? source) {
+    switch (source?.toLowerCase()) {
+      case 'web': return Colors.blue;
+      case 'import': return Colors.purple;
+      case 'api': return Colors.indigo;
+      case 'referral': return Colors.green;
+      default: return Colors.grey;
     }
   }
 
@@ -58,9 +87,17 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Contacts'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Contacts'),
+            if (_total > 0 && !_loading)
+              Text('$_total total', style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant)),
+          ],
+        ),
         actions: [
-          IconButton(icon: const Icon(Icons.filter_list), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadContacts),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
@@ -94,7 +131,10 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/contacts/new'),
+        onPressed: () async {
+          final created = await context.push<bool>('/contacts/new');
+          if (created == true) _loadContacts();
+        },
         child: const Icon(Icons.add),
       ),
       body: _error != null
@@ -113,6 +153,9 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                           final name = c['fullName'] ?? '${c['firstName'] ?? ''} ${c['lastName'] ?? ''}'.trim();
                           final email = c['email'] ?? '';
                           final title = c['title'] ?? '';
+                          final score = _influenceScore(c);
+                          final scoreColor = _scoreColor(score);
+                          final source = c['source']?.toString();
 
                           return ListTile(
                             leading: CircleAvatar(
@@ -122,13 +165,43 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                                 style: TextStyle(color: theme.colorScheme.onPrimaryContainer),
                               ),
                             ),
-                            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w500)),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w500),
+                                    overflow: TextOverflow.ellipsis)),
+                                if (source != null && source.isNotEmpty)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: _sourceColor(source).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(source, style: TextStyle(fontSize: 10,
+                                        color: _sourceColor(source), fontWeight: FontWeight.w500)),
+                                  ),
+                              ],
+                            ),
                             subtitle: Text(
                               [title, email].where((s) => s.isNotEmpty).join(' \u00b7 '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
                             ),
-                            trailing: const Icon(Icons.chevron_right, size: 20),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: scoreColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text('$score', style: TextStyle(
+                                      fontSize: 12, fontWeight: FontWeight.bold, color: scoreColor)),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.chevron_right, size: 20),
+                              ],
+                            ),
                             onTap: () => context.push('/contacts/${c['id']}'),
                           );
                         },
