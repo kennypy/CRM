@@ -82,11 +82,11 @@ export async function slackRoutes(server: FastifyInstance) {
       const encToken = encrypt(result.botToken);
 
       await pool.query(
-        `INSERT INTO slack_connections
-           (tenant_id, workspace_id, workspace_name, bot_token_enc, bot_user_id, installed_by)
+        `INSERT INTO slack_workspaces
+           (tenant_id, team_id, team_name, bot_token_enc, bot_user_id, installed_by)
          VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (tenant_id, workspace_id)
-         DO UPDATE SET bot_token_enc = $4, workspace_name = $3, updated_at = NOW()`,
+         ON CONFLICT (tenant_id, team_id)
+         DO UPDATE SET bot_token_enc = $4, team_name = $3, updated_at = NOW()`,
         [tenantId, result.workspaceId, result.workspaceName, encToken, result.botUserId, userId]
       );
 
@@ -124,8 +124,8 @@ export async function slackRoutes(server: FastifyInstance) {
   server.get("/status", { preHandler: [requireRep] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
-      `SELECT workspace_id, workspace_name, created_at, updated_at
-       FROM slack_connections WHERE tenant_id = $1`,
+      `SELECT team_id, team_name, created_at, updated_at
+       FROM slack_workspaces WHERE tenant_id = $1`,
       [tenantId]
     );
 
@@ -134,8 +134,8 @@ export async function slackRoutes(server: FastifyInstance) {
       data: {
         connected: rows.length > 0,
         workspace: rows[0] ? {
-          id:   rows[0].workspace_id,
-          name: rows[0].workspace_name,
+          id:   rows[0].team_id,
+          name: rows[0].team_name,
           connectedAt: rows[0].created_at,
         } : null,
       },
@@ -163,7 +163,7 @@ export async function slackRoutes(server: FastifyInstance) {
         userName:     `${r.first_name} ${r.last_name}`,
         userEmail:    r.email,
         slackUserId:  r.slack_user_id,
-        slackUsername: r.slack_username,
+        slackEmail: r.slack_email,
         mappedAt:     r.mapped_at,
       })),
     });
@@ -192,11 +192,11 @@ export async function slackRoutes(server: FastifyInstance) {
       if (!slack) continue;
 
       await pool.query(
-        `INSERT INTO slack_user_mappings (tenant_id, user_id, slack_user_id, slack_username)
+        `INSERT INTO slack_user_mappings (tenant_id, user_id, slack_user_id, slack_email)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (tenant_id, user_id)
-         DO UPDATE SET slack_user_id = $3, slack_username = $4, mapped_at = NOW()`,
-        [tenantId, crm.id, slack.id, slack.name]
+         DO UPDATE SET slack_user_id = $3, slack_email = $4, mapped_at = NOW()`,
+        [tenantId, crm.id, slack.id, slack.email]
       );
       mapped++;
     }
@@ -207,7 +207,7 @@ export async function slackRoutes(server: FastifyInstance) {
   // DELETE /disconnect — remove Slack connection
   server.delete("/disconnect", { preHandler: [requireAdmin] }, async (request, reply) => {
     const { tenantId } = request.user;
-    await pool.query(`DELETE FROM slack_connections WHERE tenant_id = $1`, [tenantId]);
+    await pool.query(`DELETE FROM slack_workspaces WHERE tenant_id = $1`, [tenantId]);
     await pool.query(`DELETE FROM slack_user_mappings WHERE tenant_id = $1`, [tenantId]);
     return reply.status(204).send();
   });
