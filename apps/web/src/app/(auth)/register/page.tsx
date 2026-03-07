@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { setAuth } from "@/lib/auth";
+import { useTenant } from "@/lib/tenant-context";
 import { Zap, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { refresh } = useTenant();
   const [form, setForm] = useState({
     orgName: "", tenantSlug: "", firstName: "", lastName: "", email: "", password: "",
   });
@@ -49,6 +51,7 @@ export default function RegisterPage() {
         firstName: user.firstName, lastName: user.lastName,
         role: user.role, tenantId: user.tenantId, tenantName: tenant?.name ?? form.orgName,
       });
+      await refresh();
       router.replace("/");
     } catch {
       setError("Unable to reach the server. Please try again.");

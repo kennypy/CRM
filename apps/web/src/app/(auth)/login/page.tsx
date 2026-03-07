@@ -69,7 +69,7 @@ function LoginForm() {
       });
 
       // Load tenant preferences now that we're authenticated
-      refresh();
+      await refresh();
 
       router.replace(next);
     } catch {

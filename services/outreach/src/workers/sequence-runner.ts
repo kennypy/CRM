@@ -402,7 +402,7 @@ async function createRepTask(exec: DueExecution): Promise<void> {
 
   await pool.query(
     `INSERT INTO tasks
-       (tenant_id, title, description, assigned_to, status, due_date, source, metadata)
+       (tenant_id, title, description, assignee_id, status, due_date, source, metadata)
      VALUES ($1, $2, $3, $4, 'pending', NOW() + INTERVAL '2 hours', 'sequence', $5::jsonb)`,
     [
       exec.tenant_id, title, description, exec.enrolled_by,
