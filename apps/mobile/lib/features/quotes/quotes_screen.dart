@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
+import 'package:go_router/go_router.dart';
 import '../../shared/widgets/error_view.dart';
 
 const _statusColors = {
@@ -52,7 +53,10 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Quotes')),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () async {
+          final created = await context.push<bool>('/quotes/new');
+          if (created == true) _loadQuotes();
+        },
         child: const Icon(Icons.add),
       ),
       body: _error != null

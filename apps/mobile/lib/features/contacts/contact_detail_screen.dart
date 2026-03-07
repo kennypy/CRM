@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/loading_indicator.dart';
@@ -34,6 +35,134 @@ class _ContactDetailScreenState extends ConsumerState<ContactDetailScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _handleCall() async {
+    final phone = _contact?['phone'];
+    if (phone == null || phone.toString().isEmpty || phone == '-') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No phone number available')),
+      );
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: phone.toString());
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+      // Log the call activity
+      try {
+        await ApiClient.instance.dio.post(Endpoints.activities, data: {
+          'contactId': widget.contactId,
+          'type': 'call',
+          'notes': 'Outbound call',
+        });
+      } catch (_) {}
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch phone dialer')),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleEmail() async {
+    final email = _contact?['email'];
+    if (email == null || email.toString().isEmpty || email == '-') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No email address available')),
+      );
+      return;
+    }
+    final uri = Uri(scheme: 'mailto', path: email.toString());
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch email client')),
+        );
+      }
+    }
+  }
+
+  void _handleNote() {
+    final noteCtl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Add Note',
+                      style: Theme.of(ctx).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: noteCtl,
+              decoration: const InputDecoration(
+                hintText: 'Write a note...',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 4,
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 44,
+              child: StatefulBuilder(
+                builder: (ctx2, setBtn) {
+                  bool saving = false;
+                  return ElevatedButton(
+                    onPressed: saving ? null : () async {
+                      if (noteCtl.text.trim().isEmpty) return;
+                      setBtn(() => saving = true);
+                      try {
+                        await ApiClient.instance.dio.post(Endpoints.activities, data: {
+                          'contactId': widget.contactId,
+                          'type': 'note',
+                          'notes': noteCtl.text.trim(),
+                        });
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Note saved')),
+                          );
+                        }
+                      } catch (_) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Failed to save note')),
+                          );
+                        }
+                      } finally {
+                        if (ctx.mounted) setBtn(() => saving = false);
+                      }
+                    },
+                    child: saving
+                        ? const SizedBox(height: 18, width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Save Note'),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -122,7 +251,7 @@ class _ContactDetailScreenState extends ConsumerState<ContactDetailScreen> {
                             children: [
                               Expanded(
                                 child: OutlinedButton.icon(
-                                  onPressed: () {},
+                                  onPressed: _handleCall,
                                   icon: const Icon(Icons.phone, size: 18),
                                   label: const Text('Call'),
                                 ),
@@ -130,7 +259,7 @@ class _ContactDetailScreenState extends ConsumerState<ContactDetailScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: OutlinedButton.icon(
-                                  onPressed: () {},
+                                  onPressed: _handleEmail,
                                   icon: const Icon(Icons.email, size: 18),
                                   label: const Text('Email'),
                                 ),
@@ -138,7 +267,7 @@ class _ContactDetailScreenState extends ConsumerState<ContactDetailScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: OutlinedButton.icon(
-                                  onPressed: () {},
+                                  onPressed: _handleNote,
                                   icon: const Icon(Icons.note_add, size: 18),
                                   label: const Text('Note'),
                                 ),

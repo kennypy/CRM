@@ -8,16 +8,28 @@ import 'features/auth/register_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/contacts/contacts_screen.dart';
 import 'features/contacts/contact_detail_screen.dart';
+import 'features/contacts/contact_form_screen.dart';
 import 'features/companies/companies_screen.dart';
+import 'features/companies/company_detail_screen.dart';
+import 'features/companies/company_form_screen.dart';
 import 'features/deals/deals_screen.dart';
+import 'features/deals/deal_detail_screen.dart';
+import 'features/deals/deal_form_screen.dart';
 import 'features/activities/activities_screen.dart';
 import 'features/tasks/tasks_screen.dart';
 import 'features/sequences/sequences_screen.dart';
 import 'features/quotes/quotes_screen.dart';
+import 'features/quotes/quote_form_screen.dart';
 import 'features/reports/reports_screen.dart';
+import 'features/reports/report_form_screen.dart';
 import 'features/ai/ai_screen.dart';
 import 'features/workflows/workflows_screen.dart';
+import 'features/workflows/workflow_form_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/settings/profile_settings_screen.dart';
+import 'features/settings/workspace_settings_screen.dart';
+import 'features/settings/integrations_settings_screen.dart';
+import 'features/settings/notifications_settings_screen.dart';
 import 'features/admin/admin_screen.dart';
 
 class NexCRMApp extends ConsumerWidget {
@@ -59,6 +71,10 @@ class NexCRMApp extends ConsumerWidget {
                 builder: (_, __) => const ContactsScreen(),
                 routes: [
                   GoRoute(
+                    path: 'new',
+                    builder: (_, __) => const ContactFormScreen(),
+                  ),
+                  GoRoute(
                     path: ':id',
                     builder: (_, state) => ContactDetailScreen(
                         contactId: state.pathParameters['id']!),
@@ -80,16 +96,62 @@ class NexCRMApp extends ConsumerWidget {
         ),
 
         // Full-screen routes accessible from "More"
-        GoRoute(path: '/companies', builder: (_, __) => const CompaniesScreen()),
+        GoRoute(
+          path: '/companies',
+          builder: (_, __) => const CompaniesScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const CompanyFormScreen()),
+            GoRoute(
+              path: ':id',
+              builder: (_, state) => CompanyDetailScreen(
+                  companyId: state.pathParameters['id']!),
+            ),
+          ],
+        ),
         GoRoute(path: '/activities', builder: (_, __) => const ActivitiesScreen()),
         GoRoute(path: '/tasks', builder: (_, __) => const TasksScreen()),
         GoRoute(path: '/sequences', builder: (_, __) => const SequencesScreen()),
-        GoRoute(path: '/quotes', builder: (_, __) => const QuotesScreen()),
-        GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
+        GoRoute(
+          path: '/quotes',
+          builder: (_, __) => const QuotesScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const QuoteFormScreen()),
+          ],
+        ),
+        GoRoute(
+          path: '/reports',
+          builder: (_, __) => const ReportsScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const ReportFormScreen()),
+          ],
+        ),
         GoRoute(path: '/ai', builder: (_, __) => const AIScreen()),
-        GoRoute(path: '/workflows', builder: (_, __) => const WorkflowsScreen()),
-        GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
+        GoRoute(
+          path: '/workflows',
+          builder: (_, __) => const WorkflowsScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const WorkflowFormScreen()),
+          ],
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (_, __) => const SettingsScreen(),
+          routes: [
+            GoRoute(path: 'profile', builder: (_, __) => const ProfileSettingsScreen()),
+            GoRoute(path: 'workspace', builder: (_, __) => const WorkspaceSettingsScreen()),
+            GoRoute(path: 'integrations', builder: (_, __) => const IntegrationsSettingsScreen()),
+            GoRoute(path: 'notifications', builder: (_, __) => const NotificationsSettingsScreen()),
+          ],
+        ),
         GoRoute(path: '/admin', builder: (_, __) => const AdminScreen()),
+
+        // Deal routes (top-level since pipeline is a shell branch)
+        GoRoute(path: '/deals/new', builder: (_, __) => const DealFormScreen()),
+        GoRoute(
+          path: '/deals/:id',
+          builder: (_, state) => DealDetailScreen(
+              dealId: state.pathParameters['id']!),
+        ),
       ],
     );
 

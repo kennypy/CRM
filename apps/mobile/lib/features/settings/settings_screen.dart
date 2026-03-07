@@ -64,25 +64,25 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.person_outline,
             title: 'Profile',
             subtitle: 'Edit your name, avatar, and preferences',
-            onTap: () {},
+            onTap: () => context.push('/settings/profile'),
           ),
           _SettingsTile(
             icon: Icons.business,
             title: 'Workspace',
             subtitle: 'Manage workspace settings',
-            onTap: () {},
+            onTap: () => context.push('/settings/workspace'),
           ),
           _SettingsTile(
             icon: Icons.integration_instructions,
             title: 'Integrations',
             subtitle: 'Google, Microsoft, Slack, Zoom',
-            onTap: () {},
+            onTap: () => context.push('/settings/integrations'),
           ),
           _SettingsTile(
             icon: Icons.notifications_outlined,
             title: 'Notifications',
             subtitle: 'Push notification preferences',
-            onTap: () {},
+            onTap: () => context.push('/settings/notifications'),
           ),
 
           if (user != null && user.isAdmin) ...[

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
+import 'package:go_router/go_router.dart';
 import '../../shared/widgets/error_view.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
@@ -119,6 +120,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Reports')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final created = await context.push<bool>('/reports/new');
+          if (created == true) _loadReports();
+        },
+        child: const Icon(Icons.add),
+      ),
       body: _error != null
           ? ErrorView(message: _error!, onRetry: _loadReports)
           : _loading
