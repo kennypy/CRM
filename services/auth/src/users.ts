@@ -151,6 +151,11 @@ export function toPublicUser(u: DBUser): User {
   };
 }
 
+/** Map a DB tenant row to the public shape the frontend expects. */
+export function toPublicTenant(t: { id: string; name: string; slug: string; plan?: string }) {
+  return { id: t.id, name: t.name, slug: t.slug, plan: t.plan };
+}
+
 export function scopesForRole(role: UserRole): string[] {
   return SCOPES_MAP[role] ?? [];
 }

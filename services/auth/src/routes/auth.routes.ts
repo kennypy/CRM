@@ -5,11 +5,13 @@ import {
   findUserByEmail,
   findUserById,
   findTenantBySlug,
+  findTenantById,
   verifyPassword,
   hashPassword,
   createTenantWithAdmin,
   touchLastLogin,
   toPublicUser,
+  toPublicTenant,
   scopesForRole,
 } from "../users";
 import {
@@ -92,6 +94,8 @@ export async function authRoutes(server: FastifyInstance) {
     const user = await findUserById(userId);
     if (!user) throw new Error("User creation failed unexpectedly");
 
+    const registeredTenant = await findTenantById(tenantId);
+
     const scopes = scopesForRole(user.role);
     const accessToken = await server.jwt.sign(
       buildJWTPayload({ id: user.id, tenantId, email: user.email, role: user.role, scopes })
@@ -113,6 +117,7 @@ export async function authRoutes(server: FastifyInstance) {
         accessToken,
         refreshToken,
         user: toPublicUser(user),
+        tenant: registeredTenant ? toPublicTenant(registeredTenant) : undefined,
       },
     });
   });
@@ -177,6 +182,7 @@ export async function authRoutes(server: FastifyInstance) {
         accessToken,
         refreshToken,
         user: toPublicUser(user),
+        tenant: toPublicTenant(tenant),
       },
     });
   });
@@ -210,6 +216,8 @@ export async function authRoutes(server: FastifyInstance) {
       });
     }
 
+    const userTenant = await findTenantById(user.tenant_id);
+
     const scopes = scopesForRole(user.role);
     const accessToken = await server.jwt.sign(
       buildJWTPayload({ id: user.id, tenantId: user.tenant_id, email: user.email, role: user.role, scopes })
@@ -218,7 +226,12 @@ export async function authRoutes(server: FastifyInstance) {
 
     return reply.send({
       success: true,
-      data: { accessToken, refreshToken: newRefreshToken },
+      data: {
+        accessToken,
+        refreshToken: newRefreshToken,
+        user: toPublicUser(user),
+        tenant: userTenant ? toPublicTenant(userTenant) : undefined,
+      },
     });
   });
 
