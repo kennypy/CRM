@@ -10,7 +10,6 @@ class AppTheme {
   static final light = ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
-    colorSchemeSeed: _primaryColor,
     scaffoldBackgroundColor: const Color(0xFFF8FAFC), // slate-50
     appBarTheme: const AppBarTheme(
       centerTitle: false,
@@ -62,7 +61,6 @@ class AppTheme {
   static final dark = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
-    colorSchemeSeed: _primaryColor,
     colorScheme: ColorScheme.fromSeed(
       seedColor: _primaryColor,
       brightness: Brightness.dark,
