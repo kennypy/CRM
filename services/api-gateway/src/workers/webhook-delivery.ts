@@ -13,6 +13,7 @@
 import { createHmac } from "crypto";
 import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
+import { decrypt } from "../lib/oauth-exchange";
 
 const QUEUE_NAME = "nexcrm-webhook-deliveries";
 
@@ -62,20 +63,24 @@ export function startWebhookDeliveryWorker(): void {
         return;
       }
 
-      const body      = JSON.stringify(payload);
-      const signature = createHmac("sha256", wh.secret).update(body).digest("hex");
+      const body        = JSON.stringify(payload);
+      const plainSecret = decrypt(wh.secret);
+      const signature   = createHmac("sha256", plainSecret).update(body).digest("hex");
 
-      // Create or update the delivery record.
+      // Create or update the delivery record. Use DO UPDATE to always get the id back
+      // (ON CONFLICT DO NOTHING returns no rows on conflict, breaking retry tracking).
       const { rows: [delivery] } = await pool.query<{ id: string }>(
         `INSERT INTO outbound_webhook_deliveries
            (webhook_id, tenant_id, event_type, payload, attempt_count, status)
          VALUES ($1, $2, $3, $4::jsonb, 1, 'pending')
-         ON CONFLICT DO NOTHING
+         ON CONFLICT (webhook_id, event_type, tenant_id)
+         DO UPDATE SET attempt_count = outbound_webhook_deliveries.attempt_count + 1,
+                       updated_at = NOW()
          RETURNING id`,
         [webhookId, tenantId, eventType, JSON.stringify(payload)],
       );
 
-      const deliveryId = delivery?.id ?? job.data.deliveryId as string | undefined;
+      const deliveryId = delivery?.id;
 
       let responseStatus: number | null = null;
       let responseBody:   string | null = null;
@@ -128,15 +133,19 @@ export function startWebhookDeliveryWorker(): void {
         }
       } catch (err: any) {
         lastError = err.message;
-        if (deliveryId) {
-          await pool.query(
-            `UPDATE outbound_webhook_deliveries
-                SET attempt_count = $1, last_error = $2, last_response_status = $3,
-                    next_attempt_at = NOW() + ($4 * INTERVAL '1 second'),
-                    updated_at = NOW()
-              WHERE id = $5`,
-            [job.attemptsMade + 1, lastError.slice(0, 500), responseStatus, Math.pow(5, job.attemptsMade + 1), deliveryId],
-          );
+        try {
+          if (deliveryId) {
+            await pool.query(
+              `UPDATE outbound_webhook_deliveries
+                  SET attempt_count = $1, last_error = $2, last_response_status = $3,
+                      next_attempt_at = NOW() + ($4 * INTERVAL '1 second'),
+                      updated_at = NOW()
+                WHERE id = $5`,
+              [job.attemptsMade + 1, lastError.slice(0, 500), responseStatus, Math.pow(5, job.attemptsMade + 1), deliveryId],
+            );
+          }
+        } catch (dbErr: any) {
+          console.error("[webhook-delivery] Failed to update delivery record:", dbErr.message);
         }
         throw err; // Re-throw to trigger BullMQ retry
       }

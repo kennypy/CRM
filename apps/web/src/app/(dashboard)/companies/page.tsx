@@ -14,6 +14,7 @@ import {
   Building2, Search, Plus, RefreshCw, AlertCircle,
   Globe, ChevronLeft, ChevronRight, Briefcase, Zap, Pencil, Trash2,
 } from "lucide-react";
+import { BulkActionBar } from "@/components/bulk/bulk-action-bar";
 
 const COL_DEFS: ColDef[] = [
   { key: "name",         label: "Company",       required: true },
@@ -85,7 +86,16 @@ export default function CompaniesPage() {
   const [showAdd, setShowAdd]       = useState(false);
   const [editing, setEditing]       = useState<Company | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+  const toggleSelectAll = () => {
+    if (selectedIds.length === companies.length) setSelectedIds([]);
+    else setSelectedIds(companies.map((c) => c.id));
+  };
 
   const handleDeleteCompany = async (id: string) => {
     if (!window.confirm("Delete this company? This cannot be undone.")) return;
@@ -188,6 +198,12 @@ export default function CompaniesPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
+              <th className="w-10 px-3 py-3">
+                <input type="checkbox"
+                  checked={companies.length > 0 && selectedIds.length === companies.length}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border" />
+              </th>
               {COL_DEFS.filter((d) => visible.has(d.key)).map((col) => (
                 <th key={col.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   {col.key === "actions" ? "" : col.label}
@@ -199,6 +215,7 @@ export default function CompaniesPage() {
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
+                  <td className="px-3 py-3"><div className="h-4 w-4 rounded bg-muted" /></td>
                   {COL_DEFS.filter((d) => visible.has(d.key)).map((col) => (
                     <td key={col.key} className="px-4 py-3"><div className="h-4 w-3/4 rounded bg-muted" /></td>
                   ))}
@@ -206,7 +223,7 @@ export default function CompaniesPage() {
               ))
             ) : companies.length === 0 ? (
               <tr>
-                <td colSpan={COL_DEFS.filter((d) => visible.has(d.key)).length} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={COL_DEFS.filter((d) => visible.has(d.key)).length + 1} className="px-4 py-12 text-center text-muted-foreground">
                   {debouncedSearch ? "No companies match your search" : "No companies yet"}
                 </td>
               </tr>
@@ -215,8 +232,14 @@ export default function CompaniesPage() {
                 <tr
                   key={co.id}
                   onClick={() => router.push(`/companies/${co.id}`)}
-                  className="cursor-pointer transition-colors hover:bg-muted/40"
+                  className={cn("cursor-pointer transition-colors hover:bg-muted/40", selectedIds.includes(co.id) && "bg-primary/5")}
                 >
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox"
+                      checked={selectedIds.includes(co.id)}
+                      onChange={() => toggleSelect(co.id)}
+                      className="h-4 w-4 rounded border" />
+                  </td>
                   {visible.has("name") && (
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -310,6 +333,13 @@ export default function CompaniesPage() {
           </div>
         </div>
       )}
+
+      <BulkActionBar
+        entityType="company"
+        selectedIds={selectedIds}
+        onClear={() => setSelectedIds([])}
+        onComplete={() => { setSelectedIds([]); fetchCompanies(); }}
+      />
     </div>
   );
 }

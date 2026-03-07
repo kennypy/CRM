@@ -103,6 +103,17 @@ export async function aiRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: toReviewItem(rows[0]) });
   });
 
+  // ── Enrichment endpoints ─────────────────────────────────────────────────
+  server.post("/enrich/:entityType/:entityId", { preHandler: [requireRep] },
+    createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
+
+  server.post("/enrich/batch", { preHandler: [requireRep] },
+    createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
+
+  // ── Forecasting endpoint ────────────────────────────────────────────────
+  server.get("/forecast", { preHandler: [requireRep] },
+    createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
+
   // Provenance / explain endpoint — why did AI write this field?
   server.get("/explain/:entityType/:entityId/:field", async (request, reply) => {
     // Validate all route params before they reach the DB

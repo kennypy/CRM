@@ -8,6 +8,8 @@ export const pool = new Pool({
     "postgresql://nexcrm:nexcrm_dev@localhost:5432/nexcrm",
   min: 2,
   max: 10,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
 });
 
 pool.on("error", (err) => console.error("[api-gateway] PG pool error:", err));
@@ -22,6 +24,8 @@ export const readPool = new Pool({
     "postgresql://nexcrm:nexcrm_dev@localhost:5432/nexcrm",
   min: 1,
   max: 5,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
 });
 
 readPool.on("error", (err) => console.error("[api-gateway] PG read-replica pool error:", err));

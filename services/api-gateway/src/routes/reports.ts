@@ -132,6 +132,8 @@ export const SOURCE_FIELDS: Record<SourceId, { key: string; label: string }[]> =
     { key: "language",      label: "language" },
     { key: "phone",         label: "Phone" },
     { key: "twilio_number", label: "Twilio Number" },
+    { key: "last_login_at", label: "Last Login" },
+    { key: "created_at",    label: "Created At" },
   ],
 };
 
@@ -471,7 +473,11 @@ export async function reportsRoutes(server: FastifyInstance) {
 
   // ── GET /api/v1/reports ──────────────────────────────────────────────────
   server.get("/reports", async (request, reply) => {
-    const { tenantId } = request.user;
+    const { tenantId, role } = request.user;
+    // Hide admin-category reports from non-admin users
+    const categoryFilter = (role === "admin" || role === "super_admin")
+      ? ""
+      : `AND (r.category IS NULL OR r.category = 'standard')`;
     const { rows } = await readPool.query(
       `SELECT r.*, u.first_name || ' ' || u.last_name AS created_by_name,
               s.row_count AS last_row_count, s.taken_at AS last_snapshot_at
@@ -481,7 +487,7 @@ export async function reportsRoutes(server: FastifyInstance) {
          SELECT row_count, taken_at FROM report_snapshots
          WHERE report_id = r.id ORDER BY taken_at DESC LIMIT 1
        ) s ON true
-       WHERE r.tenant_id = $1 ORDER BY r.updated_at DESC`,
+       WHERE r.tenant_id = $1 ${categoryFilter} ORDER BY r.updated_at DESC`,
       [tenantId]
     );
     return reply.send({ success: true, data: rows });

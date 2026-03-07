@@ -27,7 +27,7 @@ sentry_sdk.init(
     traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
     enabled=bool(os.getenv("SENTRY_DSN")),
 )
-from .routers import extraction, scoring, nl_command, health
+from .routers import extraction, scoring, nl_command, health, enrichment, forecasting
 from .workers.extraction_worker import start_extraction_worker
 from .telemetry import setup_telemetry
 from .db import get_pool, close_pool
@@ -63,3 +63,5 @@ app.include_router(health.router)
 app.include_router(extraction.router, prefix="/extraction")
 app.include_router(scoring.router, prefix="/scoring")
 app.include_router(nl_command.router, prefix="/nl")
+app.include_router(enrichment.router, prefix="/enrich")
+app.include_router(forecasting.router, prefix="/forecast")

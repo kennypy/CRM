@@ -16,6 +16,7 @@ import { createHmac, randomBytes } from "crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
+import { encrypt } from "../lib/oauth-exchange";
 import { webhookDeliveryQueue } from "../workers/webhook-delivery";
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ export async function outboundWebhooksRoutes(server: FastifyInstance) {
 
     // Generate a random signing secret (shown once to the customer).
     const rawSecret      = "whsec_" + randomBytes(32).toString("hex");
-    const encryptedSecret = rawSecret; // TODO: encrypt at rest with OAUTH_ENCRYPTION_KEY in production
+    const encryptedSecret = encrypt(rawSecret);
 
     const { rows: [wh] } = await pool.query(
       `INSERT INTO outbound_webhooks (tenant_id, created_by, name, url, secret, event_types)

@@ -31,9 +31,11 @@ const pool = new Pool({
 
 // ── Stable IDs (rerunning the seed produces the same graph) ──────────────────
 const IDS = {
-  tenant:    "00000000-0000-0000-0000-000000000001",
-  userAdmin: "00000000-0000-0000-0000-000000000010",
-  userRep:   "00000000-0000-0000-0000-000000000011",
+  tenant:         "00000000-0000-0000-0000-000000000001",
+  platformTenant: "00000000-0000-0000-0000-000000000002",
+  userAdmin:      "00000000-0000-0000-0000-000000000010",
+  userRep:        "00000000-0000-0000-0000-000000000011",
+  userSuperAdmin: "00000000-0000-0000-0000-000000000012",
   // Companies
   acme:      "00000000-0000-0000-0000-000000000020",
   techstart: "00000000-0000-0000-0000-000000000021",
@@ -106,6 +108,19 @@ async function main() {
         ($4, $2, 'rep@nexcrm.dev',   $3, 'Jordan', 'Rep',   'rep')
       ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash
     `, [IDS.userAdmin, IDS.tenant, pwHash, IDS.userRep]);
+
+    // ── Platform tenant + super admin (for /admin panel) ──────────────────────
+    await client.query(`
+      INSERT INTO tenants (id, name, slug, plan, data_region, settings)
+      VALUES ($1, 'Platform', '_platform', 'enterprise', 'us', '{}')
+      ON CONFLICT (id) DO NOTHING
+    `, [IDS.platformTenant]);
+
+    await client.query(`
+      INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, role)
+      VALUES ($1, $2, 'superadmin@nexcrm.dev', $3, 'Platform', 'Owner', 'super_admin')
+      ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash
+    `, [IDS.userSuperAdmin, IDS.platformTenant, pwHash]);
 
     console.log("[seed] Tenant + users ✓");
 
@@ -393,8 +408,9 @@ async function main() {
     console.log("[seed] Done ✓");
     console.log("");
     console.log("Dev credentials:");
-    console.log("  Admin: admin@nexcrm.dev / Admin@nexcrm1");
-    console.log("  Rep:   rep@nexcrm.dev   / Admin@nexcrm1");
+    console.log("  Admin:       admin@nexcrm.dev      / Admin@nexcrm1  (org: nexcrm-dev)");
+    console.log("  Rep:         rep@nexcrm.dev        / Admin@nexcrm1  (org: nexcrm-dev)");
+    console.log("  Super Admin: superadmin@nexcrm.dev / Admin@nexcrm1  (org: _platform)");
     console.log("");
     console.log("Seeded scores (call GET /api/v1/deals/:id/reality-score to recompute):");
     console.log("  Acme      reality ≈ 58 | declared 80% | Δ −22  (blocker + thin buying group)");
