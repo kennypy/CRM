@@ -10,7 +10,7 @@ import {
   Settings, Bell, ChevronDown, LogOut, User, Search,
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
   Headphones, Target, Globe, GraduationCap, ShieldCheck,
-  Cog, LineChart, MailPlus, ShieldAlert, Store,
+  Cog, LineChart, MailPlus, ShieldAlert, Store, Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
