@@ -53,6 +53,7 @@ import { customObjectsRoutes }        from "./routes/custom-objects";
 import { permissionsRoutes }          from "./routes/permissions";
 import { importRoutes }               from "./routes/import";
 import { bulkRoutes }                 from "./routes/bulk";
+import { campaignsRoutes }            from "./routes/campaigns";
 import { startWebhookDeliveryWorker } from "./workers/webhook-delivery";
 import { startWorkflowEngine }        from "./workers/workflow-engine";
 import { startSlackNotificationWorker } from "./workers/slack-notification";
@@ -181,6 +182,7 @@ async function bootstrap() {
   await server.register(permissionsRoutes,      { prefix: "/api/v1/permissions" });
   await server.register(importRoutes,           { prefix: "/api/v1/import" });
   await server.register(bulkRoutes,             { prefix: "/api/v1/bulk" });
+  await server.register(campaignsRoutes,        { prefix: "/api/v1/campaigns" });
   await server.register(complianceRoutes,       { prefix: "/api/v1" });
   await server.register(coachingRoutes,         { prefix: "/api/v1/coaching" });
   await server.register(territoriesRoutes,      { prefix: "/api/v1/territories" });

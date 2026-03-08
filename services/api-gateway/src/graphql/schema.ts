@@ -45,6 +45,48 @@ export const typeDefs = `
     auto_approved
   }
 
+  enum CampaignType {
+    email
+    social
+    event
+    webinar
+    content
+    paid_search
+    paid_social
+    abm
+    referral
+    other
+  }
+
+  enum CampaignStatus {
+    draft
+    scheduled
+    active
+    paused
+    completed
+    archived
+  }
+
+  enum LifecycleStage {
+    subscriber
+    lead
+    mql
+    sql
+    opportunity
+    customer
+    evangelist
+  }
+
+  enum LeadStatus {
+    new_lead
+    open
+    in_progress
+    unqualified
+    attempted
+    connected
+    nurture
+  }
+
   # ── Shared refs ──────────────────────────────────────────────────────────────
   type CompanyRef {
     id: ID!
@@ -76,6 +118,21 @@ export const typeDefs = `
     influenceScore: Float
     lastActivityAt: String
     company: CompanyRef
+    # Marketing fields
+    leadSource: String
+    lifecycleStage: LifecycleStage
+    leadStatus: LeadStatus
+    marketingQualifiedDate: String
+    salesQualifiedDate: String
+    lastCampaignId: String
+    lastCampaignName: String
+    lastCampaignDate: String
+    utmSource: String
+    utmMedium: String
+    utmCampaign: String
+    firstTouchChannel: String
+    lastTouchChannel: String
+    engagementScore: Float
     createdAt: String!
     updatedAt: String!
   }
@@ -92,6 +149,14 @@ export const typeDefs = `
     country: String
     openDeals: Int
     openDealValue: Float
+    # Marketing fields
+    marketingTier: String
+    isTargetAccount: Boolean
+    lastCampaignId: String
+    lastCampaignName: String
+    lastCampaignDate: String
+    totalCampaignTouches: Int
+    accountScore: Float
     createdAt: String!
     updatedAt: String!
   }
@@ -114,8 +179,56 @@ export const typeDefs = `
     company: CompanyRef
     buyingGroupSize: Int
     lastActivityAt: String
+    # Marketing fields
+    primaryCampaignId: String
+    primaryCampaignName: String
+    marketingSourced: Boolean
+    marketingInfluenced: Boolean
+    influencedCampaigns: [String!]
+    campaignROI: Float
     createdAt: String!
     updatedAt: String!
+  }
+
+  type Campaign {
+    id: ID!
+    tenantId: String!
+    name: String!
+    description: String
+    type: CampaignType!
+    status: CampaignStatus!
+    channel: String
+    startDate: String
+    endDate: String
+    budget: Float
+    actualSpend: Float
+    currency: String!
+    targetAudience: String
+    goals: String
+    ownerId: String
+    owner: UserRef
+    sent: Int!
+    delivered: Int!
+    opened: Int!
+    clicked: Int!
+    converted: Int!
+    unsubscribed: Int!
+    bounced: Int!
+    leadsGenerated: Int!
+    mqls: Int!
+    sqls: Int!
+    opportunities: Int!
+    closedWon: Int!
+    revenue: Float!
+    tags: [String!]!
+    contactCount: Int
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type CampaignConnection {
+    data: [Campaign!]!
+    pagination: Pagination!
   }
 
   type Activity {
@@ -243,6 +356,58 @@ export const typeDefs = `
     isExpansion: Boolean
   }
 
+  input CreateCampaignInput {
+    name: String!
+    description: String
+    type: CampaignType!
+    status: CampaignStatus
+    channel: String
+    startDate: String
+    endDate: String
+    budget: Float
+    currency: String
+    targetAudience: String
+    goals: String
+    ownerId: ID
+    tags: [String!]
+  }
+
+  input UpdateCampaignInput {
+    name: String
+    description: String
+    type: CampaignType
+    status: CampaignStatus
+    channel: String
+    startDate: String
+    endDate: String
+    budget: Float
+    actualSpend: Float
+    currency: String
+    targetAudience: String
+    goals: String
+    ownerId: ID
+    tags: [String!]
+    sent: Int
+    delivered: Int
+    opened: Int
+    clicked: Int
+    converted: Int
+    unsubscribed: Int
+    bounced: Int
+    leadsGenerated: Int
+    mqls: Int
+    sqls: Int
+    opportunities: Int
+    closedWon: Int
+    revenue: Float
+  }
+
+  input CampaignFilter {
+    search: String
+    status: CampaignStatus
+    type: CampaignType
+  }
+
   # ── Query ─────────────────────────────────────────────────────────────────────
   type Query {
     contact(id: ID!): Contact
@@ -258,6 +423,9 @@ export const typeDefs = `
     activities(limit: Int): ActivityConnection!
 
     reviewQueue(status: ReviewStatus, limit: Int): [ReviewItem!]!
+
+    campaign(id: ID!): Campaign
+    campaigns(filter: CampaignFilter, limit: Int): CampaignConnection!
   }
 
   # ── Mutation ──────────────────────────────────────────────────────────────────
@@ -272,5 +440,9 @@ export const typeDefs = `
 
     approveReviewItem(id: ID!): ReviewItem
     rejectReviewItem(id: ID!, reason: String): ReviewItem
+
+    createCampaign(input: CreateCampaignInput!): Campaign
+    updateCampaign(id: ID!, input: UpdateCampaignInput!): Campaign
+    deleteCampaign(id: ID!): Boolean
   }
 `;

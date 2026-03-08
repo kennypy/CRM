@@ -40,6 +40,7 @@ const MORE_NAV = [
   { href: "/territories",  icon: Globe,         labelKey: "territories"   },
   { href: "/coaching",     icon: GraduationCap, labelKey: "coaching"      },
   { href: "/review",       icon: AlertCircle,  labelKey: "reviewQueue"    },
+  { href: "/marketing",    icon: Megaphone,    labelKey: "marketing"      },
   { href: "/workflows",    icon: Layers,       labelKey: "workflows"      },
   { href: "/compliance",   icon: ShieldCheck,   labelKey: "compliance"    },
   { href: "/lead-scoring", icon: Target,        labelKey: "leadScoring"   },
