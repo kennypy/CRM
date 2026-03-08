@@ -69,6 +69,11 @@ class Endpoints {
   // Leads (contacts with lead stage)
   static String get leads => '$apiUrl/api/v1/contacts';
 
+  // Marketing / Campaigns
+  static String get campaigns => '$apiUrl/api/v1/campaigns';
+  static String get tags => '$apiUrl/api/v1/tags';
+  static String get notes => '$apiUrl/api/v1/notes';
+
   // Admin
   static String get adminTenants => '$apiUrl/api/admin/tenants';
   static String get adminStats => '$apiUrl/api/admin/stats/platform';

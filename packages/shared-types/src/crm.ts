@@ -2,6 +2,14 @@
 
 import type { DealStage, PersonNode, CompanyNode, DealNode, ActivityNode } from "./graph";
 
+export type LeadSource = "organic" | "paid_search" | "paid_social" | "referral" | "event" | "cold_outreach" | "partner" | "content" | "webinar" | "other";
+export type LifecycleStage = "subscriber" | "lead" | "mql" | "sql" | "opportunity" | "customer" | "evangelist";
+export type LeadStatus = "new" | "open" | "in_progress" | "unqualified" | "attempted" | "connected" | "nurture";
+
+export type CampaignType = "email" | "social" | "event" | "webinar" | "content" | "paid_search" | "paid_social" | "abm" | "referral" | "other";
+export type CampaignStatus = "draft" | "scheduled" | "active" | "paused" | "completed" | "archived";
+export type CampaignChannel = "email" | "linkedin" | "facebook" | "google" | "twitter" | "instagram" | "webinar" | "event" | "sms" | "direct_mail" | "other";
+
 export interface Contact {
   id: string;
   tenantId: string;
@@ -18,9 +26,26 @@ export interface Contact {
   influenceScore?: number;
   lastActivityAt?: string;
   dealMemberships?: unknown[];
+  // Marketing fields
+  leadSource?: LeadSource;
+  lifecycleStage?: LifecycleStage;
+  leadStatus?: LeadStatus;
+  marketingQualifiedDate?: string;
+  salesQualifiedDate?: string;
+  lastCampaignId?: string;
+  lastCampaignName?: string;
+  lastCampaignDate?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  firstTouchChannel?: string;
+  lastTouchChannel?: string;
+  engagementScore?: number;
   createdAt: string;
   updatedAt: string;
 }
+
+export type MarketingTier = "tier_1" | "tier_2" | "tier_3";
 
 export interface Company {
   id: string;
@@ -33,6 +58,14 @@ export interface Company {
   openDeals?: number;
   openDealValue?: number;
   lastActivityAt?: string;
+  // Marketing fields
+  marketingTier?: MarketingTier;
+  isTargetAccount?: boolean;
+  lastCampaignId?: string;
+  lastCampaignName?: string;
+  lastCampaignDate?: string;
+  totalCampaignTouches?: number;
+  accountScore?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +93,51 @@ export interface Deal {
   buyingGroupSize?: number;
   lastActivityAt?: string;
   daysSinceActivity?: number;
+  // Marketing fields
+  primaryCampaignId?: string;
+  primaryCampaignName?: string;
+  marketingSourced?: boolean;
+  marketingInfluenced?: boolean;
+  influencedCampaigns?: string[];
+  campaignROI?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Campaign {
+  id: string;
+  tenantId: string;
+  name: string;
+  description?: string;
+  type: CampaignType;
+  status: CampaignStatus;
+  channel?: CampaignChannel;
+  startDate?: string;
+  endDate?: string;
+  budget?: number;
+  actualSpend?: number;
+  currency: string;
+  targetAudience?: string;
+  goals?: string;
+  ownerId?: string;
+  owner?: { id: string; name: string };
+  // Metrics
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  converted: number;
+  unsubscribed: number;
+  bounced: number;
+  leadsGenerated: number;
+  mqls: number;
+  sqls: number;
+  opportunities: number;
+  closedWon: number;
+  revenue: number;
+  // Meta
+  tags: string[];
+  contactCount?: number;
   createdAt: string;
   updatedAt: string;
 }

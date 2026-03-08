@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
+import { useTranslations } from "next-intl";
 import {
   Shield, Database, Server, Globe, Lock, Key,
   Clock, CheckCircle2, AlertCircle, XCircle,
@@ -1124,6 +1125,7 @@ const TABS: { id: Tab; label: string; icon: typeof Shield }[] = [
 ];
 
 export default function CompliancePage() {
+  const t = useTranslations("compliance");
   const [activeTab, setActiveTab] = useState<Tab>("soc2");
   const { isAdmin } = usePermissions();
 
@@ -1145,9 +1147,9 @@ export default function CompliancePage() {
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Compliance & Data Management</h1>
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
         <p className="mt-1 text-muted-foreground">
-          Manage SOC2 compliance, data escrow, mirroring, residency, encryption, and retention policies.
+          {t("subtitle")}
         </p>
       </div>
 

@@ -15,6 +15,8 @@ import {
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
 import type { Theme } from "@/components/theme/theme-provider";
+import { useTranslations } from "next-intl";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -36,9 +38,12 @@ const INTEGRATIONS = [
   { id: "stripe",  name: "Stripe",          icon: "💳", status: "available", account: null,               desc: "Revenue data sync"               },
 ];
 
-const ROLE_LABELS: Record<string, string> = {
-  super_admin: "Super Admin", admin: "Admin", manager: "Manager", rep: "Rep", read_only: "Read Only",
-};
+function useRoleLabels(): Record<string, string> {
+  const tr = useTranslations("roles");
+  return {
+    super_admin: tr("superAdmin"), admin: tr("admin"), manager: tr("manager"), rep: tr("rep"), read_only: tr("readOnly"),
+  };
+}
 const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-red-100 text-red-700",   admin:     "bg-purple-100 text-purple-700",
   manager:     "bg-blue-100 text-blue-700", rep:       "bg-green-100 text-green-700",
@@ -58,14 +63,15 @@ type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "secur
 
 function ThemeSelector() {
   const { theme, setTheme } = useTheme();
+  const t = useTranslations("settings");
   const options: { value: Theme; label: string; icon: React.FC<{ className?: string }> }[] = [
-    { value: "light",  label: "Light",  icon: Sun     },
-    { value: "dark",   label: "Dark",   icon: Moon    },
-    { value: "system", label: "System", icon: Monitor },
+    { value: "light",  label: t("themeLight"),  icon: Sun     },
+    { value: "dark",   label: t("themeDark"),   icon: Moon    },
+    { value: "system", label: t("themeSystem"), icon: Monitor },
   ];
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium">Theme</label>
+      <label className="mb-2 block text-sm font-medium">{t("theme")}</label>
       <div className="flex gap-2">
         {options.map(({ value, label, icon: Icon }) => (
           <button key={value} onClick={() => setTheme(value)}
@@ -87,6 +93,9 @@ function ThemeSelector() {
 // ── Tab: Profile ───────────────────────────────────────────────────────────────
 
 function ProfileTab({ user }: { user: StoredUser | null }) {
+  const t = useTranslations("settings");
+  const tc = useTranslations("common");
+  const ROLE_LABELS = useRoleLabels();
   const initials = user ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}` : "?";
   const [firstName,    setFirstName]    = useState(user?.firstName ?? "");
   const [lastName,     setLastName]     = useState(user?.lastName  ?? "");
@@ -126,13 +135,13 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        setError(json?.error?.message ?? "Failed to save profile");
+        setError(json?.error?.message ?? t("failedSave"));
         return;
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch {
-      setError("Network error — please try again");
+      setError(tc("networkError"));
     } finally {
       setSaving(false);
     }
@@ -154,44 +163,44 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
       </div>
 
       <div className="rounded-xl border bg-card p-5 space-y-4">
-        <h3 className="font-semibold">Personal Information</h3>
+        <h3 className="font-semibold">{t("personalInfo")}</h3>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-sm font-medium">First name</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("firstName")}</label>
             <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Last name</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("lastName")}</label>
             <input value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
           </div>
         </div>
         <div>
-          <label className="mb-1.5 block text-sm font-medium">Email</label>
+          <label className="mb-1.5 block text-sm font-medium">{tc("email")}</label>
           <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className={inputCls} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Phone</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("phone")}</label>
             <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" placeholder="+1 555 000 0000" className={inputCls} />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Twilio Number</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("twilioNumber")}</label>
             <input value={twilioNumber} onChange={(e) => setTwilioNumber(e.target.value)} placeholder="+1 555 000 0000" className={inputCls} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Country</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("country")}</label>
             <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. United Kingdom" className={inputCls} />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Timezone</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("timezone")}</label>
             <input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. Europe/London" className={inputCls} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Language</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("language")}</label>
             <input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="e.g. en" className={inputCls} />
           </div>
           <div>{/* spacer */}</div>
@@ -204,31 +213,37 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
         <div className="flex items-center gap-3">
           <button onClick={saveProfile} disabled={saving || !firstName.trim() || !email.trim()}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? tc("saving") : tc("saveChanges")}
           </button>
-          {saved && <span className="flex items-center gap-1 text-sm text-green-600"><CheckCircle2 className="h-4 w-4" /> Saved!</span>}
+          {saved && <span className="flex items-center gap-1 text-sm text-green-600"><CheckCircle2 className="h-4 w-4" /> {t("savedProfile")}</span>}
         </div>
       </div>
 
       <div className="rounded-xl border bg-card p-5 space-y-4">
-        <h3 className="font-semibold">Appearance</h3>
+        <h3 className="font-semibold">{t("appearance")}</h3>
         <ThemeSelector />
       </div>
 
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <h3 className="font-semibold">{t("languageLabel")}</h3>
+        <p className="text-sm text-muted-foreground">{t("languageDescription")}</p>
+        <LanguageSwitcher />
+      </div>
+
       <div className="rounded-xl border bg-card p-5 space-y-3">
-        <h3 className="font-semibold">Workspace</h3>
+        <h3 className="font-semibold">{t("workspace")}</h3>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Organisation</span>
+          <span className="text-muted-foreground">{t("organisation")}</span>
           <span className="font-medium">{user?.tenantName}</span>
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Role</span>
+          <span className="text-muted-foreground">{t("role")}</span>
           <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", ROLE_COLORS[user?.role ?? "rep"])}>
             {ROLE_LABELS[user?.role ?? "rep"]}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
-          To change your role, contact your workspace admin.
+          {t("roleChangeNote")}
         </p>
       </div>
     </div>
@@ -316,6 +331,7 @@ interface UserFormProps {
 }
 
 function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps) {
+  const ROLE_LABELS = useRoleLabels();
   const [firstName,   setFirstName]   = useState(user?.firstName ?? "");
   const [lastName,    setLastName]    = useState(user?.lastName  ?? "");
   const [email,       setEmail]       = useState(user?.email     ?? "");
@@ -472,6 +488,7 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
 // ── Org Tree ──────────────────────────────────────────────────────────────────
 
 function OrgNode({ user, allUsers, depth = 0 }: { user: TeamUser; allUsers: TeamUser[]; depth?: number }) {
+  const ROLE_LABELS = useRoleLabels();
   const children = allUsers.filter((u) => u.managerId === user.id);
   return (
     <div className={cn("relative", depth > 0 && "ml-6 border-l border-border pl-4")}>
@@ -502,6 +519,7 @@ function OrgNode({ user, allUsers, depth = 0 }: { user: TeamUser; allUsers: Team
 // ── Tab: Users ─────────────────────────────────────────────────────────────────
 
 function UsersTab() {
+  const ROLE_LABELS = useRoleLabels();
   const [users,        setUsers]        = useState<TeamUser[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
@@ -710,6 +728,7 @@ function UsersTab() {
 // ── Tab: Quoting ───────────────────────────────────────────────────────────────
 
 function QuotingTab() {
+  const ROLE_LABELS = useRoleLabels();
   const [threshold,  setThreshold]  = useState(10);
   const [validDays,  setValidDays]  = useState(30);
   const [sendMethod, setSendMethod] = useState("email");
@@ -1797,36 +1816,44 @@ function PermissionsTab() {
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
-const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }>; adminOnly?: boolean }[] = [
-  { id: "profile",      label: "My Profile",   icon: User     },
-  { id: "security",     label: "Security",     icon: Shield   },
-  { id: "general",      label: "Company",      icon: Building2, adminOnly: true },
-  { id: "users",        label: "Users",        icon: Users,     adminOnly: true },
-  { id: "integrations",   label: "Integrations",   icon: Plug,      adminOnly: true },
-  { id: "quoting",        label: "Quoting",        icon: FileText,  adminOnly: true },
-  { id: "products",       label: "Products",       icon: Package,   adminOnly: true },
-  { id: "communications", label: "Communications", icon: Phone,     adminOnly: true },
-  { id: "billing",        label: "Billing",        icon: CreditCard, adminOnly: true },
-  { id: "custom-fields",  label: "Custom Fields",  icon: Columns3,   adminOnly: true },
-  { id: "custom-objects",  label: "Custom Objects", icon: Box,        adminOnly: true },
-  { id: "permissions",    label: "Permissions",    icon: LockKeyhole, adminOnly: true },
-];
+function useTabs() {
+  const t = useTranslations("settings");
+  return [
+    { id: "profile" as Tab,          label: t("tabs.profile"),        icon: User     },
+    { id: "security" as Tab,         label: t("tabs.security"),       icon: Shield   },
+    { id: "general" as Tab,          label: t("tabs.company"),        icon: Building2, adminOnly: true },
+    { id: "users" as Tab,            label: t("tabs.users"),          icon: Users,     adminOnly: true },
+    { id: "integrations" as Tab,     label: t("tabs.integrations"),   icon: Plug,      adminOnly: true },
+    { id: "quoting" as Tab,          label: t("tabs.quoting"),        icon: FileText,  adminOnly: true },
+    { id: "products" as Tab,         label: t("tabs.products"),       icon: Package,   adminOnly: true },
+    { id: "communications" as Tab,   label: t("tabs.communications"), icon: Phone,     adminOnly: true },
+    { id: "billing" as Tab,          label: t("tabs.billing"),        icon: CreditCard, adminOnly: true },
+    { id: "custom-fields" as Tab,    label: t("tabs.customFields"),   icon: Columns3,   adminOnly: true },
+    { id: "custom-objects" as Tab,   label: t("tabs.customObjects"),  icon: Box,        adminOnly: true },
+    { id: "permissions" as Tab,      label: t("tabs.permissions"),    icon: LockKeyhole, adminOnly: true },
+  ] satisfies { id: Tab; label: string; icon: React.FC<{ className?: string }>; adminOnly?: boolean }[];
+}
 
-const VALID_TABS = new Set(TABS.map((t) => t.id));
+const VALID_TAB_IDS: Set<string> = new Set([
+  "profile", "security", "general", "users", "integrations", "quoting",
+  "products", "communications", "billing", "custom-fields", "custom-objects", "permissions",
+]);
 
 function SettingsInner() {
   const searchParams = useSearchParams();
   const rawTab = searchParams.get("tab") as Tab | null;
-  const initialTab: Tab = rawTab && VALID_TABS.has(rawTab) ? rawTab : "profile";
+  const initialTab: Tab = rawTab && VALID_TAB_IDS.has(rawTab) ? rawTab : "profile";
 
   const [tab,  setTab]  = useState<Tab>(initialTab);
   const [user, setUser] = useState<StoredUser | null>(null);
   useEffect(() => { setUser(getStoredUser()); }, []);
 
+  const TABS = useTabs();
+
   // Sync tab with URL search params so dropdown nav links work without remounting
   useEffect(() => {
     const raw = searchParams.get("tab") as Tab | null;
-    if (raw && VALID_TABS.has(raw)) setTab(raw);
+    if (raw && VALID_TAB_IDS.has(raw)) setTab(raw);
   }, [searchParams]);
 
   const isAdmin = ["admin", "super_admin", "manager"].includes(user?.role ?? "");

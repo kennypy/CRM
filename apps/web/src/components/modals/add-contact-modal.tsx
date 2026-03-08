@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { X, User, AlertCircle, CheckCircle2, Building2, Loader2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,8 @@ interface Props {
 const SKIP_DOMAINS = new Set(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "aol.com"]);
 
 export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelinkedCompanyName }: Props) {
+  const t = useTranslations("addContact");
+  const tc = useTranslations("common");
   const [form, setForm] = useState({
     firstName: "", lastName: "", email: "", title: "", phone: "",
     linkedinUrl: "", notes: "",
@@ -136,7 +139,7 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <User className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">Add Contact</h2>
+            <h2 className="font-semibold">{t("title")}</h2>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
@@ -146,19 +149,19 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
         <form onSubmit={handleSubmit} className="p-6 space-y-4" suppressHydrationWarning>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-sm font-medium">First name *</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("firstName")}</label>
               <input value={form.firstName} onChange={set("firstName")} required placeholder="Ada"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Last name *</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("lastName")}</label>
               <input value={form.lastName} onChange={set("lastName")} required placeholder="Lovelace"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Email *</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("email")}</label>
             <div className="relative">
               <input type="email" value={form.email} onChange={set("email")} onBlur={handleEmailBlur}
                 required placeholder="ada@company.com"
@@ -171,7 +174,7 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
 
           {/* Manual company search */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Account / Company</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("accountCompany")}</label>
             {prelinkedCompanyId ? (
               <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
                 <Building2 className="h-4 w-4 shrink-0" />
@@ -185,7 +188,7 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
                     value={matchedCompany ? matchedCompany.name : companySearch}
                     onChange={(e) => { if (matchedCompany) return; handleCompanySearch(e.target.value); }}
                     onFocus={() => { if (matchedCompany) return; if (companySuggestions.length) setCompanyDropOpen(true); }}
-                    placeholder="Search or type company name…"
+                    placeholder={t("searchCompany")}
                     className="w-full rounded-lg border border-border bg-background pl-9 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                   {matchedCompany && (
@@ -210,7 +213,7 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
                 {matchedCompany && (
                   <div className="mt-1.5 flex items-center gap-1.5 text-xs text-emerald-700">
                     <Building2 className="h-3.5 w-3.5" />
-                    <span>Linked to <strong>{matchedCompany.name}</strong></span>
+                    <span>{t("linkedTo")} <strong>{matchedCompany.name}</strong></span>
                   </div>
                 )}
               </div>
@@ -219,26 +222,26 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Title</label>
+              <label className="mb-1.5 block text-sm font-medium">{tc("title")}</label>
               <input value={form.title} onChange={set("title")} placeholder="VP Engineering"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Phone</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("phone")}</label>
               <input type="tel" value={form.phone} onChange={set("phone")} placeholder="+1 555 000 0000"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">LinkedIn URL</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("linkedinUrl")}</label>
             <input value={form.linkedinUrl} onChange={set("linkedinUrl")} placeholder="linkedin.com/in/ada"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Notes</label>
-            <textarea value={form.notes} onChange={set("notes")} rows={2} placeholder="Any context to add…"
+            <label className="mb-1.5 block text-sm font-medium">{t("notes")}</label>
+            <textarea value={form.notes} onChange={set("notes")} rows={2} placeholder={t("notesPlaceholder")}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
           </div>
 
@@ -249,19 +252,19 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
           )}
           {done && (
             <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-              <CheckCircle2 className="h-4 w-4" /> Contact created!
+              <CheckCircle2 className="h-4 w-4" /> {t("contactCreated")}
             </div>
           )}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-              Cancel
+              {tc("cancel")}
             </button>
             <button type="submit" disabled={loading} suppressHydrationWarning
               className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                 loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-              {loading ? "Creating…" : "Create Contact"}
+              {loading ? t("creating") : t("createContact")}
             </button>
           </div>
         </form>

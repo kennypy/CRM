@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Upload, FileSpreadsheet, ArrowRight, CheckCircle2, XCircle, Loader2 } from "lucide-react";
@@ -22,6 +23,8 @@ interface ImportJob {
 }
 
 export default function ImportPage() {
+  const t = useTranslations("import");
+  const tc = useTranslations("common");
   const [step, setStep] = useState<Step>("upload");
   const [entityType, setEntityType] = useState("contact");
   const [fileName, setFileName] = useState("");
@@ -128,19 +131,24 @@ export default function ImportPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Import Data</h1>
-          <p className="text-sm text-muted-foreground mt-1">Import contacts, companies, deals and more from CSV, Excel, or JSON files.</p>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{t("subtitle")}</p>
         </div>
       </div>
 
       {/* Step indicator */}
       <div className="flex items-center gap-2 text-sm">
-        {(["upload", "mapping", "processing", "done"] as const).map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
+        {([
+          { key: "upload", label: t("upload") },
+          { key: "mapping", label: t("mapping") },
+          { key: "processing", label: t("processing") },
+          { key: "done", label: t("complete") },
+        ] as const).map(({ key, label }, i) => (
+          <div key={key} className="flex items-center gap-2">
             {i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
-            <span className={cn("capitalize",
-              step === s ? "text-primary font-medium" : "text-muted-foreground")}>
-              {s === "done" ? "Complete" : s}
+            <span className={cn(
+              step === key ? "text-primary font-medium" : "text-muted-foreground")}>
+              {label}
             </span>
           </div>
         ))}
@@ -156,17 +164,17 @@ export default function ImportPage() {
       {step === "upload" && (
         <div className="space-y-4">
           <div className="flex gap-2">
-            {entityTypes.map((t) => (
-              <button key={t} onClick={() => setEntityType(t)}
+            {entityTypes.map((et) => (
+              <button key={et} onClick={() => setEntityType(et)}
                 className={cn("rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors",
-                  entityType === t ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
-                {t}
+                  entityType === et ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
+                {t(et as any)}
               </button>
             ))}
           </div>
           <label className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-12 cursor-pointer hover:bg-muted/50 transition-colors">
             <Upload className="h-10 w-10 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Click or drag to upload a CSV, Excel, or JSON file</p>
+            <p className="text-sm text-muted-foreground">{t("dragDrop")}</p>
             <input type="file" accept=".csv,.xlsx,.json" className="hidden" onChange={handleFileSelect} />
           </label>
         </div>
@@ -176,7 +184,7 @@ export default function ImportPage() {
       {step === "mapping" && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Map columns from <strong>{fileName}</strong> to CRM fields.
+            {t("mapColumns", { fileName })}
           </p>
           <div className="rounded-lg border divide-y">
             {columns.map((col) => (
@@ -186,7 +194,7 @@ export default function ImportPage() {
                 <select value={mapping[col] ?? ""}
                   onChange={(e) => setMapping({ ...mapping, [col]: e.target.value })}
                   className="flex-1 rounded-lg border px-3 py-1.5 text-sm">
-                  <option value="">-- Skip --</option>
+                  <option value="">{t("skip")}</option>
                   {(crmFields[entityType] ?? []).map((f) => <option key={f} value={f}>{f}</option>)}
                 </select>
               </div>
@@ -194,7 +202,7 @@ export default function ImportPage() {
           </div>
           <button onClick={startProcessing}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-            Start Import
+            {t("startImport")}
           </button>
         </div>
       )}
@@ -203,9 +211,9 @@ export default function ImportPage() {
       {step === "processing" && (
         <div className="flex flex-col items-center gap-4 py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Processing import...</p>
+          <p className="text-sm text-muted-foreground">{t("processingImport")}</p>
           {job && (
-            <p className="text-xs text-muted-foreground">{job.processedRows ?? 0} / {job.totalRows ?? 0} rows</p>
+            <p className="text-xs text-muted-foreground">{t("rowProgress", { current: job.processedRows ?? 0, total: job.totalRows ?? 0 })}</p>
           )}
         </div>
       )}
@@ -236,7 +244,7 @@ export default function ImportPage() {
           </div>
           <button onClick={() => { setStep("upload"); setJobId(""); setJob(null); setError(""); }}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-            Import More
+            {t("importMore")}
           </button>
         </div>
       )}
@@ -244,7 +252,7 @@ export default function ImportPage() {
       {/* Recent imports */}
       {jobs.length > 0 && step === "upload" && (
         <div className="space-y-2">
-          <p className="text-sm font-medium">Recent Imports</p>
+          <p className="text-sm font-medium">{t("recentImports")}</p>
           <div className="rounded-lg border divide-y">
             {jobs.slice(0, 5).map((j: any) => (
               <div key={j.id} className="flex items-center justify-between px-4 py-3">

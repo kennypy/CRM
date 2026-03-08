@@ -1,6 +1,6 @@
 # NexCRM Security Architecture
 
-> Version 1.0 | Updated 2026-03-07
+> Version 2.0 | Updated 2026-03-08
 
 ---
 
@@ -14,7 +14,8 @@
 6. [Rate Limiting](#6-rate-limiting)
 7. [Input Validation and Injection Prevention](#7-input-validation-and-injection-prevention)
 8. [Webhook Security](#8-webhook-security)
-9. [Known Gaps and Security Roadmap](#9-known-gaps-and-security-roadmap)
+9. [Data Privacy and Compliance (GDPR/CCPA)](#9-data-privacy-and-compliance-gdprccpa)
+10. [Known Gaps and Security Roadmap](#10-known-gaps-and-security-roadmap)
 
 ---
 
@@ -78,22 +79,22 @@ Used for Google OAuth sign-in and Gmail/Calendar integration token acquisition.
    - Requires an authenticated JWT (tenantId is read from the verified JWT,
      never from a query parameter, preventing CSRF tenant-swap attacks)
    - Generates a cryptographically random state parameter (16 bytes)
-   - Stores state -> tenantId mapping in an in-memory Map (10-min TTL)
+   - Stores state -> tenantId mapping in Redis (SET ... EX 600, 10-min TTL)
    - Redirects to Google consent screen
 
 2. GET /auth/oauth/google/callback
-   - Validates the state parameter against the in-memory store
+   - Validates the state parameter against Redis and atomically deletes it
    - Exchanges the authorization code for Google tokens
    - Encrypts OAuth tokens with AES-256-GCM before DB storage
    - Upserts the user in the users table (creates with 'rep' role if new)
    - Issues a NexCRM JWT access token + refresh token
-   - Creates a one-time session entry (32-byte random ID, 15-second TTL)
+   - Creates a one-time session entry in Redis (32-byte random ID, SET ... EX 15)
    - Redirects to {APP_URL}/api/auth/oauth-callback?session=<id>
 
 3. GET /auth/oauth-session/:id  (internal, server-to-server only)
    - Called by the Next.js Route Handler, not the browser
-   - Returns tokens once and immediately deletes the session entry
-   - Entry expires after 15 seconds
+   - Atomically reads and deletes the session via Redis pipeline (GET + DEL)
+   - Entry expires after 15 seconds if not consumed
    - Next.js sets HttpOnly cookies and redirects the user to the app
 ```
 
@@ -137,6 +138,8 @@ Source: `services/api-gateway/src/routes/api-keys.ts`,
 1. POST /auth/forgot-password  { email, tenantSlug }
    - Always returns HTTP 200 regardless of whether the user/tenant exists
      (prevents user enumeration)
+   - Per-email rate limit: max 3 requests per email per hour (Redis counter
+     keyed by SHA-256 hash of the email to avoid storing PII)
    - Generates a 32-byte random token
    - Stores SHA-256 hash of the token in password_reset_tokens (1-hour TTL)
    - Sends reset email asynchronously (non-blocking)
@@ -165,15 +168,20 @@ Source: `services/auth/src/routes/auth.routes.ts`, lines 242-324.
 
 ### 1.5 Startup Secret Validation
 
-The auth service performs strict checks before accepting traffic:
+Both services perform strict checks before accepting traffic:
 
 - **JWT_SECRET:** Must be set. In production, must be at least 32 characters and must
   not contain `"dev"` or `"change"` substrings.
 - **OAUTH_ENCRYPTION_KEY:** Must be a 64-character hex string (32 bytes). In
   production the service exits immediately if this is missing or malformed. In
   development a warning is logged.
+- **REDIS_URL:** Must be set in production. The shared Redis client modules in both
+  the API gateway and auth service throw a fatal error on startup if `REDIS_URL` is
+  unset in production, preventing services from running with hardcoded dev credentials.
+  In development, falls back to the local Docker Compose Redis instance.
 
-Source: `services/auth/src/index.ts`, lines 27-50.
+Source: `services/auth/src/index.ts`, `services/api-gateway/src/lib/redis.ts`,
+`services/auth/src/lib/redis.ts`.
 
 ---
 
@@ -363,7 +371,7 @@ queries.
 **Current enforcement:** Application-level `WHERE tenant_id = $1` clauses.
 
 **Not yet implemented:** PostgreSQL Row-Level Security (RLS) policies. See
-[Known Gaps](#9-known-gaps-and-security-roadmap).
+[Known Gaps](#10-known-gaps-and-security-roadmap).
 
 ### 4.3 Sub-Workspaces (Hierarchical Tenancy)
 
@@ -458,31 +466,39 @@ structured context:
 
 ## 6. Rate Limiting
 
-Rate limiting is enforced at two levels: the auth service and the API gateway.
+Rate limiting is enforced at three levels: the auth service, the API gateway, and
+per-endpoint custom limits. All rate limit counters are stored in Redis, ensuring
+they are shared across all service replicas in a multi-instance deployment.
 
 ### 6.1 Auth Service
 
-| Scope              | Limit           | Window    | Key          |
-|--------------------|-----------------|-----------|--------------|
-| All auth endpoints | 20 requests     | 1 minute  | Client IP    |
-| OAuth initiation   | 20 requests     | 10 minutes| Client IP    |
+| Scope              | Limit           | Window    | Key              | Store |
+|--------------------|-----------------|-----------|------------------|-------|
+| All auth endpoints | 20 requests     | 1 minute  | Client IP        | Redis |
+| OAuth initiation   | 20 requests     | 10 minutes| Client IP        | Redis |
+| Password reset     | 3 per email     | 1 hour    | SHA-256(email)   | Redis |
 
-The auth service uses `@fastify/rate-limit`. The key generator uses `req.ip` with
-proxy trust enabled (`trustProxy` configured via environment variable).
+The auth service uses `@fastify/rate-limit` with a Redis backend. The key generator
+uses `req.ip` with proxy trust enabled. The per-email password reset limit uses
+SHA-256 hashed email addresses as Redis keys to avoid storing PII.
 
-Source: `services/auth/src/index.ts`, lines 65-69;
-`services/auth/src/routes/oauth.routes.ts`, line 116.
+Source: `services/auth/src/index.ts`, `services/auth/src/routes/auth.routes.ts`.
 
 ### 6.2 API Gateway
 
-| Scope              | Limit           | Window    | Key          |
-|--------------------|-----------------|-----------|--------------|
-| Global default     | 200 requests    | 1 minute  | Client IP    |
-| AI NL endpoint     | 20 requests     | 1 minute  | Client IP    |
+| Scope              | Limit           | Window    | Key              | Store |
+|--------------------|-----------------|-----------|------------------|-------|
+| Global default     | 200 requests    | 1 minute  | JWT sub or IP    | Redis |
+| AI NL endpoint     | 20 requests     | 1 minute  | Client IP        | Redis |
+
+The gateway uses `@fastify/rate-limit` with a Redis backend. The key generator
+uses the authenticated user's JWT `sub` claim when available, falling back to
+client IP for unauthenticated requests. Each unidentifiable request gets its own
+unique key to prevent a single bad actor from exhausting a shared bucket.
 
 The gateway trusts exactly one hop of reverse proxy for accurate client IP resolution.
 
-Source: `services/api-gateway/src/index.ts`, lines 69-107.
+Source: `services/api-gateway/src/index.ts`.
 
 ### 6.3 Security Headers
 
@@ -563,22 +579,96 @@ Source: `services/api-gateway/src/workers/webhook-delivery.ts`,
 
 ---
 
-## 9. Known Gaps and Security Roadmap
+## 9. Data Privacy and Compliance (GDPR/CCPA)
 
-### 9.1 Current Known Gaps
+### 9.1 Data Subject Request (DSR) Automation
+
+NexCRM provides automated processing of data subject requests as required by GDPR
+(Articles 15-21) and CCPA. DSRs are submitted via `POST /api/v1/compliance/dsr` and
+processed asynchronously by a BullMQ worker.
+
+**Supported request types:**
+
+| Type | Regulation | Automation |
+|------|-----------|-----------|
+| `access` | GDPR Art. 15 | Gathers all data for the subject (contacts, activities, deals, emails, audit log) and packages as downloadable JSON |
+| `erasure` | GDPR Art. 17 | Anonymizes PII (`[REDACTED]`), deletes associated records within a DB transaction, writes audit log |
+| `portability` | GDPR Art. 20 | Same as access, machine-readable JSON format |
+| `rectification` | GDPR Art. 16 | Flags records for manual review |
+| `restriction` | GDPR Art. 18 | Flags records to prevent further processing |
+| `do_not_sell` | CCPA | Sets `do_not_sell` flag on contact, cancels active outreach sequences |
+| `ccpa_access` | CCPA | Same as GDPR access |
+| `ccpa_delete` | CCPA | Same as GDPR erasure |
+
+**Processing:** Each DSR is created as a database record with status tracking, then
+enqueued as a BullMQ job with 3 retry attempts and exponential backoff. The worker
+updates status through `pending` → `in_progress` → `completed`/`failed`.
+
+**Erasure safety:** Erasure requests run inside a PostgreSQL transaction. Contact PII
+fields are set to `[REDACTED]` (preserving the UUID for referential integrity), email
+content is redacted, and associated activities are deleted. An audit log entry records
+the erasure for compliance proof.
+
+Source: `services/api-gateway/src/workers/dsr-processor.ts`,
+`services/api-gateway/src/routes/compliance.ts`.
+
+### 9.2 CCPA Compliance
+
+CCPA-specific endpoints provide:
+
+- **`GET /compliance/ccpa/status`** — Returns opt-out contact count, pending CCPA
+  requests, supported rights, and data categories collected.
+- **`POST /compliance/ccpa/opt-out`** — Marks a contact as "do not sell" and cancels
+  active outreach sequences. Processed by the DSR worker.
+- **`GET /compliance/ccpa/disclosures`** — Returns data categories collected, third-party
+  sharing recipients, and retention periods (per CCPA § 1798.130).
+
+**Database schema:** The `contacts` table includes `do_not_sell BOOLEAN DEFAULT FALSE`
+and `ccpa_opt_out_at TIMESTAMPTZ` columns.
+
+Source: `infra/db/migrations/029_ccpa.sql`,
+`services/api-gateway/src/routes/compliance.ts`.
+
+### 9.3 Data Retention
+
+Retention policies are configurable per entity type per tenant via
+`POST /api/v1/compliance/retention`. Default retention periods:
+
+| Entity Type | Default Retention | Auto-Archive | Auto-Delete |
+|-------------|------------------|--------------|-------------|
+| Contacts | 730 days (2 years) | Yes | No |
+| Companies | 730 days | Yes | No |
+| Deals | 1095 days (3 years) | Yes | No |
+| Activities | 365 days (1 year) | Yes | No |
+| Audit log | 2555 days (7 years) | No | No |
+| Call recordings | 365 days | Yes | Yes |
+| Email content | 730 days | Yes | No |
+
+Source: `services/api-gateway/src/routes/compliance.ts`.
+
+---
+
+## 10. Known Gaps and Security Roadmap
+
+### 10.1 Current Known Gaps
 
 | Gap | Risk | Severity | Mitigation / Notes |
 |-----|------|----------|-------------------|
-| **In-memory OAuth state store** | OAuth state and one-time session tokens are stored in a `Map` in the auth service process. State is lost on restart and not shared across replicas. | HIGH | Deploy as a single replica until Redis-backed store is implemented. Code contains `TODO(production)` comments. |
-| **No PostgreSQL Row-Level Security** | Tenant isolation relies solely on application-level `WHERE tenant_id = $1` clauses. A bug in a query could leak cross-tenant data. | HIGH | All queries are parameterized and tested, but RLS would provide defense-in-depth. |
+| **No PostgreSQL Row-Level Security** | Tenant isolation relies solely on application-level `WHERE tenant_id = $1` clauses. A bug in a query could leak cross-tenant data. | HIGH | All queries are parameterized and tested, but RLS would provide defense-in-depth. Planned for Phase 3. |
 | **No SAML/SCIM** | Enterprise SSO and automated user provisioning are not yet available. | MEDIUM | Planned for Phase 3 (enterprise tier). |
-| **Password reset lacks dedicated rate limiting** | The `/auth/forgot-password` endpoint shares the global 20 req/min limit but has no per-email throttle. | MEDIUM | An attacker could trigger 20 reset emails per minute per IP. |
-| **Token refresh rate limiter is per-process** | Rate limiting uses in-process state (`@fastify/rate-limit` default store), not Redis. In multi-replica deployments, limits are per-pod rather than global. | MEDIUM | Connect `@fastify/rate-limit` to Redis store. |
-| **GraphQL introspection enabled** | Schema introspection is not disabled in production, exposing the full API schema. | LOW | Disable via Mercurius `graphiql: false` and `schema` introspection settings in production. |
 | **No distributed locking for plan quota enforcement** | Sequence enrollment plan limits (step/contact quotas) have no distributed lock, allowing a race condition on concurrent enrollments. | LOW | Unlikely in practice but could allow minor overages. |
-| **Hardcoded Redis dev passwords** | Eight ingestion worker files contain fallback Redis connection strings with development passwords. | LOW | Require `REDIS_URL` env var in production; fail-fast if missing. |
 
-### 9.2 Security Roadmap
+#### Resolved Gaps (Phase 2)
+
+| Gap | Resolution |
+|-----|-----------|
+| **In-memory OAuth state store** | Replaced with Redis-backed stores using `SET ... EX NX` with automatic TTL expiration. Supports multi-replica deployments and survives service restarts. |
+| **Password reset lacks dedicated rate limiting** | Added per-email rate limiting (3 per email per hour) using SHA-256 hashed email keys in Redis. Silently skips email send when exceeded (no information leakage). |
+| **Token refresh rate limiter is per-process** | Connected `@fastify/rate-limit` to Redis in both the auth service and API gateway. Rate limit counters are now global across all replicas. |
+| **GraphQL introspection enabled** | Disabled in production via `NoSchemaIntrospectionCustomRule` from `graphql-js`. Introspection remains enabled in development. |
+| **Hardcoded Redis dev passwords** | All workers now use a shared Redis client module that enforces `REDIS_URL` in production (fatal error on startup if missing). Dev fallbacks only apply when `NODE_ENV !== "production"`. |
+
+### 10.2 Security Roadmap
 
 #### Phase 2 (Months 7-12)
 
@@ -611,6 +701,7 @@ Source: `services/api-gateway/src/workers/webhook-delivery.ts`,
 |-------------------------|----------|----------------------------------|--------------------------------------------|
 | `JWT_SECRET`            | Yes      | 32+ char random string           | JWT signing key                            |
 | `OAUTH_ENCRYPTION_KEY`  | Yes*     | 64-char hex (32 bytes)           | AES-256-GCM key for OAuth token encryption |
+| `REDIS_URL`             | Yes†     | Redis connection URL             | Redis for rate limiting, OAuth state, workers |
 | `GOOGLE_CLIENT_ID`      | Yes*     | Google OAuth client ID           | Google OAuth PKCE flow                     |
 | `GOOGLE_CLIENT_SECRET`  | Yes*     | Google OAuth client secret       | Google OAuth token exchange                |
 | `STRIPE_WEBHOOK_SECRET` | Yes*     | Stripe signing secret            | Inbound webhook signature verification     |
@@ -618,6 +709,9 @@ Source: `services/api-gateway/src/workers/webhook-delivery.ts`,
 
 \* Required for the respective feature to function. The auth service enforces
 `JWT_SECRET` and `OAUTH_ENCRYPTION_KEY` at startup.
+
+† Required in production. In development, falls back to the local Docker Compose Redis
+instance. Both the API gateway and auth service refuse to start in production without it.
 
 ## Appendix B: CORS Configuration
 

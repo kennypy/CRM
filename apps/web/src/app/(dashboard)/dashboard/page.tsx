@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
 import { api } from "@/lib/api";
@@ -407,6 +408,8 @@ const TOP_REPS = [
 
 export default function DashboardPage() {
   const { tenant } = useTenant();
+  const t = useTranslations("dashboard");
+  const tc = useTranslations("common");
   const currency = tenant.defaultCurrency;
   const locale   = tenant.locale;
 
@@ -447,7 +450,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <LayoutDashboard className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-semibold">Dashboard</h1>
+            <h1 className="text-xl font-semibold">{t("title")}</h1>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -472,7 +475,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <LayoutDashboard className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-semibold">Dashboard</h1>
+            <h1 className="text-xl font-semibold">{t("title")}</h1>
           </div>
           <button
             onClick={handleRefresh}
@@ -480,7 +483,7 @@ export default function DashboardPage() {
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
-            Refresh
+            {tc("refresh")}
           </button>
         </div>
         <div className="flex flex-col items-center justify-center gap-3 py-20 text-muted-foreground">
@@ -532,7 +535,7 @@ function RepDashboard({ currency, locale }: { currency: string; locale: string }
           href="/reports"
         />
         <KpiCard
-          label="Active Contacts"
+          label={t("activeContacts")}
           value={kpis.activeContacts.toLocaleString(locale)}
           sub="Contacts in system"
           icon={Users}
@@ -585,7 +588,7 @@ function RepDashboard({ currency, locale }: { currency: string; locale: string }
         {/* Recent Activity */}
         <div className="rounded-xl border bg-card p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold">Recent Activity</h2>
+            <h2 className="font-semibold">{t("recentActivity")}</h2>
             <Link href="/activities" className="flex items-center gap-1 text-xs text-primary hover:underline">
               All activity <ArrowRight className="h-3 w-3" />
             </Link>
@@ -620,14 +623,14 @@ function RepDashboard({ currency, locale }: { currency: string; locale: string }
             <Link href="/pipeline" className="flex items-center gap-1 text-xs text-primary hover:underline">Pipeline <ArrowRight className="h-3 w-3" /></Link>
           </div>
           {staleDeals.length === 0 ? (
-            <EmptyState message="All deals are on track" />
+            <EmptyState message={t("noRiskAlerts")} />
           ) : (
             <div className="space-y-3">
               {staleDeals.map((d) => (
                 <div key={d.id} className="flex items-center justify-between rounded-lg border border-border p-3 hover:bg-muted/30 transition-colors">
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{d.name}</p>
-                    <p className="text-xs text-muted-foreground">{d.stage} · {d.days} days inactive</p>
+                    <p className="text-xs text-muted-foreground">{d.stage} · {t("staleDays", { days: d.days })}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium",
@@ -823,10 +826,10 @@ function ExecDashboard({ currency, locale }: { currency: string; locale: string 
         <h2 className="mb-4 font-semibold">Revenue Waterfall — Q1 2026</h2>
         <div className="flex items-end gap-2 h-48">
           {[
-            { label: "Emails sent",     value: activityStats.emailsSent.toLocaleString(locale),     color: "text-blue-600" },
-            { label: "Calls logged",    value: activityStats.callsLogged.toLocaleString(locale),    color: "text-green-600" },
-            { label: "Meetings held",   value: activityStats.meetingsHeld.toLocaleString(locale),   color: "text-purple-600" },
-            { label: "Tasks completed", value: activityStats.tasksCompleted.toLocaleString(locale), color: "text-orange-600" },
+            { label: t("emailsSent"),     value: activityStats.emailsSent.toLocaleString(locale),     color: "text-blue-600" },
+            { label: t("callsLogged"),    value: activityStats.callsLogged.toLocaleString(locale),    color: "text-green-600" },
+            { label: t("meetingsHeld"),   value: activityStats.meetingsHeld.toLocaleString(locale),   color: "text-purple-600" },
+            { label: t("tasksCompleted"), value: activityStats.tasksCompleted.toLocaleString(locale), color: "text-orange-600" },
           ].map(({ label, value, color }) => (
             <div key={label} className="text-center rounded-lg bg-muted/40 p-4">
               <p className={cn("text-2xl font-bold", color)}>{value}</p>
@@ -947,13 +950,13 @@ function AdminDashboard() {
 
       {/* System Health */}
       <div className="rounded-xl border bg-card p-5">
-        <h2 className="mb-4 font-semibold flex items-center gap-2"><Server className="h-4 w-4 text-green-500" /> System Health</h2>
+        <h2 className="mb-4 font-semibold flex items-center gap-2"><Server className="h-4 w-4 text-green-500" /> {t("systemHealth")}</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {[
             { name: "API Gateway", status: "healthy", latency: "12ms" },
             { name: "Auth Service", status: "healthy", latency: "8ms" },
             { name: "Graph Core", status: "healthy", latency: "15ms" },
-            { name: "AI Engine", status: "healthy", latency: "45ms" },
+            { name: t("aiEngine"), status: "healthy", latency: "45ms" },
             { name: "Ingestion", status: "healthy", latency: "22ms" },
             { name: "Outreach", status: "healthy", latency: "18ms" },
           ].map((s) => (
@@ -1030,14 +1033,9 @@ function AdminDashboard() {
   );
 }
 
-// ── Main Dashboard Page ───────────────────────────────────────────────────────
+  // ── Main render (persona switcher + greeting) ─────────────────────────────
 
-export default function DashboardPage() {
-  const { tenant } = useTenant();
   const perms = usePermissions();
-  const currency = tenant.defaultCurrency;
-  const locale   = tenant.locale;
-  const [refreshing, setRefreshing] = useState(false);
 
   // Auto-detect persona from role
   const defaultPersona: Persona = perms.isSuperAdmin || perms.isAdmin ? "admin" : perms.isManager ? "manager" : "rep";
@@ -1050,11 +1048,6 @@ export default function DashboardPage() {
     ? ["rep", "manager", "exec"]
     : ["rep"];
 
-  const handleRefresh = useCallback(() => {
-    setRefreshing(true);
-    window.location.reload();
-  }, []);
-
   const [userName, setUserName] = useState("");
   useEffect(() => {
     const u = getStoredUser();
@@ -1062,7 +1055,7 @@ export default function DashboardPage() {
   }, []);
 
   const greetingHour = new Date().getHours();
-  const greeting = greetingHour < 12 ? "Good morning" : greetingHour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = greetingHour < 12 ? t("goodMorning", { name: userName }) : greetingHour < 17 ? t("goodAfternoon", { name: userName }) : t("goodEvening", { name: userName });
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-auto">
@@ -1071,7 +1064,7 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-center gap-2">
             <LayoutDashboard className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-semibold">{greeting}{userName ? `, ${userName}` : ""}</h1>
+            <h1 className="text-xl font-semibold">{greeting}</h1>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {new Date().toLocaleDateString(locale, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -1101,7 +1094,7 @@ export default function DashboardPage() {
             </div>
           )}
           <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60">
-            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> {tc("refresh")}
           </button>
         </div>
       </div>

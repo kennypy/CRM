@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   Zap, Home, Briefcase, Users, Building2, Activity,
   TrendingUp, CheckSquare, BarChart3, Layers, AlertCircle,
@@ -15,35 +16,37 @@ import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
 import { useCommandBarStore } from "@/stores/command-bar-store";
 import { usePermissions } from "@/lib/permissions";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import type { StoredUser } from "@/lib/auth";
 
 const PRIMARY_NAV = [
-  { href: "/",           icon: Home,       label: "Home"          },
-  { href: "/activities", icon: Activity,   label: "Activities"    },
-  { href: "/leads",      icon: TrendingUp, label: "Leads"         },
-  { href: "/contacts",   icon: Users,      label: "Contacts"      },
-  { href: "/pipeline",   icon: Briefcase,  label: "Opportunities" },
-  { href: "/companies",  icon: Building2,  label: "Companies"     },
+  { href: "/",           icon: Home,       labelKey: "home"          },
+  { href: "/activities", icon: Activity,   labelKey: "activities"    },
+  { href: "/leads",      icon: TrendingUp, labelKey: "leads"         },
+  { href: "/contacts",   icon: Users,      labelKey: "contacts"      },
+  { href: "/pipeline",   icon: Briefcase,  labelKey: "opportunities" },
+  { href: "/companies",  icon: Building2,  labelKey: "companies"     },
 ];
 
 const MORE_NAV = [
-  { href: "/calling",      icon: Headphones,   label: "Calling"         },
-  { href: "/sequences",    icon: Mail,         label: "Sequences"       },
-  { href: "/tasks",        icon: CheckSquare,  label: "Tasks"           },
-  { href: "/quotes",       icon: FileText,     label: "Quotes"          },
-  { href: "/templates",    icon: MailPlus,      label: "Templates"      },
-  { href: "/reports",      icon: BarChart3,    label: "Reports"         },
-  { href: "/insights",     icon: LineChart,     label: "Insights"       },
-  { href: "/forecasting",  icon: Target,        label: "Forecasting"    },
-  { href: "/territories",  icon: Globe,         label: "Territories"    },
-  { href: "/coaching",     icon: GraduationCap, label: "Coaching"       },
-  { href: "/review",       icon: AlertCircle,  label: "Review Queue"    },
-  { href: "/workflows",    icon: Layers,       label: "Workflows"       },
-  { href: "/compliance",   icon: ShieldCheck,   label: "Compliance"     },
-  { href: "/lead-scoring", icon: Target,        label: "Lead Scoring"   },
-  { href: "/anomalies",    icon: ShieldAlert,   label: "Anomalies"      },
-  { href: "/marketplace",  icon: Store,         label: "Marketplace"    },
-  { href: "/admin",        icon: Cog,           label: "Admin"          },
+  { href: "/calling",      icon: Headphones,   labelKey: "calling"        },
+  { href: "/sequences",    icon: Mail,         labelKey: "sequences"      },
+  { href: "/tasks",        icon: CheckSquare,  labelKey: "tasks"          },
+  { href: "/quotes",       icon: FileText,     labelKey: "quotes"         },
+  { href: "/templates",    icon: MailPlus,      labelKey: "templates"     },
+  { href: "/reports",      icon: BarChart3,    labelKey: "reports"        },
+  { href: "/insights",     icon: LineChart,     labelKey: "insights"      },
+  { href: "/forecasting",  icon: Target,        labelKey: "forecasting"   },
+  { href: "/territories",  icon: Globe,         labelKey: "territories"   },
+  { href: "/coaching",     icon: GraduationCap, labelKey: "coaching"      },
+  { href: "/review",       icon: AlertCircle,  labelKey: "reviewQueue"    },
+  { href: "/marketing",    icon: Megaphone,    labelKey: "marketing"      },
+  { href: "/workflows",    icon: Layers,       labelKey: "workflows"      },
+  { href: "/compliance",   icon: ShieldCheck,   labelKey: "compliance"    },
+  { href: "/lead-scoring", icon: Target,        labelKey: "leadScoring"   },
+  { href: "/anomalies",    icon: ShieldAlert,   labelKey: "anomalies"     },
+  { href: "/marketplace",  icon: Store,         labelKey: "marketplace"   },
+  { href: "/admin",        icon: Cog,           labelKey: "admin"         },
 ];
 
 interface Notification {
@@ -66,6 +69,7 @@ function NotificationPanel({
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
 }) {
+  const t = useTranslations("notifications");
   const unread = items.filter((n) => !n.read).length;
 
   const iconFor = (type: string) => {
@@ -82,14 +86,14 @@ function NotificationPanel({
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <Bell className="h-4 w-4 text-foreground" />
-          <span className="font-semibold text-sm">Notifications</span>
+          <span className="font-semibold text-sm">{t("title")}</span>
           {unread > 0 && (
             <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">{unread}</span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {unread > 0 && (
-            <button onClick={onMarkAllRead} className="text-xs text-primary hover:underline">Mark all read</button>
+            <button onClick={onMarkAllRead} className="text-xs text-primary hover:underline">{t("markAllRead")}</button>
           )}
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
@@ -113,7 +117,7 @@ function NotificationPanel({
         ))}
       </div>
       <div className="border-t px-4 py-2 text-center">
-        <button className="text-xs text-primary hover:underline" onClick={onClose}>View all notifications</button>
+        <button className="text-xs text-primary hover:underline" onClick={onClose}>{t("viewAll")}</button>
       </div>
     </div>
   );
@@ -121,6 +125,7 @@ function NotificationPanel({
 
 function ProfileDropdown({ user, onClose }: { user: StoredUser; onClose: () => void }) {
   const router = useRouter();
+  const t = useTranslations("profile");
 
   const handleLogout = async () => { await clearAuth(); router.replace("/login"); onClose(); };
 
@@ -152,10 +157,10 @@ function ProfileDropdown({ user, onClose }: { user: StoredUser; onClose: () => v
 
       <div className="py-1">
         {[
-          { icon: User,       label: "My Profile",        href: "/settings?tab=profile"   },
-          { icon: Shield,     label: "Security",           href: "/settings?tab=security"  },
-          { icon: Settings,   label: "Company Settings",   href: "/settings?tab=general"   },
-          { icon: CreditCard, label: "Billing & Plan",     href: "/settings?tab=billing"   },
+          { icon: User,       label: t("myProfile"),        href: "/settings?tab=profile"   },
+          { icon: Shield,     label: t("security"),          href: "/settings?tab=security"  },
+          { icon: Settings,   label: t("companySettings"),   href: "/settings?tab=general"   },
+          { icon: CreditCard, label: t("billingPlan"),       href: "/settings?tab=billing"   },
         ].map(({ icon: Icon, label, href }) => (
           <Link key={href} href={href} onClick={onClose}
             className="flex items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted">
@@ -166,10 +171,11 @@ function ProfileDropdown({ user, onClose }: { user: StoredUser; onClose: () => v
       </div>
 
       <div className="border-t py-1">
+        <LanguageSwitcher compact />
         <button onClick={handleLogout}
           className="flex w-full items-center gap-3 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-red-50">
           <LogOut className="h-4 w-4" />
-          Sign out
+          {t("signOut")}
         </button>
       </div>
     </div>
@@ -179,6 +185,7 @@ function ProfileDropdown({ user, onClose }: { user: StoredUser; onClose: () => v
 function MoreMenu({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const t = useTranslations("nav");
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -193,16 +200,16 @@ function MoreMenu({ pathname }: { pathname: string }) {
       <button onClick={() => setOpen((v) => !v)}
         className={cn("flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
           isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
-        More
+        {t("more")}
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-xl border bg-card py-1 shadow-lg">
-          {MORE_NAV.map(({ href, icon: Icon, label }) => (
-            <Link key={href} href={href} onClick={() => setOpen(false)}
+          {MORE_NAV.map((n) => (
+            <Link key={n.href} href={n.href} onClick={() => setOpen(false)}
               className={cn("flex items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted",
-                pathname === href ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground")}>
-              <Icon className="h-4 w-4" />{label}
+                pathname === n.href ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground")}>
+              <n.icon className="h-4 w-4" />{t(n.labelKey)}
             </Link>
           ))}
         </div>
@@ -214,6 +221,7 @@ function MoreMenu({ pathname }: { pathname: string }) {
 export function TopNav() {
   const pathname = usePathname();
   const open     = useCommandBarStore((s) => s.open);
+  const t        = useTranslations("nav");
 
   const [user, setUser]               = useState<StoredUser | null>(null);
   const [showNotif, setShowNotif]     = useState(false);
@@ -252,14 +260,14 @@ export function TopNav() {
       <div className="h-5 w-px bg-border" />
 
       <nav className="flex items-center gap-0.5">
-        {PRIMARY_NAV.map(({ href, icon: Icon, label }) => {
-          const active = pathname === href;
+        {PRIMARY_NAV.map((n) => {
+          const active = pathname === n.href;
           return (
-            <Link key={href} href={href}
+            <Link key={n.href} href={n.href}
               className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                 active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="hidden lg:block">{label}</span>
+              <n.icon className="h-4 w-4 shrink-0" />
+              <span className="hidden lg:block">{t(n.labelKey)}</span>
             </Link>
           );
         })}
@@ -272,7 +280,7 @@ export function TopNav() {
       <button onClick={open}
         className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors">
         <Search className="h-3.5 w-3.5" />
-        <span className="hidden md:block">Search…</span>
+        <span className="hidden md:block">{t("searchPlaceholder")}</span>
         <kbd className="hidden md:inline rounded border bg-background px-1.5 py-0.5 font-mono text-xs">⌘K</kbd>
       </button>
 
@@ -281,7 +289,7 @@ export function TopNav() {
         <Link href="/admin"
           className={cn("rounded-md p-2 text-red-600 hover:bg-red-50 transition-colors",
             pathname.startsWith("/admin") && "bg-red-100")}
-          title="Platform Admin">
+          title={t("platformAdmin")}>
           <Shield className="h-4 w-4" />
         </Link>
       )}

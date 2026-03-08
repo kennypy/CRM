@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useTranslations } from "next-intl";
 import {
   AlertCircle, CheckCircle2, XCircle, RefreshCw,
   ShieldCheck, Brain, ChevronDown, ChevronUp, Inbox,
@@ -212,6 +213,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 export default function ReviewQueuePage() {
+  const t = useTranslations("review");
   const [allItems,   setAllItems]   = useState<ReviewItem[]>([]);
   const [leavingIds, setLeavingIds] = useState<Set<string>>(new Set());
   const [filter,     setFilter]     = useState<Filter>("pending");
@@ -293,7 +295,7 @@ export default function ReviewQueuePage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">AI Review Queue</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           {pendingCount > 0 && (
             <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
               {pendingCount} pending

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { setAuth } from "@/lib/auth";
 import { useTenant } from "@/lib/tenant-context";
@@ -12,6 +13,7 @@ import { cn } from "@/lib/utils";
 export default function RegisterPage() {
   const router = useRouter();
   const { refresh } = useTenant();
+  const t = useTranslations("auth");
   const [form, setForm] = useState({
     orgName: "", tenantSlug: "", firstName: "", lastName: "", email: "", password: "",
   });
@@ -40,7 +42,7 @@ export default function RegisterPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError((data?.error?.message ?? data?.error) ?? "Registration failed");
+        setError((data?.error?.message ?? data?.error) ?? t("registrationFailed"));
         return;
       }
 
@@ -54,7 +56,7 @@ export default function RegisterPage() {
       await refresh();
       router.replace("/");
     } catch {
-      setError("Unable to reach the server. Please try again.");
+      setError(t("serverError"));
     } finally {
       setLoading(false);
     }
@@ -86,16 +88,16 @@ export default function RegisterPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
             <Zap className="h-6 w-6 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold">Create your workspace</h1>
-          <p className="text-sm text-muted-foreground">Free 14-day trial, no credit card</p>
+          <h1 className="text-2xl font-bold">{t("createWorkspace")}</h1>
+          <p className="text-sm text-muted-foreground">{t("trialInfo")}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Organisation name</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("orgName")}</label>
             <input
               type="text"
-              placeholder="Acme Corp"
+              placeholder={t("orgPlaceholder")}
               value={form.orgName}
               onChange={(e) => handleOrgChange(e.target.value)}
               required
@@ -103,7 +105,7 @@ export default function RegisterPage() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Workspace URL</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("workspaceUrl")}</label>
             <div className="flex items-center rounded-lg border border-border overflow-hidden focus-within:ring-2 focus-within:ring-primary/30">
               <span className="border-r bg-muted px-3 py-2 text-sm text-muted-foreground select-none">nexcrm.app /</span>
               <input
@@ -116,11 +118,11 @@ export default function RegisterPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {field("First name", "firstName", "text", "Ada")}
-            {field("Last name",  "lastName",  "text", "Lovelace")}
+            {field(t("firstName"), "firstName", "text", "Ada")}
+            {field(t("lastName"),  "lastName",  "text", "Lovelace")}
           </div>
-          {field("Work email", "email",    "email",    "ada@acme.com")}
-          {field("Password",   "password", "password", "••••••••")}
+          {field(t("workEmail"), "email",    "email",    t("emailPlaceholder"))}
+          {field(t("password"),  "password", "password", "••••••••")}
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -137,13 +139,13 @@ export default function RegisterPage() {
               loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90"
             )}
           >
-            {loading ? "Creating workspace…" : "Create workspace"}
+            {loading ? t("creatingWorkspace") : t("createWorkspaceBtn")}
           </button>
         </form>
 
         <p className="mt-4 text-center text-sm text-muted-foreground">
-          Already have a workspace?{" "}
-          <Link href="/login" className="font-medium text-primary hover:underline">Sign in</Link>
+          {t("alreadyHaveWorkspace")}{" "}
+          <Link href="/login" className="font-medium text-primary hover:underline">{t("signIn")}</Link>
         </p>
       </div>
     </div>

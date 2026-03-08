@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 import {
   X, Mail, Phone, Building2, Briefcase, Star, ExternalLink,
   User, Clock, Tag,
@@ -64,9 +65,12 @@ interface ContactDrawerProps {
 }
 
 export function ContactDrawer({ contact, onClose, onEmail, onPhone, onEdit, canWrite }: ContactDrawerProps) {
+  const t = useTranslations("contactDrawer");
+  const tc = useTranslations("common");
+
   const fullName = contact.firstName + " " + contact.lastName;
   const initials = (contact.firstName?.[0] ?? "") + (contact.lastName?.[0] ?? "");
-  const sourceLabel = contact.source === "user" ? "Manual" : "Auto-captured";
+  const sourceLabel = contact.source === "user" ? t("manual") : t("autoCaptured");
   const addedDate = new Date(contact.createdAt).toLocaleDateString("en-GB", {
     day: "numeric", month: "short", year: "numeric",
   });
@@ -83,7 +87,7 @@ export function ContactDrawer({ contact, onClose, onEmail, onPhone, onEdit, canW
       <div className="fixed inset-y-0 right-0 z-50 flex w-[420px] flex-col border-l border-border bg-background shadow-2xl">
         {/* Header */}
         <div className="flex h-14 items-center justify-between border-b px-4">
-          <span className="text-sm font-semibold">Contact Details</span>
+          <span className="text-sm font-semibold">{t("title")}</span>
           <button onClick={onClose} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
@@ -113,14 +117,14 @@ export function ContactDrawer({ contact, onClose, onEmail, onPhone, onEdit, canW
               onClick={() => onEmail(contact)}
               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors"
             >
-              <Mail className="h-4 w-4" /> Email
+              <Mail className="h-4 w-4" /> {t("email")}
             </button>
             {contact.phone && (
               <button
                 onClick={() => onPhone(contact)}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border py-2.5 text-sm font-medium hover:bg-green-50 hover:text-green-700 hover:border-green-200 transition-colors"
               >
-                <Phone className="h-4 w-4" /> Call
+                <Phone className="h-4 w-4" /> {t("call")}
               </button>
             )}
             {canWrite && (
@@ -128,51 +132,51 @@ export function ContactDrawer({ contact, onClose, onEmail, onPhone, onEdit, canW
                 onClick={() => onEdit(contact)}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border py-2.5 text-sm font-medium hover:bg-muted transition-colors"
               >
-                Edit
+                {tc("edit")}
               </button>
             )}
           </div>
 
           {/* Details */}
           <div className="px-5 py-2">
-            <Row icon={Mail} label="Email">
+            <Row icon={Mail} label={t("email")}>
               <a href={"mailto:" + contact.email} className="text-primary hover:underline break-all">
                 {contact.email}
               </a>
             </Row>
             {contact.phone && (
-              <Row icon={Phone} label="Phone">
+              <Row icon={Phone} label={t("phone")}>
                 <button onClick={() => onPhone(contact)} className="text-primary hover:underline">
                   {contact.phone}
                 </button>
               </Row>
             )}
             {contact.company && (
-              <Row icon={Building2} label="Company">
+              <Row icon={Building2} label={t("company")}>
                 <span>{contact.company.name}</span>
               </Row>
             )}
             {contact.title && (
-              <Row icon={Briefcase} label="Title">
+              <Row icon={Briefcase} label={tc("title")}>
                 <span>{contact.title}</span>
               </Row>
             )}
             {contact.seniority && (
-              <Row icon={User} label="Seniority">
+              <Row icon={User} label={t("seniority")}>
                 <span className="capitalize">{contact.seniority}</span>
               </Row>
             )}
-            <Row icon={Star} label="Influence">
+            <Row icon={Star} label={t("influence")}>
               <InfluenceBadge score={contact.influenceScore} />
             </Row>
             {contact.lastActivityAt && (
-              <Row icon={Clock} label="Last Activity">
+              <Row icon={Clock} label={t("lastActivity")}>
                 <span className="text-muted-foreground">
                   {new Date(contact.lastActivityAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                 </span>
               </Row>
             )}
-            <Row icon={Tag} label="Source">
+            <Row icon={Tag} label={t("source")}>
               <span className={cn(
                 "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
                 contact.source === "user" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
@@ -180,26 +184,26 @@ export function ContactDrawer({ contact, onClose, onEmail, onPhone, onEdit, canW
                 {sourceLabel}
               </span>
             </Row>
-            <Row icon={Clock} label="Added">
+            <Row icon={Clock} label={t("added")}>
               <span className="text-muted-foreground">{addedDate}</span>
             </Row>
             {contact.updatedAt && (
-              <Row icon={Clock} label="Updated">
+              <Row icon={Clock} label={t("updated")}>
                 <span className="text-muted-foreground">
                   {new Date(contact.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                 </span>
               </Row>
             )}
             {contact.createdBy && (
-              <Row icon={User} label="Created By">
+              <Row icon={User} label={t("createdBy")}>
                 <span className="text-muted-foreground">{contact.createdBy}</span>
               </Row>
             )}
             {contact.linkedinUrl && (
-              <Row icon={ExternalLink} label="LinkedIn">
+              <Row icon={ExternalLink} label={t("linkedin")}>
                 <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1 text-primary hover:underline">
-                  View profile <ExternalLink className="h-3 w-3" />
+                  {t("viewProfile")} <ExternalLink className="h-3 w-3" />
                 </a>
               </Row>
             )}

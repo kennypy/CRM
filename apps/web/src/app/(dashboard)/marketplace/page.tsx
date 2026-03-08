@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
@@ -85,6 +86,8 @@ function AppDetailModal({ app, onClose, onInstall, onUninstall, installing }: {
   onInstall: (appId: string) => void; onUninstall: (installId: string) => void;
   installing: boolean;
 }) {
+  const t = useTranslations("marketplace");
+  const tc = useTranslations("common");
   const Icon = APP_ICONS[app.slug] ?? Store;
   const catColor = CATEGORY_COLORS[app.category] ?? CATEGORY_COLORS.custom;
 
@@ -118,25 +121,25 @@ function AppDetailModal({ app, onClose, onInstall, onUninstall, installing }: {
           <p className="text-sm leading-relaxed">{app.description}</p>
           {app.isInstalled && (
             <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
-              <CheckCircle2 className="h-4 w-4" /> Installed and active
+              <CheckCircle2 className="h-4 w-4" /> {t("installedActive")}
             </div>
           )}
           <div className="flex gap-3 pt-2">
             {app.isInstalled ? (
               <button onClick={() => app.installId && onUninstall(app.installId)}
                 className="flex-1 rounded-lg border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50">
-                Uninstall
+                {t("uninstall")}
               </button>
             ) : (
               <button onClick={() => onInstall(app.id)} disabled={installing}
                 className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                   installing ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-                {installing ? "Installing…" : "Install"}
+                {installing ? t("installing") : t("install")}
               </button>
             )}
             <button onClick={onClose}
               className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-              Close
+              {tc("close")}
             </button>
           </div>
         </div>
@@ -146,6 +149,8 @@ function AppDetailModal({ app, onClose, onInstall, onUninstall, installing }: {
 }
 
 export default function MarketplacePage() {
+  const t = useTranslations("marketplace");
+  const tc = useTranslations("common");
   const [apps, setApps] = useState<MarketplaceApp[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -211,7 +216,7 @@ export default function MarketplacePage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Store className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Marketplace</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
         </div>
         <button onClick={fetchApps} disabled={loading} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
@@ -220,11 +225,11 @@ export default function MarketplacePage() {
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-lg bg-muted p-1">
-        {(["browse", "installed"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
+        {(["browse", "installed"] as const).map((tb) => (
+          <button key={tb} onClick={() => setTab(tb)}
             className={cn("rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors",
-              tab === t ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}>
-            {t === "browse" ? "Browse Apps" : "Installed"}
+              tab === tb ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}>
+            {tb === "browse" ? t("browseApps") : t("installed")}
           </button>
         ))}
       </div>
@@ -233,7 +238,7 @@ export default function MarketplacePage() {
       <div className="flex gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input type="text" placeholder="Search apps…" value={search}
+          <input type="text" placeholder={t("searchPlaceholder")} value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
         </div>
@@ -243,7 +248,7 @@ export default function MarketplacePage() {
               <button key={cat} onClick={() => setCategoryFilter(cat)}
                 className={cn("rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors",
                   categoryFilter === cat ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground")}>
-                {cat === "all" ? "All" : cat.replace("_", " ")}
+                {cat === "all" ? t("allCategories") : cat.replace("_", " ")}
               </button>
             ))}
           </div>
@@ -273,8 +278,8 @@ export default function MarketplacePage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Store className="h-12 w-12 mb-3 text-muted-foreground/40" />
-            <p className="font-medium">{tab === "installed" ? "No apps installed" : "No apps found"}</p>
-            <p className="text-sm">{tab === "installed" ? "Browse the marketplace to install apps" : "Try a different search or category"}</p>
+            <p className="font-medium">{tab === "installed" ? t("noInstalled") : t("noApps")}</p>
+            <p className="text-sm">{tab === "installed" ? t("browsePrompt") : t("tryDifferent")}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

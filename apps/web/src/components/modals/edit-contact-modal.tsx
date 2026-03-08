@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { X, User, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,8 @@ const SENIORITY_OPTIONS = [
 ];
 
 export function EditContactModal({ contact, onClose, onSaved }: Props) {
+  const t = useTranslations("editContact");
+  const tc = useTranslations("common");
   const [form, setForm] = useState({
     firstName: contact.firstName,
     lastName:  contact.lastName,
@@ -82,7 +85,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <User className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">Edit Contact</h2>
+            <h2 className="font-semibold">{t("title")}</h2>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
@@ -92,43 +95,43 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-sm font-medium">First name</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("firstName")}</label>
               <input value={form.firstName} onChange={set("firstName")} required
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Last name</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("lastName")}</label>
               <input value={form.lastName} onChange={set("lastName")} required
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Email</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("email")}</label>
             <input value={contact.email} disabled
               className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground" />
-            <p className="mt-1 text-xs text-muted-foreground">Email cannot be changed</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("emailReadonly")}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Title</label>
+              <label className="mb-1.5 block text-sm font-medium">{tc("title")}</label>
               <input value={form.title} onChange={set("title")} placeholder="VP Engineering"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Phone</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("phone")}</label>
               <input type="tel" value={form.phone} onChange={set("phone")} placeholder="+1 555 000 0000"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Seniority</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("seniority")}</label>
             <select value={form.seniority} onChange={set("seniority")}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
               {SENIORITY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>{o.value === "" ? t("selectSeniority") : o.label}</option>
               ))}
             </select>
           </div>
@@ -140,19 +143,19 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
           )}
           {done && (
             <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-              <CheckCircle2 className="h-4 w-4" /> Saved!
+              <CheckCircle2 className="h-4 w-4" /> {t("saved")}
             </div>
           )}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-              Cancel
+              {tc("cancel")}
             </button>
             <button type="submit" disabled={loading}
               className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                 loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-              {loading ? "Saving…" : "Save Changes"}
+              {loading ? tc("saving") : t("saveChanges")}
             </button>
           </div>
         </form>

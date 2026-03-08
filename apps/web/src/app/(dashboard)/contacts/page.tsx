@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
@@ -12,11 +13,22 @@ import { PhoneDrawer }      from "@/components/phone/PhoneDrawer";
 import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
+import { TagInput } from "@/components/ui/tag-input";
+import { OwnerPicker } from "@/components/ui/owner-picker";
 import {
   Users, Search, Plus, RefreshCw, AlertCircle,
   Building2, Mail, Phone, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil, Trash2,
 } from "lucide-react";
 import { BulkActionBar } from "@/components/bulk/bulk-action-bar";
+
+const LIFECYCLE_COLORS: Record<string, string> = {
+  subscriber:  "bg-gray-100 text-gray-700",
+  lead:        "bg-blue-100 text-blue-700",
+  mql:         "bg-purple-100 text-purple-700",
+  sql:         "bg-indigo-100 text-indigo-700",
+  opportunity: "bg-orange-100 text-orange-700",
+  customer:    "bg-green-100 text-green-700",
+};
 
 interface Contact {
   id: string;
@@ -31,6 +43,10 @@ interface Contact {
   lastActivityAt?: string;
   linkedinUrl?: string;
   source: string;
+  lifecycleStage?: string;
+  ownerId?: string;
+  gdprConsent?: boolean;
+  doNotContact?: boolean;
   createdAt: string;
 }
 
@@ -47,29 +63,36 @@ function InfluenceBadge({ score }: { score?: number }) {
 }
 
 function SourcePill({ source }: { source: string }) {
+  const t = useTranslations("common");
   const isAuto = source !== "user";
   return (
     <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
       isAuto ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")}>
-      {isAuto ? "Auto" : "Manual"}
+      {isAuto ? t("auto") : t("manual")}
     </span>
   );
 }
 
 const COL_DEFS: ColDef[] = [
-  { key: "name",         label: "Name",          required: true },
-  { key: "company",      label: "Company" },
-  { key: "title",        label: "Title" },
-  { key: "lastActivity", label: "Last Activity" },
-  { key: "influence",    label: "Influence" },
-  { key: "source",       label: "Source" },
-  { key: "actions",      label: "Actions",       required: true },
+  { key: "name",           label: "Name",          required: true },
+  { key: "company",        label: "Company" },
+  { key: "title",          label: "Title" },
+  { key: "lifecycleStage", label: "Stage" },
+  { key: "owner",          label: "Owner" },
+  { key: "tags",           label: "Tags" },
+  { key: "lastActivity",   label: "Last Activity" },
+  { key: "influence",      label: "Influence" },
+  { key: "source",         label: "Source" },
+  { key: "actions",        label: "Actions",       required: true },
 ];
 
 const PAGE_SIZE = 50;
 
 export default function ContactsPage() {
   const perms = usePermissions();
+  const t = useTranslations("contacts");
+  const tc = useTranslations("common");
+  const tl = useTranslations("lifecycle");
   const { visible, toggle } = useColumnPrefs("nexcrm_cols_contacts", COL_DEFS);
 
   const [contacts, setContacts]   = useState<Contact[]>([]);
@@ -88,6 +111,16 @@ export default function ContactsPage() {
   const [selectedIds, setSelectedIds]   = useState<string[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const colLabels: Record<string, string> = {
+    name: tc("name"),
+    company: t("company"),
+    title: tc("title"),
+    lastActivity: t("lastActivity"),
+    influence: t("influence"),
+    source: tc("source"),
+    actions: tc("actions"),
+  };
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   };
@@ -103,7 +136,7 @@ export default function ContactsPage() {
   };
 
   const handleDeleteContact = async (id: string) => {
-    if (!window.confirm("Delete this contact? This cannot be undone.")) return;
+    if (!window.confirm(t("deleteConfirm"))) return;
     setDeletingId(id);
     try {
       const res = await api.delete(`/api/v1/contacts/${id}`);
@@ -124,7 +157,7 @@ export default function ContactsPage() {
       setContacts(json.data ?? []);
       setTotal(json.pagination?.total ?? json.data?.length ?? 0);
     } catch (e: any) {
-      setError(e.message ?? "Failed to load contacts");
+      setError(e.message ?? tc("failedToLoad", { entity: t("title").toLowerCase() }));
     } finally {
       setLoading(false);
     }
@@ -141,7 +174,7 @@ export default function ContactsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Users className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Contacts</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           <ActionBar context="contacts" />
           {!loading && (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
@@ -158,7 +191,7 @@ export default function ContactsPage() {
           {perms.canWrite && (
             <button onClick={() => setShowAdd(true)}
               className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-              <Plus className="h-4 w-4" /> Add Contact
+              <Plus className="h-4 w-4" /> {t("addContact")}
             </button>
           )}
         </div>
@@ -203,7 +236,7 @@ export default function ContactsPage() {
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Search by name, email, or company…" value={search}
+        <input type="text" placeholder={t("searchPlaceholder")} value={search}
           onChange={(e) => handleSearchChange(e.target.value)}
           className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
       </div>
@@ -227,7 +260,7 @@ export default function ContactsPage() {
               </th>
               {visibleCols.map((col) => (
                 <th key={col.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  {col.key === "actions" ? "" : col.label}
+                  {col.key === "actions" ? "" : (colLabels[col.key] ?? col.label)}
                 </th>
               ))}
             </tr>
@@ -245,7 +278,7 @@ export default function ContactsPage() {
             ) : contacts.length === 0 ? (
               <tr>
                 <td colSpan={visibleCols.length + 1} className="px-4 py-12 text-center text-muted-foreground">
-                  {debouncedSearch ? "No contacts match your search" : "No contacts yet"}
+                  {debouncedSearch ? t("noMatch") : t("empty")}
                 </td>
               </tr>
             ) : (
@@ -299,9 +332,35 @@ export default function ContactsPage() {
                   {visible.has("title") && (
                     <td className="px-4 py-3 text-muted-foreground">{contact.title ?? "—"}</td>
                   )}
+                  {visible.has("lifecycleStage") && (
+                    <td className="px-4 py-3">
+                      {contact.lifecycleStage ? (
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium capitalize", LIFECYCLE_COLORS[contact.lifecycleStage] ?? "bg-gray-100")}>
+                          {tl(contact.lifecycleStage as any, { defaultValue: contact.lifecycleStage })}
+                        </span>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  )}
+                  {visible.has("owner") && (
+                    <td className="px-4 py-3">
+                      <OwnerPicker
+                        value={contact.ownerId}
+                        onChange={async (userId) => {
+                          await api.patch(`/api/v1/contacts/${contact.id}`, { ownerId: userId });
+                          fetchContacts();
+                        }}
+                        compact
+                      />
+                    </td>
+                  )}
+                  {visible.has("tags") && (
+                    <td className="px-4 py-3">
+                      <TagInput entityType="contact" entityId={contact.id} />
+                    </td>
+                  )}
                   {visible.has("lastActivity") && (
                     <td className="px-4 py-3 text-muted-foreground">
-                      {contact.lastActivityAt ? formatRelativeTime(contact.lastActivityAt) : "Never"}
+                      {contact.lastActivityAt ? formatRelativeTime(contact.lastActivityAt) : tc("never")}
                     </td>
                   )}
                   {visible.has("influence") && (
@@ -327,7 +386,7 @@ export default function ContactsPage() {
                         <button
                           onClick={() => setEmailContact(contact)}
                           className="rounded p-1 text-muted-foreground hover:bg-blue-50 hover:text-blue-600"
-                          title="Email"
+                          title={t("emailAction")}
                         >
                           <Mail className="h-3.5 w-3.5" />
                         </button>
@@ -335,7 +394,7 @@ export default function ContactsPage() {
                           <button
                             onClick={() => setPhoneContact(contact)}
                             className="rounded p-1 text-muted-foreground hover:bg-green-50 hover:text-green-600"
-                            title="Call"
+                            title={t("callAction")}
                           >
                             <Phone className="h-3.5 w-3.5" />
                           </button>
@@ -343,7 +402,7 @@ export default function ContactsPage() {
                         {perms.canWrite && (
                           <button onClick={() => setEditing(contact)}
                             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                            title="Edit">
+                            title={tc("edit")}>
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                         )}
@@ -352,7 +411,7 @@ export default function ContactsPage() {
                             onClick={() => handleDeleteContact(contact.id)}
                             disabled={deletingId === contact.id}
                             className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-                            title="Delete contact">
+                            title={t("deleteAction")}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
@@ -368,15 +427,15 @@ export default function ContactsPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
-          <p className="text-muted-foreground">Page {page} of {totalPages} ({total.toLocaleString()} total)</p>
+          <p className="text-muted-foreground">{tc("pageOf", { page, totalPages, total: total.toLocaleString() })}</p>
           <div className="flex items-center gap-2">
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1 || loading}
               className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
-              <ChevronLeft className="h-4 w-4" /> Previous
+              <ChevronLeft className="h-4 w-4" /> {tc("previous")}
             </button>
             <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}
               className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
-              Next <ChevronRight className="h-4 w-4" />
+              {tc("next")} <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>

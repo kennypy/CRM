@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
 import { api } from "@/lib/api";
@@ -38,12 +39,12 @@ interface Deal {
   updatedAt:            string;
 }
 
-const STAGES: { key: DealStage; label: string; color: string }[] = [
-  { key: "discovery",   label: "Discovery",   color: "border-blue-400" },
-  { key: "proposal",    label: "Proposal",    color: "border-yellow-400" },
-  { key: "negotiation", label: "Negotiation", color: "border-orange-400" },
-  { key: "closed_won",  label: "Closed Won",  color: "border-green-500" },
-  { key: "closed_lost", label: "Closed Lost", color: "border-red-400" },
+const STAGES: { key: DealStage; labelKey: string; color: string }[] = [
+  { key: "discovery",   labelKey: "discovery",   color: "border-blue-400" },
+  { key: "proposal",    labelKey: "proposal",    color: "border-yellow-400" },
+  { key: "negotiation", labelKey: "negotiation", color: "border-orange-400" },
+  { key: "closed_won",  labelKey: "closedWon",   color: "border-green-500" },
+  { key: "closed_lost", labelKey: "closedLost",  color: "border-red-400" },
 ];
 
 const STAGE_ORDER: DealStage[] = [
@@ -54,7 +55,7 @@ const STAGE_ORDER: DealStage[] = [
 // Currency-agnostic: 15 % of €50 k = €7.5 k; same rule for any currency.
 const GAP_THRESHOLD_PCT = 15;
 
-function RealityBadge({ score, onClick }: { score?: number; onClick?: () => void }) {
+function RealityBadge({ score, onClick, title }: { score?: number; onClick?: () => void; title?: string }) {
   if (score == null) return null;
   const color =
     score >= 70 ? "bg-green-100 text-green-700 hover:bg-green-200" :
@@ -63,7 +64,7 @@ function RealityBadge({ score, onClick }: { score?: number; onClick?: () => void
   return (
     <button
       onClick={onClick}
-      title="Click to see score evidence"
+      title={title}
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors",
         color, onClick && "cursor-pointer"
@@ -92,7 +93,7 @@ function DeltaBadge({ declared, reality }: { declared?: number; reality?: number
 }
 
 function DealCard({
-  deal, currency, locale, onMove, isFirst, isLast, onScoreClick, onDeclaredChange, onDetailClick,
+  deal, currency, locale, onMove, isFirst, isLast, onScoreClick, onDeclaredChange, onDetailClick, scoreEvidenceTitle,
 }: {
   deal: Deal; currency: string; locale: string;
   onMove: (id: string, direction: "prev" | "next") => void;
@@ -100,6 +101,7 @@ function DealCard({
   onScoreClick: (deal: Deal) => void;
   onDeclaredChange: (id: string, pct: number) => void;
   onDetailClick: (deal: Deal) => void;
+  scoreEvidenceTitle: string;
 }) {
   const isWon  = deal.stage === "closed_won";
   const isLost = deal.stage === "closed_lost";
@@ -114,8 +116,14 @@ function DealCard({
   };
 
   return (
-    <div className={cn(
-      "rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md",
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", deal.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      className={cn(
+      "rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing",
       isWon  && "border-green-200 bg-green-50/50",
       isLost && "border-red-200 bg-red-50/50 opacity-70",
     )}>
@@ -127,7 +135,7 @@ function DealCard({
         >
           {deal.name}
         </button>
-        <RealityBadge score={deal.realityScore} onClick={() => onScoreClick(deal)} />
+        <RealityBadge score={deal.realityScore} onClick={() => onScoreClick(deal)} title={scoreEvidenceTitle} />
       </div>
 
       {deal.company && (
@@ -200,23 +208,39 @@ function DealCard({
 }
 
 function KanbanColumn({
-  stage, deals, currency, locale, onMove, onScoreClick, onDeclaredChange, onDetailClick,
+  stage, deals, currency, locale, onMove, onScoreClick, onDeclaredChange, onDetailClick, stageLabel, noDealLabel, scoreEvidenceTitle,
+  onDrop,
 }: {
   stage: (typeof STAGES)[number]; deals: Deal[]; currency: string; locale: string;
   onMove: (id: string, direction: "prev" | "next") => void;
   onScoreClick: (deal: Deal) => void;
   onDeclaredChange: (id: string, pct: number) => void;
   onDetailClick: (deal: Deal) => void;
+  stageLabel: string;
+  noDealLabel: string;
+  scoreEvidenceTitle: string;
+  onDrop?: (dealId: string, targetStage: DealStage) => void;
 }) {
   const total   = deals.reduce((s, d) => s + d.value, 0);
   const isFirst = stage.key === STAGE_ORDER[0];
   const isLast  = stage.key === STAGE_ORDER[STAGE_ORDER.length - 1];
+  const [dragOver, setDragOver] = useState(false);
 
   return (
-    <div className="flex w-64 shrink-0 flex-col gap-2">
+    <div
+      className={cn("flex w-64 shrink-0 flex-col gap-2", dragOver && "ring-2 ring-primary/40 rounded-lg")}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const dealId = e.dataTransfer.getData("text/plain");
+        if (dealId && onDrop) onDrop(dealId, stage.key);
+      }}
+    >
       <div className={cn("rounded-t-lg border-t-4 bg-muted/50 px-3 py-2", stage.color)}>
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold">{stage.label}</span>
+          <span className="text-sm font-semibold">{stageLabel}</span>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{deals.length}</span>
         </div>
         {deals.length > 0 && (
@@ -231,12 +255,12 @@ function KanbanColumn({
             key={deal.id} deal={deal} currency={currency} locale={locale}
             onMove={onMove} isFirst={isFirst} isLast={isLast}
             onScoreClick={onScoreClick} onDeclaredChange={onDeclaredChange}
-            onDetailClick={onDetailClick}
+            onDetailClick={onDetailClick} scoreEvidenceTitle={scoreEvidenceTitle}
           />
         ))}
         {deals.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-            No deals
+            {noDealLabel}
           </div>
         )}
       </div>
@@ -244,7 +268,7 @@ function KanbanColumn({
   );
 }
 
-function ForecastBar({ deals, currency, locale }: { deals: Deal[]; currency: string; locale: string }) {
+function ForecastBar({ deals, currency, locale, t }: { deals: Deal[]; currency: string; locale: string; t: (key: string, values?: Record<string, string>) => string }) {
   const open = deals.filter((d) => d.stage !== "closed_won" && d.stage !== "closed_lost");
   const declared = open.reduce((s, d) => s + d.value * ((d.declaredProbability ?? 50) / 100), 0);
   const reality  = open.reduce((s, d) => s + d.value * ((d.realityScore     ?? 50) / 100), 0);
@@ -255,25 +279,25 @@ function ForecastBar({ deals, currency, locale }: { deals: Deal[]; currency: str
   return (
     <div className="grid grid-cols-3 gap-3">
       <div className="rounded-lg border bg-card px-4 py-3">
-        <p className="text-xs text-muted-foreground">Open opportunities</p>
+        <p className="text-xs text-muted-foreground">{t("openOpportunities")}</p>
         <p className="mt-0.5 text-lg font-semibold">
           {formatCurrency(open.reduce((s, d) => s + d.value, 0), currency, true, locale)}
         </p>
       </div>
       <div className="rounded-lg border bg-card px-4 py-3">
-        <p className="text-xs text-muted-foreground">Declared forecast</p>
+        <p className="text-xs text-muted-foreground">{t("declaredForecast")}</p>
         <p className="mt-0.5 text-lg font-semibold">{formatCurrency(declared, currency, true, locale)}</p>
       </div>
       <div className={cn("rounded-lg border px-4 py-3", gapIsSignificant ? "border-red-200 bg-red-50" : "bg-card")}>
         <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">Reality forecast</p>
+          <p className="text-xs text-muted-foreground">{t("realityForecast")}</p>
           {gapIsSignificant && <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}
         </div>
         <p className={cn("mt-0.5 text-lg font-semibold", gapIsSignificant ? "text-red-700" : "text-foreground")}>
           {formatCurrency(reality, currency, true, locale)}
         </p>
         {gap > 0 && (
-          <p className="text-xs text-red-600">−{formatCurrency(gap, currency, true, locale)} vs declared</p>
+          <p className="text-xs text-red-600">{t("gapVsDeclared", { gap: formatCurrency(gap, currency, true, locale) })}</p>
         )}
       </div>
     </div>
@@ -284,6 +308,8 @@ export default function PipelinePage() {
   const { tenant }  = useTenant();
   const currency    = tenant.defaultCurrency;
   const locale      = tenant.locale;
+  const t           = useTranslations("pipeline");
+  const tc          = useTranslations("common");
 
   const [deals,        setDeals]        = useState<Deal[]>([]);
   const [loading,      setLoading]      = useState(true);
@@ -324,6 +350,17 @@ export default function PipelinePage() {
     }
   }, [deals]);
 
+  const handleStageChange = useCallback(async (id: string, newStage: DealStage) => {
+    const deal = deals.find((d) => d.id === id);
+    if (!deal || deal.stage === newStage) return;
+    setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: newStage, updatedAt: new Date().toISOString() } : d));
+    try {
+      await api.patch(`/api/v1/deals/${id}`, { stage: newStage });
+    } catch {
+      setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: deal.stage, updatedAt: deal.updatedAt } : d));
+    }
+  }, [deals]);
+
   const handleDeclaredChange = useCallback(async (id: string, pct: number) => {
     setDeals((prev) => prev.map((d) => d.id === id ? { ...d, declaredProbability: pct } : d));
     try {
@@ -348,7 +385,7 @@ export default function PipelinePage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Briefcase className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Opportunities</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
         </div>
         <div className="flex items-center gap-3">
           {wonValue > 0 && (
@@ -359,11 +396,11 @@ export default function PipelinePage() {
           <button onClick={fetchDeals} disabled={loading}
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            Refresh
+            {tc("refresh")}
           </button>
           <button onClick={() => setShowAddDeal(true)}
             className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-            <Plus className="h-4 w-4" /> Add Opportunity
+            <Plus className="h-4 w-4" /> {t("addOpportunity")}
           </button>
         </div>
       </div>
@@ -375,7 +412,7 @@ export default function PipelinePage() {
         />
       )}
 
-      <ForecastBar deals={deals} currency={currency} locale={locale} />
+      <ForecastBar deals={deals} currency={currency} locale={locale} t={t} />
 
       {error ? (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -391,6 +428,15 @@ export default function PipelinePage() {
                 onMove={handleMove} onScoreClick={setEvidenceDeal}
                 onDeclaredChange={handleDeclaredChange}
                 onDetailClick={setDetailDeal}
+                stageLabel={t(stage.labelKey)}
+                noDealLabel={t("noDeals")}
+                scoreEvidenceTitle={t("scoreEvidence")}
+                onDrop={(dealId, targetStage) => {
+                  const deal = deals.find((d) => d.id === dealId);
+                  if (deal && deal.stage !== targetStage) {
+                    handleStageChange(dealId, targetStage);
+                  }
+                }}
               />
             ))}
           </div>

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const PUBLIC = ["/login", "/register"];
+const SUPPORTED_LOCALES = ["en", "pt-BR"];
+const DEFAULT_LOCALE = "en";
 
 /**
  * Validate that a `next` redirect destination is a safe relative path.
@@ -57,7 +59,20 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  // Set default locale cookie if not present
+  const response = NextResponse.next();
+  if (!request.cookies.get("nexcrm_locale")?.value) {
+    // Detect from Accept-Language header
+    const acceptLang = request.headers.get("accept-language") ?? "";
+    const preferred = acceptLang.includes("pt") ? "pt-BR" : DEFAULT_LOCALE;
+    const locale = SUPPORTED_LOCALES.includes(preferred) ? preferred : DEFAULT_LOCALE;
+    response.cookies.set("nexcrm_locale", locale, {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: "lax",
+    });
+  }
+  return response;
 }
 
 export const config = {

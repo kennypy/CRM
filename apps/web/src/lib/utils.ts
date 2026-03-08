@@ -32,28 +32,50 @@ export function formatCurrency(
 }
 
 /**
+ * i18n-aware relative time labels. Pass these from useTranslations('common')
+ * to get localised strings. When omitted, falls back to English.
+ */
+export interface RelativeTimeLabels {
+  never: string;
+  justNow: string;
+  minutesAgo: (vars: { count: number }) => string;
+  hoursAgo: (vars: { count: number }) => string;
+  daysAgo: (vars: { count: number }) => string;
+}
+
+const DEFAULT_LABELS: RelativeTimeLabels = {
+  never: "Never",
+  justNow: "just now",
+  minutesAgo: ({ count }) => `${count}m ago`,
+  hoursAgo: ({ count }) => `${count}h ago`,
+  daysAgo: ({ count }) => `${count}d ago`,
+};
+
+/**
  * Format a date as a human-readable relative string ("3h ago", "2d ago").
  * Falls back to a localised absolute date for dates older than 7 days.
  *
  * @param date   - Date to format.
  * @param locale - BCP-47 locale for the absolute-date fallback (e.g. "de-DE").
+ * @param labels - i18n labels for relative time strings.
  */
 export function formatRelativeTime(
   date: Date | string | null | undefined,
   locale = "en-US",
+  labels: RelativeTimeLabels = DEFAULT_LABELS,
 ): string {
-  if (date == null) return "Never";
+  if (date == null) return labels.never;
   const d = typeof date === "string" ? new Date(date) : date;
-  if (isNaN(d.getTime())) return "Never";
+  if (isNaN(d.getTime())) return labels.never;
   const now = new Date();
   const diffMs    = now.getTime() - d.getTime();
   const diffMins  = Math.floor(diffMs / 60_000);
   const diffHours = Math.floor(diffMs / 3_600_000);
   const diffDays  = Math.floor(diffMs / 86_400_000);
 
-  if (diffMins  < 1)  return "just now";
-  if (diffMins  < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays  < 7)  return `${diffDays}d ago`;
+  if (diffMins  < 1)  return labels.justNow;
+  if (diffMins  < 60) return labels.minutesAgo({ count: diffMins });
+  if (diffHours < 24) return labels.hoursAgo({ count: diffHours });
+  if (diffDays  < 7)  return labels.daysAgo({ count: diffDays });
   return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }

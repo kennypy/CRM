@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { formatRelativeTime, formatCurrency, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useTenantContext } from "@/lib/tenant-context";
@@ -88,6 +89,8 @@ function StageBadge({ stage }: { stage: string }) {
 }
 
 export default function ForecastingPage() {
+  const t = useTranslations("forecasting");
+  const tc = useTranslations("common");
   const { currency, locale } = useTenantContext();
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [summary, setSummary] = useState<ForecastSummary | null>(null);
@@ -137,7 +140,7 @@ export default function ForecastingPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <LineChart className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Predictive Forecasting</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
         </div>
         <div className="flex gap-2">
           <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
@@ -145,7 +148,7 @@ export default function ForecastingPage() {
           </button>
           <button onClick={handleCompute} disabled={computing}
             className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
-            <Zap className="h-4 w-4" />{computing ? "Computing…" : "Recompute"}
+            <Zap className="h-4 w-4" />{computing ? t("computing") : t("recompute")}
           </button>
         </div>
       </div>
@@ -156,28 +159,28 @@ export default function ForecastingPage() {
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center gap-2 text-muted-foreground">
               <BarChart3 className="h-4 w-4" />
-              <span className="text-xs">Avg Probability</span>
+              <span className="text-xs">{t("avgProbability")}</span>
             </div>
             <p className="mt-1 text-2xl font-bold">{summary.avgProbability}%</p>
           </div>
           <div className="rounded-lg border bg-green-50 p-4">
             <div className="flex items-center gap-2 text-green-600">
               <TrendingUp className="h-4 w-4" />
-              <span className="text-xs">Likely (&ge;70%)</span>
+              <span className="text-xs">{t("likely")}</span>
             </div>
             <p className="mt-1 text-2xl font-bold text-green-700">{fmt(summary.likelyRevenue)}</p>
           </div>
           <div className="rounded-lg border bg-yellow-50 p-4">
             <div className="flex items-center gap-2 text-yellow-600">
               <Target className="h-4 w-4" />
-              <span className="text-xs">Possible (40–70%)</span>
+              <span className="text-xs">{t("possible")}</span>
             </div>
             <p className="mt-1 text-2xl font-bold text-yellow-700">{fmt(summary.possibleRevenue)}</p>
           </div>
           <div className="rounded-lg border bg-red-50 p-4">
             <div className="flex items-center gap-2 text-red-600">
               <TrendingDown className="h-4 w-4" />
-              <span className="text-xs">Unlikely (&lt;40%)</span>
+              <span className="text-xs">{t("unlikely")}</span>
             </div>
             <p className="mt-1 text-2xl font-bold text-red-700">{fmt(summary.unlikelyRevenue)}</p>
           </div>
@@ -189,12 +192,12 @@ export default function ForecastingPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Deal</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Stage</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Value</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">AI Probability</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Predicted Close</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Confidence Range</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("deal")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{tc("stage")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{tc("value")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("aiProbability")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("predictedClose")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("confidenceRange")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -208,7 +211,7 @@ export default function ForecastingPage() {
               ))
             ) : forecasts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">No predictions available yet</td>
+                <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">{t("noData")}</td>
               </tr>
             ) : (
               forecasts.map((f) => (
@@ -216,14 +219,14 @@ export default function ForecastingPage() {
                   <tr key={f.id} className="hover:bg-muted/40 transition-colors cursor-pointer"
                     onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}>
                     <td className="px-4 py-3">
-                      <p className="font-medium">{f.dealName ?? "Unknown Deal"}</p>
+                      <p className="font-medium">{f.dealName ?? t("unknown")}</p>
                       <p className="text-xs text-muted-foreground">{f.companyName ?? ""}</p>
                     </td>
                     <td className="px-4 py-3">{f.dealStage ? <StageBadge stage={f.dealStage} /> : "—"}</td>
                     <td className="px-4 py-3 font-medium tabular-nums">{f.dealValue ? fmt(f.dealValue) : "—"}</td>
                     <td className="px-4 py-3"><ProbabilityBar probability={f.predictedCloseProbability} /></td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {f.predictedCloseDate ? new Date(f.predictedCloseDate).toLocaleDateString() : "Unknown"}
+                      {f.predictedCloseDate ? new Date(f.predictedCloseDate).toLocaleDateString() : t("unknown")}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground tabular-nums">
                       {f.confidenceIntervalLow != null && f.confidenceIntervalHigh != null
@@ -234,7 +237,7 @@ export default function ForecastingPage() {
                   {expandedId === f.id && (
                     <tr key={`${f.id}-factors`}>
                       <td colSpan={6} className="bg-muted/30 px-8 py-4">
-                        <p className="text-xs font-medium uppercase text-muted-foreground mb-2">AI Factors</p>
+                        <p className="text-xs font-medium uppercase text-muted-foreground mb-2">{t("aiFactors")}</p>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           {f.factors.map((factor, i) => (
                             <div key={i} className="rounded-lg border bg-card p-3">
