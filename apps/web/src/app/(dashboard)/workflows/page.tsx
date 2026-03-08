@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   Layers, Plus, Play, Zap, AlertCircle, CheckCircle2, Clock,
-  ArrowRight, X, Pencil, Trash2,
+  ArrowRight, X, Pencil, Trash2, Loader2, RefreshCw,
 } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import { getStoredUser } from "@/lib/auth";
@@ -23,57 +23,6 @@ interface Workflow {
   category: "deal" | "contact" | "activity" | "ai";
   createdBy?: string;
 }
-
-const DEMO_WORKFLOWS: Workflow[] = [
-  {
-    id: "1",
-    name: "Deal → Negotiation: Legal task",
-    description: "Creates a legal review task and notifies the manager when a deal reaches Negotiation stage.",
-    trigger: "Deal moved to Negotiation",
-    actions: ["Create task: Legal review", "Notify manager via email"],
-    enabled: true, lastRun: "2h ago", runCount: 23, category: "deal", createdBy: "admin",
-  },
-  {
-    id: "2",
-    name: "Stale deal alert",
-    description: "Sends a Slack alert when a deal has had no activity for 7+ days.",
-    trigger: "Deal inactive for 7 days",
-    actions: ["Send Slack message to owner", "Create follow-up task"],
-    enabled: true, lastRun: "6h ago", runCount: 47, category: "deal", createdBy: "admin",
-  },
-  {
-    id: "3",
-    name: "New contact auto-sequence",
-    description: "Enrols new auto-captured contacts into a 3-step email nurture sequence.",
-    trigger: "Contact auto-captured (confidence ≥ 90%)",
-    actions: ["Add to nurture sequence", "Score as lead", "Assign to rep"],
-    enabled: true, lastRun: "1d ago", runCount: 118, category: "contact", createdBy: "sarah@acme.com",
-  },
-  {
-    id: "4",
-    name: "AI review queue escalation",
-    description: "Notifies the team if review queue items are pending for more than 24 hours.",
-    trigger: "Review queue item pending > 24h",
-    actions: ["Email ops team", "Create urgent task"],
-    enabled: false, lastRun: "3d ago", runCount: 8, category: "ai", createdBy: "admin",
-  },
-  {
-    id: "5",
-    name: "Closed-won celebration",
-    description: "Posts a win announcement to Slack and creates an onboarding task when a deal closes.",
-    trigger: "Deal moved to Closed Won",
-    actions: ["Post to #wins Slack channel", "Create onboarding task", "Update CRM stats"],
-    enabled: true, lastRun: "1d ago", runCount: 18, category: "deal", createdBy: "admin",
-  },
-  {
-    id: "6",
-    name: "Meeting → summary extraction",
-    description: "Automatically extracts action items and next steps from every meeting transcript.",
-    trigger: "Meeting activity created",
-    actions: ["Extract action items (AI)", "Create tasks from action items", "Update deal notes"],
-    enabled: true, lastRun: "30m ago", runCount: 234, category: "activity", createdBy: "marcus@acme.com",
-  },
-];
 
 const CATEGORY_CFG: Record<string, { label: string; cls: string }> = {
   deal:     { label: "Deal",     cls: "bg-blue-100 text-blue-700" },
@@ -325,33 +274,50 @@ type Filter = "all" | "deal" | "contact" | "activity" | "ai";
 
 export default function WorkflowsPage() {
   const perms = usePermissions();
-  const [workflows, setWorkflows] = useState<Workflow[]>(DEMO_WORKFLOWS);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState<string | null>(null);
   const [filter, setFilter]       = useState<Filter>("all");
   const [showCreate,    setShowCreate]    = useState(false);
   const [editing,       setEditing]       = useState<Workflow | null>(null);
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
+  const [mutating, setMutating]   = useState(false);
   const currentUser = getStoredUser()?.email ?? "";
 
-  useEffect(() => {
-    api.get("/api/v1/workflows")
-      .then((r) => r.json())
-      .then((json) => {
-        const data: Workflow[] = (json.data ?? []).map((w: any) => ({
-          id:          w.id,
-          name:        w.name,
-          description: w.description ?? "",
-          trigger:     w.trigger?.label ?? (typeof w.trigger === "string" ? w.trigger : JSON.stringify(w.trigger)),
-          actions:     (w.actions ?? []).map((a: any) => a.label ?? a.type ?? JSON.stringify(a)),
-          enabled:     w.is_active ?? true,
-          lastRun:     w.lastRun   ?? null,
-          runCount:    w.runCount  ?? 0,
-          category:    w.trigger?.category ?? "deal",
-          createdBy:   w.createdBy ?? null,
-        }));
-        if (data.length) setWorkflows(data);
-      })
-      .catch(() => { /* keep demo data */ });
+  const mapApiWorkflow = (w: any): Workflow => ({
+    id:          w.id,
+    name:        w.name,
+    description: w.description ?? "",
+    trigger:     w.trigger?.label ?? (typeof w.trigger === "string" ? w.trigger : JSON.stringify(w.trigger)),
+    actions:     (w.actions ?? []).map((a: any) => a.label ?? a.type ?? JSON.stringify(a)),
+    enabled:     w.is_active ?? true,
+    lastRun:     w.lastRun ?? null,
+    runCount:    w.runCount ?? 0,
+    category:    w.trigger?.category ?? w.category ?? "deal",
+    createdBy:   w.createdBy ?? null,
+  });
+
+  const fetchWorkflows = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get("/api/v1/workflows");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error?.message ?? `Failed to load workflows (${res.status})`);
+      }
+      const json = await res.json();
+      setWorkflows((json.data ?? []).map(mapApiWorkflow));
+    } catch (err: any) {
+      setError(err.message ?? "Failed to load workflows");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchWorkflows();
+  }, [fetchWorkflows]);
 
   const toggle = async (id: string) => {
     const wf = workflows.find((w) => w.id === id);
@@ -359,49 +325,69 @@ export default function WorkflowsPage() {
     const newEnabled = !wf.enabled;
     setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: newEnabled } : w));
     try {
-      await api.patch(`/api/v1/workflows/${id}`, { is_active: newEnabled });
+      const res = await api.patch(`/api/v1/workflows/${id}`, { is_active: newEnabled });
+      if (!res.ok) throw new Error("Toggle failed");
     } catch {
       setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: wf.enabled } : w));
     }
   };
 
   const handleCreate = async (data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
+    setMutating(true);
     try {
       const res = await api.post("/api/v1/workflows", {
-        name:      data.name,
+        name:        data.name,
         description: data.description,
-        trigger:   { label: data.trigger, category: data.category },
-        actions:   data.actions.map((a) => ({ label: a })),
-        is_active: data.enabled,
+        trigger:     { label: data.trigger, category: data.category },
+        actions:     data.actions.map((a) => ({ label: a })),
+        is_active:   data.enabled,
       });
-      if (res.ok) {
-        const json = await res.json();
-        const w = json.data;
-        setWorkflows((ws) => [{ ...data, id: w.id, runCount: 0 }, ...ws]);
-        return;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error?.message ?? "Failed to create workflow");
       }
-    } catch {}
-    setWorkflows((ws) => [...ws, { ...data, id: Date.now().toString(), runCount: 0 }]);
+      const json = await res.json();
+      const created = mapApiWorkflow(json.data);
+      setWorkflows((ws) => [created, ...ws]);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to create workflow");
+    } finally {
+      setMutating(false);
+    }
   };
 
   const handleEdit = async (id: string, data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
+    const prev = workflows.find((w) => w.id === id);
     setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, ...data } : w));
     try {
-      await api.patch(`/api/v1/workflows/${id}`, {
-        name:      data.name,
+      const res = await api.patch(`/api/v1/workflows/${id}`, {
+        name:        data.name,
         description: data.description,
-        is_active: data.enabled,
-        trigger:   { label: data.trigger, category: data.category },
-        actions:   data.actions.map((a) => ({ label: a })),
+        is_active:   data.enabled,
+        trigger:     { label: data.trigger, category: data.category },
+        actions:     data.actions.map((a) => ({ label: a })),
       });
-    } catch {}
+      if (!res.ok) {
+        throw new Error("Failed to update workflow");
+      }
+    } catch {
+      if (prev) setWorkflows((ws) => ws.map((w) => w.id === id ? prev : w));
+      setError("Failed to update workflow");
+    }
   };
 
   const handleDelete = async (id: string) => {
+    const prev = workflows;
     setWorkflows((ws) => ws.filter((w) => w.id !== id));
     try {
-      await api.delete(`/api/v1/workflows/${id}`);
-    } catch {}
+      const res = await api.delete(`/api/v1/workflows/${id}`);
+      if (!res.ok && res.status !== 204) {
+        throw new Error("Failed to delete workflow");
+      }
+    } catch {
+      setWorkflows(prev);
+      setError("Failed to delete workflow");
+    }
   };
 
   // A user can edit a workflow if they're admin/manager, or if they created it
@@ -417,16 +403,29 @@ export default function WorkflowsPage() {
         <div className="flex items-center gap-2">
           <Layers className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">Workflows</h1>
-          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-            {active} active
-          </span>
+          {!loading && (
+            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+              {active} active
+            </span>
+          )}
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> New Workflow
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchWorkflows}
+            disabled={loading}
+            className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
+            title="Refresh workflows"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            disabled={mutating}
+            className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+          >
+            <Plus className="h-4 w-4" /> New Workflow
+          </button>
+        </div>
       </div>
 
       {showCreate && (
@@ -446,6 +445,17 @@ export default function WorkflowsPage() {
         />
       )}
 
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50/50 p-3 text-xs text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="flex-1">{error}</p>
+          <button onClick={() => setError(null)} className="shrink-0 hover:text-red-900">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Info banner */}
       <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-700">
         <Zap className="mt-0.5 h-4 w-4 shrink-0" />
@@ -462,7 +472,35 @@ export default function WorkflowsPage() {
         ))}
       </div>
 
+      {/* Loading state */}
+      {loading && (
+        <div className="flex flex-1 items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin" />
+            <p className="text-sm">Loading workflows...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && !error && workflows.length === 0 && (
+        <div className="flex flex-1 items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3 text-muted-foreground">
+            <Layers className="h-10 w-10" />
+            <p className="text-sm font-medium">No workflows yet</p>
+            <p className="text-xs">Create your first workflow to automate your CRM processes.</p>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="mt-2 flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" /> New Workflow
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Workflow cards */}
+      {!loading && filtered.length > 0 && (
       <div className="flex-1 overflow-auto">
         <div className="grid gap-4 sm:grid-cols-2">
           {filtered.map((wf) => (
@@ -562,6 +600,7 @@ export default function WorkflowsPage() {
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -26,13 +26,6 @@ interface TeamUser {
   canQuote?: boolean;
 }
 
-const DEMO_USERS: TeamUser[] = [
-  { id: "1", firstName: "Sarah",  lastName: "Kim",       email: "sarah@acme.com",  role: "admin",   lastLoginAt: "2h ago",  status: "active"  },
-  { id: "2", firstName: "Marcus", lastName: "Chen",      email: "marcus@acme.com", role: "manager", lastLoginAt: "1d ago",  status: "active"  },
-  { id: "3", firstName: "Priya",  lastName: "Sharma",    email: "priya@acme.com",  role: "rep",     lastLoginAt: "3h ago",  status: "active"  },
-  { id: "4", firstName: "Alex",   lastName: "Johnson",   email: "alex@acme.com",   role: "rep",     lastLoginAt: "5h ago",  status: "active"  },
-  { id: "5", firstName: "Jamie",  lastName: "Rodriguez", email: "jamie@acme.com",  role: "rep",     lastLoginAt: undefined, status: "invited" },
-];
 
 const INTEGRATIONS = [
   { id: "gmail",   name: "Gmail",           icon: "📧", status: "connected", account: "admin@nexcrm.dev", desc: "Email ingestion active"          },
@@ -511,19 +504,33 @@ function OrgNode({ user, allUsers, depth = 0 }: { user: TeamUser; allUsers: Team
 function UsersTab() {
   const [users,        setUsers]        = useState<TeamUser[]>([]);
   const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState<string | null>(null);
   const [showCreate,   setShowCreate]   = useState(false);
   const [editUser,     setEditUser]     = useState<TeamUser | null>(null);
   const [deletingId,   setDeletingId]   = useState<string | null>(null);
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
   const [viewMode,     setViewMode]     = useState<"list" | "org">("list");
 
-  useEffect(() => {
-    api.get("/api/v1/users")
-      .then((r) => r.json())
-      .then((j) => setUsers((j.data ?? []).length ? j.data : DEMO_USERS))
-      .catch(() => setUsers(DEMO_USERS))
-      .finally(() => setLoading(false));
-  }, []);
+  const fetchUsers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get("/api/v1/users");
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError(json?.error?.message ?? "Failed to load users");
+        return;
+      }
+      const json = await res.json();
+      setUsers(json.data ?? []);
+    } catch {
+      setError("Network error — could not load users");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
 
   const handleCreated = (u: TeamUser) => setUsers((prev) => [...prev, u]);
   const handleUpdated = (u: TeamUser) => setUsers((prev) => prev.map((x) => x.id === u.id ? u : x));
@@ -532,28 +539,48 @@ function UsersTab() {
     const prev = users.find((u) => u.id === id);
     setUsers((us) => us.map((u) => u.id === id ? { ...u, role } : u));
     setRoleChanging(id);
+    setError(null);
     try {
       const res = await api.patch(`/api/v1/users/${id}`, { role });
       if (!res.ok) {
         if (prev) setUsers((us) => us.map((u) => u.id === id ? prev : u));
+        const json = await res.json().catch(() => ({}));
+        setError(json?.error?.message ?? "Failed to update role");
       }
     } catch {
       if (prev) setUsers((us) => us.map((u) => u.id === id ? prev : u));
+      setError("Network error — could not update role");
     } finally { setRoleChanging(null); }
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this user? This cannot be undone.")) return;
     setDeletingId(id);
+    setError(null);
     try {
       const res = await api.delete(`/api/v1/users/${id}`);
-      if (res.ok || res.status === 404) setUsers((us) => us.filter((x) => x.id !== id));
+      if (res.ok || res.status === 204 || res.status === 404) {
+        setUsers((us) => us.filter((x) => x.id !== id));
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setError(json?.error?.message ?? "Failed to delete user");
+      }
     } catch {
-      setUsers((us) => us.filter((x) => x.id !== id));
+      setError("Network error — could not delete user");
     } finally { setDeletingId(null); }
   };
 
   if (loading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading users…</div>;
+  if (error && users.length === 0) return (
+    <div className="py-16 text-center space-y-3">
+      <div className="flex items-center justify-center gap-2 text-sm text-red-600">
+        <AlertCircle className="h-4 w-4" /> {error}
+      </div>
+      <button onClick={fetchUsers} className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">
+        Retry
+      </button>
+    </div>
+  );
 
   // Org chart root nodes: users with no managerId or whose manager isn't in the list
   const userIds = new Set(users.map((u) => u.id));
@@ -582,6 +609,13 @@ function UsersTab() {
           </button>
         </div>
       </div>
+
+      {error && users.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />{error}
+          <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600"><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       {viewMode === "org" ? (
         <div className="rounded-lg border bg-card p-4 space-y-1">
@@ -690,17 +724,14 @@ function QuotingTab() {
     api.get("/api/v1/users")
       .then((r) => r.json())
       .then((j) => {
-        const u: TeamUser[] = j.data?.length ? j.data : DEMO_USERS;
+        const u: TeamUser[] = j.data ?? [];
         setUsers(u);
         const map: Record<string, boolean> = {};
-        u.forEach((user) => { map[user.id] = ["admin","manager"].includes(user.role); });
+        u.forEach((user) => { map[user.id] = user.canQuote ?? ["admin","manager"].includes(user.role); });
         setQuotingMap(map);
       })
       .catch(() => {
-        setUsers(DEMO_USERS);
-        const map: Record<string, boolean> = {};
-        DEMO_USERS.forEach((u) => { map[u.id] = ["admin","manager"].includes(u.role); });
-        setQuotingMap(map);
+        setUsers([]);
       });
   }, []);
 

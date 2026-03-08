@@ -73,8 +73,39 @@ export async function aiRoutes(server: FastifyInstance) {
       return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
     }
 
-    // TODO: apply proposed_changes to graph-core (async via Redis Stream)
-    server.log.info({ reviewId: id, userId: jwt.sub }, "review.approved");
+    // Apply proposed changes to graph-core
+    const approved = rows[0];
+    const changes = (approved.proposed_changes as any[]) ?? [];
+
+    for (const change of changes) {
+      const { entityType, entityId, field, proposedValue } = change;
+      if (!entityType || !entityId || !field) continue;
+
+      const entityMap: Record<string, string> = {
+        person: "contacts", company: "companies", deal: "deals",
+      };
+      const endpoint = entityMap[entityType];
+      if (!endpoint) continue;
+
+      try {
+        const downstream = `${GRAPH_CORE}/${endpoint}/${entityId}?tenantId=${jwt.tenantId}`;
+        await fetch(downstream, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": jwt.sub,
+            "x-tenant-id": jwt.tenantId,
+            "x-user-role": jwt.role ?? "",
+          },
+          body: JSON.stringify({ [field]: proposedValue }),
+        });
+        server.log.info({ reviewId: id, entityType, entityId, field }, "review.change_applied");
+      } catch (err: any) {
+        server.log.error({ reviewId: id, entityType, entityId, err: err.message }, "review.apply_failed");
+      }
+    }
+
+    server.log.info({ reviewId: id, userId: jwt.sub, changesApplied: changes.length }, "review.approved");
 
     return reply.send({ success: true, data: toReviewItem(rows[0]) });
   });
