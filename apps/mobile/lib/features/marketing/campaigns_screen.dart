@@ -126,7 +126,7 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen> {
                       child: _filtered.isEmpty
                           ? const EmptyState(
                               icon: Icons.campaign_outlined,
-                              message: 'No campaigns found',
+                              title: 'No campaigns found',
                             )
                           : RefreshIndicator(
                               onRefresh: _loadCampaigns,
