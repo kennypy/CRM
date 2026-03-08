@@ -18,7 +18,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Queue } from "bullmq";
 import { pool } from "../db";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://:nexcrm_dev@localhost:6379";
+const REDIS_URL = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
 const exportQueue = new Queue("export", { connection: { url: REDIS_URL } });
 
 // ── S3 client ─────────────────────────────────────────────────────────────────
