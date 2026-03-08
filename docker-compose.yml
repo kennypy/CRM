@@ -128,10 +128,67 @@ services:
     volumes:
       - ./infra/otel/config.yml:/etc/otelcol-contrib/config.yaml
     ports:
-      # Loopback only — telemetry data should not be externally accessible.
       - "127.0.0.1:4317:4317"   # gRPC
       - "127.0.0.1:4318:4318"   # HTTP
       - "127.0.0.1:8888:8888"   # metrics
+    depends_on: [tempo, prometheus, loki]
+
+  # ── Grafana (dashboards + visualization) ─────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: nexcrm-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - .docker-data/grafana:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on: [tempo, prometheus, loki]
+
+  # ── Tempo (distributed tracing backend) ──────────────────────────────────
+  tempo:
+    image: grafana/tempo:2.4.1
+    container_name: nexcrm-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./infra/tempo/config.yml:/etc/tempo.yml
+      - .docker-data/tempo:/tmp/tempo
+    ports:
+      - "127.0.0.1:3200:3200"   # Tempo query API
+
+  # ── Prometheus (metrics) ─────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: nexcrm-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - .docker-data/prometheus:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  # ── Loki (log aggregation) ──────────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.7
+    container_name: nexcrm-loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./infra/loki/loki.yml:/etc/loki/loki.yml
+      - .docker-data/loki:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
 
   # ── Mailhog (local email capture for dev) ─────────────────────────────────
   mailhog:

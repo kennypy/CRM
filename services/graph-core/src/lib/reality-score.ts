@@ -189,7 +189,7 @@ function scoreStructural(
   const evidence: string[] = [
     isExpansion ? "Existing customer (expansion)" : "New business",
     company?.industry          ? `Industry: ${company.industry}` : "Industry not set",
-    (company?.headcount ?? 0) > 0 ? `Headcount: ${company.headcount}` : "Headcount unknown",
+    (company?.headcount ?? 0) > 0 ? `Headcount: ${company!.headcount}` : "Headcount unknown",
   ];
 
   return { score, evidence };

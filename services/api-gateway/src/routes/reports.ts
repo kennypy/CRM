@@ -132,6 +132,8 @@ export const SOURCE_FIELDS: Record<SourceId, { key: string; label: string }[]> =
     { key: "language",      label: "language" },
     { key: "phone",         label: "Phone" },
     { key: "twilio_number", label: "Twilio Number" },
+    { key: "last_login_at", label: "Last Login" },
+    { key: "created_at",    label: "Created At" },
   ],
 };
 
@@ -398,8 +400,8 @@ async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
         switch (agg.func) {
           case "COUNT":          aggRow[agg.alias] = _rows.length; break;
           case "COUNT_DISTINCT": aggRow[agg.alias] = new Set(vals).size; break;
-          case "SUM":            aggRow[agg.alias] = vals.reduce((s, v) => s + Number(v), 0); break;
-          case "AVG":            aggRow[agg.alias] = vals.length ? vals.reduce((s, v) => s + Number(v), 0) / vals.length : null; break;
+          case "SUM":            aggRow[agg.alias] = vals.reduce<number>((s, v) => s + Number(v), 0); break;
+          case "AVG":            aggRow[agg.alias] = vals.length ? vals.reduce<number>((s, v) => s + Number(v), 0) / vals.length : null; break;
           case "MIN":            aggRow[agg.alias] = vals.length ? vals.reduce((a, b) => Number(a) < Number(b) ? a : b) : null; break;
           case "MAX":            aggRow[agg.alias] = vals.length ? vals.reduce((a, b) => Number(a) > Number(b) ? a : b) : null; break;
         }
@@ -442,13 +444,16 @@ async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
   // 9. Limit
   rows = rows.slice(0, spec.limit ?? 1000);
 
-  // 10. Build column list (plain strings — frontend uses these as React keys + headers)
-  const columns: string[] = hasAgg
+  // 10. Build column list — frontend uses these as React keys + headers
+  const columns: { key: string; label: string }[] = hasAgg
     ? [
-        ...(spec.groupBy ?? []).map((g) => `${g.source}.${g.field}`),
-        ...(spec.aggregations ?? []).map((a) => a.alias),
+        ...(spec.groupBy ?? []).map((g) => ({ key: `${g.source}.${g.field}`, label: `${g.source}.${g.field}` })),
+        ...(spec.aggregations ?? []).map((a) => ({ key: a.alias, label: a.alias })),
       ]
-    : spec.fields.map((f) => f.alias ?? `${f.source}.${f.field}`);
+    : spec.fields.map((f) => {
+        const key = f.alias ?? `${f.source}.${f.field}`;
+        return { key, label: key };
+      });
 
   return { rows, columns, rowCount: rows.length };
 }
@@ -471,7 +476,11 @@ export async function reportsRoutes(server: FastifyInstance) {
 
   // ── GET /api/v1/reports ──────────────────────────────────────────────────
   server.get("/reports", async (request, reply) => {
-    const { tenantId } = request.user;
+    const { tenantId, role } = request.user;
+    // Hide admin-category reports from non-admin users
+    const categoryFilter = (role === "admin" || role === "super_admin")
+      ? ""
+      : `AND (r.category IS NULL OR r.category = 'standard')`;
     const { rows } = await readPool.query(
       `SELECT r.*, u.first_name || ' ' || u.last_name AS created_by_name,
               s.row_count AS last_row_count, s.taken_at AS last_snapshot_at
@@ -481,7 +490,7 @@ export async function reportsRoutes(server: FastifyInstance) {
          SELECT row_count, taken_at FROM report_snapshots
          WHERE report_id = r.id ORDER BY taken_at DESC LIMIT 1
        ) s ON true
-       WHERE r.tenant_id = $1 ORDER BY r.updated_at DESC`,
+       WHERE r.tenant_id = $1 ${categoryFilter} ORDER BY r.updated_at DESC`,
       [tenantId]
     );
     return reply.send({ success: true, data: rows });

@@ -1,3 +1,4 @@
+import "./telemetry";
 import * as path from "path";
 import * as dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
@@ -28,15 +29,35 @@ import { usersRoutes }     from "./routes/users";
 import { quotesRoutes }    from "./routes/quotes";
 import { productsRoutes }  from "./routes/products";
 import { reportsRoutes }          from "./routes/reports";
+import { adminReportsRoutes }     from "./routes/admin-reports";
 import { outboundWebhooksRoutes } from "./routes/outbound-webhooks";
 import { billingRoutes }          from "./routes/billing";
 import { exportRoutes }           from "./routes/export";
 import { apiKeysRoutes }          from "./routes/api-keys";
+import { complianceRoutes }       from "./routes/compliance";
+import { forecastingRoutes }      from "./routes/forecasting";
+import { coachingRoutes }         from "./routes/coaching";
+import { territoriesRoutes }      from "./routes/territories";
+import { notificationsRoutes }    from "./routes/notifications";
+import { leadScoringRoutes }      from "./routes/lead-scoring";
+import { anomaliesRoutes }        from "./routes/anomalies";
+import { marketplaceRoutes }      from "./routes/marketplace";
+import { zoomRoutes }             from "./routes/zoom";
+import { slackRoutes }            from "./routes/slack";
 import { errorHandler }           from "./middleware/error-handler";
 import { authMiddleware }         from "./middleware/auth";
 import { typeDefs }               from "./graphql/schema";
 import { resolvers }              from "./graphql/resolvers";
+import { customFieldsRoutes }         from "./routes/custom-fields";
+import { customObjectsRoutes }        from "./routes/custom-objects";
+import { permissionsRoutes }          from "./routes/permissions";
+import { importRoutes }               from "./routes/import";
+import { bulkRoutes }                 from "./routes/bulk";
 import { startWebhookDeliveryWorker } from "./workers/webhook-delivery";
+import { startWorkflowEngine }        from "./workers/workflow-engine";
+import { startSlackNotificationWorker } from "./workers/slack-notification";
+import { startImportProcessorWorker }   from "./workers/import-processor";
+import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
 
 const server = Fastify({
   logger: {
@@ -84,7 +105,10 @@ async function bootstrap() {
   });
 
   await server.register(cors, {
-    origin: process.env.APP_URL ?? "http://localhost:3000",
+    origin:
+      process.env.NODE_ENV === "production"
+        ? process.env.APP_URL ?? "http://localhost:3000"
+        : true, // allow any origin in development (Flutter web uses random ports)
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
@@ -137,10 +161,26 @@ async function bootstrap() {
   await server.register(quotesRoutes,       { prefix: "/api/v1/quotes" });
   await server.register(productsRoutes,     { prefix: "/api/v1/products" });
   await server.register(reportsRoutes,          { prefix: "/api/v1" });
+  await server.register(adminReportsRoutes,     { prefix: "/api/v1/admin-reports" });
   await server.register(outboundWebhooksRoutes, { prefix: "/api/v1/webhooks" });
   await server.register(billingRoutes,          { prefix: "/api/v1/billing" });
   await server.register(exportRoutes,           { prefix: "/api/v1/export" });
   await server.register(apiKeysRoutes,          { prefix: "/api/v1/api-keys" });
+  await server.register(leadScoringRoutes,     { prefix: "/api/v1/lead-scoring" });
+  await server.register(forecastingRoutes,     { prefix: "/api/v1/forecasting" });
+  await server.register(anomaliesRoutes,       { prefix: "/api/v1/anomalies" });
+  await server.register(marketplaceRoutes,     { prefix: "/api/v1/marketplace" });
+  await server.register(zoomRoutes,            { prefix: "/api/v1/integrations/zoom" });
+  await server.register(slackRoutes,           { prefix: "/api/v1/integrations/slack" });
+  await server.register(customFieldsRoutes,     { prefix: "/api/v1/custom-fields" });
+  await server.register(customObjectsRoutes,    { prefix: "/api/v1/custom-objects" });
+  await server.register(permissionsRoutes,      { prefix: "/api/v1/permissions" });
+  await server.register(importRoutes,           { prefix: "/api/v1/import" });
+  await server.register(bulkRoutes,             { prefix: "/api/v1/bulk" });
+  await server.register(complianceRoutes,       { prefix: "/api/v1" });
+  await server.register(coachingRoutes,         { prefix: "/api/v1/coaching" });
+  await server.register(territoriesRoutes,      { prefix: "/api/v1/territories" });
+  await server.register(notificationsRoutes,    { prefix: "/api/v1/notifications" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
@@ -166,6 +206,10 @@ async function bootstrap() {
 
   // ── Background workers ────────────────────────────────────────────────────
   startWebhookDeliveryWorker();
+  startWorkflowEngine();
+  startSlackNotificationWorker();
+  startImportProcessorWorker();
+  startCloseDateCheckerWorker();
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

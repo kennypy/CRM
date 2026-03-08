@@ -15,7 +15,7 @@ import { requireRep, requireManager, requireAdmin } from "../middleware/rbac";
 const OUTREACH_URL = process.env.OUTREACH_URL ?? "http://localhost:4003";
 
 export async function outreachRoutes(fastify: FastifyInstance) {
-  const proxy = createProxy({ baseUrl: OUTREACH_URL });
+  const proxy = createProxy({ baseUrl: OUTREACH_URL, stripPrefix: "/api/v1/outreach" });
 
   // ── Email ──────────────────────────────────────────────────────────────────
   fastify.get("/email/threads",                   proxy);

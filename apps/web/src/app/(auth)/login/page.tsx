@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -25,6 +25,7 @@ function LoginForm() {
     !decoded.startsWith("/register")
   ) ? decoded : "/";
 
+  const formRef = useRef<HTMLFormElement>(null);
   const [form, setForm]       = useState({ tenantSlug: "", email: "", password: "" });
   const [showPw, setShowPw]   = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,13 +36,17 @@ function LoginForm() {
     setLoading(true);
     setError(null);
 
+    // Read DOM values as fallback for browser autofill (autofill doesn't fire onChange)
+    const fd = formRef.current ? new FormData(formRef.current) : null;
+    const tenantSlug = form.tenantSlug || (fd?.get("tenantSlug") as string) || "";
+    const email = form.email || (fd?.get("email") as string) || "";
+    const password = form.password || (fd?.get("password") as string) || "";
+
     try {
-      // POST to the Next.js Route Handler — it sets HttpOnly cookies server-side
-      // and returns only the user profile (no tokens in the response body).
       const res = await api.public.post("/api/auth/login", {
-        tenantSlug: form.tenantSlug,
-        email:      form.email,
-        password:   form.password,
+        tenantSlug,
+        email,
+        password,
       });
 
       if (!res.ok) {
@@ -64,7 +69,7 @@ function LoginForm() {
       });
 
       // Load tenant preferences now that we're authenticated
-      refresh();
+      await refresh();
 
       router.replace(next);
     } catch {
@@ -75,7 +80,7 @@ function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" suppressHydrationWarning>
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4" suppressHydrationWarning>
       {/* Workspace */}
       <div>
         <label className="mb-1.5 block text-sm font-medium">Workspace</label>
@@ -85,6 +90,8 @@ function LoginForm() {
           </span>
           <input
             type="text"
+            name="tenantSlug"
+            autoComplete="organization"
             placeholder="your-team"
             value={form.tenantSlug}
             onChange={(e) => setForm((f) => ({ ...f, tenantSlug: e.target.value }))}
@@ -100,6 +107,8 @@ function LoginForm() {
         <label className="mb-1.5 block text-sm font-medium">Email</label>
         <input
           type="email"
+          name="email"
+          autoComplete="email"
           placeholder="you@company.com"
           value={form.email}
           onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
@@ -121,6 +130,8 @@ function LoginForm() {
         <div className="relative">
           <input
             type={showPw ? "text" : "password"}
+            name="password"
+            autoComplete="current-password"
             placeholder="••••••••"
             value={form.password}
             onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}

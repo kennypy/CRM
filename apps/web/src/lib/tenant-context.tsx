@@ -50,13 +50,13 @@ const DEFAULT_TENANT: TenantPreferences = {
 interface TenantContextValue {
   tenant:  TenantPreferences;
   loading: boolean;
-  refresh: () => void;
+  refresh: () => Promise<void>;
 }
 
 const TenantContext = createContext<TenantContextValue>({
   tenant:  DEFAULT_TENANT,
   loading: false,
-  refresh: () => {},
+  refresh: async () => {},
 });
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {

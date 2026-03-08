@@ -10,7 +10,7 @@ import {
   Settings, Users, Plug, CreditCard, Shield, User,
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
-  FileText, Package, ChevronDown,
+  FileText, Package, ChevronDown, Columns3, Box, LockKeyhole,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -26,13 +26,6 @@ interface TeamUser {
   canQuote?: boolean;
 }
 
-const DEMO_USERS: TeamUser[] = [
-  { id: "1", firstName: "Sarah",  lastName: "Kim",       email: "sarah@acme.com",  role: "admin",   lastLoginAt: "2h ago",  status: "active"  },
-  { id: "2", firstName: "Marcus", lastName: "Chen",      email: "marcus@acme.com", role: "manager", lastLoginAt: "1d ago",  status: "active"  },
-  { id: "3", firstName: "Priya",  lastName: "Sharma",    email: "priya@acme.com",  role: "rep",     lastLoginAt: "3h ago",  status: "active"  },
-  { id: "4", firstName: "Alex",   lastName: "Johnson",   email: "alex@acme.com",   role: "rep",     lastLoginAt: "5h ago",  status: "active"  },
-  { id: "5", firstName: "Jamie",  lastName: "Rodriguez", email: "jamie@acme.com",  role: "rep",     lastLoginAt: undefined, status: "invited" },
-];
 
 const INTEGRATIONS = [
   { id: "gmail",   name: "Gmail",           icon: "📧", status: "connected", account: "admin@nexcrm.dev", desc: "Email ingestion active"          },
@@ -59,7 +52,7 @@ const SUPPORTED_TIMEZONES  = [
   "Asia/Tokyo", "Australia/Sydney",
 ];
 
-type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products";
+type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions";
 
 // ── Theme Selector ─────────────────────────────────────────────────────────────
 
@@ -268,7 +261,7 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
   };
 
   return (
-    <div className="space-y-6 max-w-lg">
+    <div className="space-y-6 max-w-lg" suppressHydrationWarning>
       <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-700">
         <Building2 className="h-4 w-4 shrink-0" />
         <p>These settings apply to your entire workspace. Only admins can change them.</p>
@@ -278,12 +271,12 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
         <div className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium">Organisation name</label>
-            <input value={orgName} onChange={(e) => setOrgName(e.target.value)}
+            <input value={orgName} onChange={(e) => setOrgName(e.target.value)} suppressHydrationWarning
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium flex items-center gap-2"><Globe className="h-4 w-4" />Timezone</label>
-            <select value={timezone} onChange={(e) => setTimezone(e.target.value)}
+            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} suppressHydrationWarning
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
               {SUPPORTED_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
             </select>
@@ -291,7 +284,7 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
           <div>
             <label className="mb-1.5 block text-sm font-medium">Default currency</label>
             <p className="mb-2 text-xs text-muted-foreground">All new deals default to this currency.</p>
-            <select value={currency} onChange={(e) => setCurrency(e.target.value)}
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)} suppressHydrationWarning
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
               {SUPPORTED_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -300,7 +293,7 @@ function GeneralTab({ user }: { user: StoredUser | null }) {
       </div>
       {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
       <div className="flex items-center gap-3">
-        <button onClick={save} disabled={saving}
+        <button onClick={save} disabled={saving} suppressHydrationWarning
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
           {saving ? "Saving…" : "Save changes"}
         </button>
@@ -511,19 +504,33 @@ function OrgNode({ user, allUsers, depth = 0 }: { user: TeamUser; allUsers: Team
 function UsersTab() {
   const [users,        setUsers]        = useState<TeamUser[]>([]);
   const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState<string | null>(null);
   const [showCreate,   setShowCreate]   = useState(false);
   const [editUser,     setEditUser]     = useState<TeamUser | null>(null);
   const [deletingId,   setDeletingId]   = useState<string | null>(null);
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
   const [viewMode,     setViewMode]     = useState<"list" | "org">("list");
 
-  useEffect(() => {
-    api.get("/api/v1/users")
-      .then((r) => r.json())
-      .then((j) => setUsers((j.data ?? []).length ? j.data : DEMO_USERS))
-      .catch(() => setUsers(DEMO_USERS))
-      .finally(() => setLoading(false));
-  }, []);
+  const fetchUsers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get("/api/v1/users");
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError(json?.error?.message ?? "Failed to load users");
+        return;
+      }
+      const json = await res.json();
+      setUsers(json.data ?? []);
+    } catch {
+      setError("Network error — could not load users");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
 
   const handleCreated = (u: TeamUser) => setUsers((prev) => [...prev, u]);
   const handleUpdated = (u: TeamUser) => setUsers((prev) => prev.map((x) => x.id === u.id ? u : x));
@@ -532,28 +539,48 @@ function UsersTab() {
     const prev = users.find((u) => u.id === id);
     setUsers((us) => us.map((u) => u.id === id ? { ...u, role } : u));
     setRoleChanging(id);
+    setError(null);
     try {
       const res = await api.patch(`/api/v1/users/${id}`, { role });
       if (!res.ok) {
         if (prev) setUsers((us) => us.map((u) => u.id === id ? prev : u));
+        const json = await res.json().catch(() => ({}));
+        setError(json?.error?.message ?? "Failed to update role");
       }
     } catch {
       if (prev) setUsers((us) => us.map((u) => u.id === id ? prev : u));
+      setError("Network error — could not update role");
     } finally { setRoleChanging(null); }
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this user? This cannot be undone.")) return;
     setDeletingId(id);
+    setError(null);
     try {
       const res = await api.delete(`/api/v1/users/${id}`);
-      if (res.ok || res.status === 404) setUsers((us) => us.filter((x) => x.id !== id));
+      if (res.ok || res.status === 204 || res.status === 404) {
+        setUsers((us) => us.filter((x) => x.id !== id));
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setError(json?.error?.message ?? "Failed to delete user");
+      }
     } catch {
-      setUsers((us) => us.filter((x) => x.id !== id));
+      setError("Network error — could not delete user");
     } finally { setDeletingId(null); }
   };
 
   if (loading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading users…</div>;
+  if (error && users.length === 0) return (
+    <div className="py-16 text-center space-y-3">
+      <div className="flex items-center justify-center gap-2 text-sm text-red-600">
+        <AlertCircle className="h-4 w-4" /> {error}
+      </div>
+      <button onClick={fetchUsers} className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">
+        Retry
+      </button>
+    </div>
+  );
 
   // Org chart root nodes: users with no managerId or whose manager isn't in the list
   const userIds = new Set(users.map((u) => u.id));
@@ -582,6 +609,13 @@ function UsersTab() {
           </button>
         </div>
       </div>
+
+      {error && users.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />{error}
+          <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600"><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       {viewMode === "org" ? (
         <div className="rounded-lg border bg-card p-4 space-y-1">
@@ -690,17 +724,14 @@ function QuotingTab() {
     api.get("/api/v1/users")
       .then((r) => r.json())
       .then((j) => {
-        const u: TeamUser[] = j.data?.length ? j.data : DEMO_USERS;
+        const u: TeamUser[] = j.data ?? [];
         setUsers(u);
         const map: Record<string, boolean> = {};
-        u.forEach((user) => { map[user.id] = ["admin","manager"].includes(user.role); });
+        u.forEach((user) => { map[user.id] = user.canQuote ?? ["admin","manager"].includes(user.role); });
         setQuotingMap(map);
       })
       .catch(() => {
-        setUsers(DEMO_USERS);
-        const map: Record<string, boolean> = {};
-        DEMO_USERS.forEach((u) => { map[u.id] = ["admin","manager"].includes(u.role); });
-        setQuotingMap(map);
+        setUsers([]);
       });
   }, []);
 
@@ -1371,6 +1402,399 @@ function CommunicationsTab() {
   );
 }
 
+// ── Custom Fields Tab ────────────────────────────────────────────────────────
+
+function CustomFieldsTab() {
+  const [fields, setFields] = useState<any[]>([]);
+  const [entityType, setEntityType] = useState("contact");
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ field_key: "", field_label: "", field_type: "text", is_required: false, options: [] as any[] });
+
+  const entityTypes = ["contact", "company", "deal", "activity", "task"];
+  const fieldTypes = ["text", "number", "date", "datetime", "boolean", "enum", "multi_enum", "url", "email", "phone", "currency"];
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/api/v1/custom-fields?entityType=${entityType}`);
+      setFields(res.data ?? []);
+    } catch { setFields([]); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [entityType]);
+
+  const create = async () => {
+    try {
+      await api.post("/api/v1/custom-fields", { ...form, entity_type: entityType });
+      setShowCreate(false);
+      setForm({ field_key: "", field_label: "", field_type: "text", is_required: false, options: [] });
+      load();
+    } catch (e: any) { alert(e.message); }
+  };
+
+  const remove = async (id: string) => {
+    await api.delete(`/api/v1/custom-fields/${id}`);
+    load();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          {entityTypes.map((t) => (
+            <button key={t} onClick={() => setEntityType(t)}
+              className={cn("rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors",
+                entityType === t ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setShowCreate(!showCreate)}
+          className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+          <Plus className="h-4 w-4" /> Add Field
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <input placeholder="field_key (snake_case)" value={form.field_key}
+              onChange={(e) => setForm({ ...form, field_key: e.target.value })}
+              className="rounded-lg border px-3 py-2 text-sm" />
+            <input placeholder="Display Label" value={form.field_label}
+              onChange={(e) => setForm({ ...form, field_label: e.target.value })}
+              className="rounded-lg border px-3 py-2 text-sm" />
+            <select value={form.field_type} onChange={(e) => setForm({ ...form, field_type: e.target.value })}
+              className="rounded-lg border px-3 py-2 text-sm">
+              {fieldTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.is_required}
+                onChange={(e) => setForm({ ...form, is_required: e.target.checked })} />
+              Required
+            </label>
+            <button onClick={create}
+              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+              Create
+            </button>
+            <button onClick={() => setShowCreate(false)} className="text-sm text-muted-foreground hover:underline">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="h-20 rounded-lg bg-muted animate-pulse" />
+      ) : fields.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">No custom fields for {entityType}. Click "Add Field" to create one.</p>
+      ) : (
+        <div className="rounded-lg border divide-y">
+          {fields.map((f: any) => (
+            <div key={f.id} className="flex items-center justify-between px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">{f.fieldLabel}</p>
+                <p className="text-xs text-muted-foreground">{f.fieldKey} &middot; {f.fieldType}{f.isRequired ? " (required)" : ""}</p>
+              </div>
+              <button onClick={() => remove(f.id)} className="text-muted-foreground hover:text-red-500">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Custom Objects Tab ──────────────────────────────────────────────────────
+
+function CustomObjectsTab() {
+  const [objects, setObjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({
+    object_key: "", object_label: "", object_label_plural: "", icon: "box", description: "",
+    associations: [] as { target_entity_type: string; relationship_type: string }[],
+  });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get("/api/v1/custom-objects");
+      setObjects(res.data ?? []);
+    } catch { setObjects([]); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    try {
+      await api.post("/api/v1/custom-objects", form);
+      setShowCreate(false);
+      setForm({ object_key: "", object_label: "", object_label_plural: "", icon: "box", description: "", associations: [] });
+      load();
+    } catch (e: any) { alert(e.message); }
+  };
+
+  const remove = async (id: string) => {
+    await api.delete(`/api/v1/custom-objects/${id}`);
+    load();
+  };
+
+  const addAssoc = () => {
+    setForm({ ...form, associations: [...form.associations, { target_entity_type: "contact", relationship_type: "many_to_one" }] });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{objects.length} custom object type{objects.length !== 1 ? "s" : ""}</p>
+        <button onClick={() => setShowCreate(!showCreate)}
+          className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+          <Plus className="h-4 w-4" /> New Object Type
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <input placeholder="object_key (snake_case)" value={form.object_key}
+              onChange={(e) => setForm({ ...form, object_key: e.target.value })}
+              className="rounded-lg border px-3 py-2 text-sm" />
+            <input placeholder="Label (singular)" value={form.object_label}
+              onChange={(e) => setForm({ ...form, object_label: e.target.value })}
+              className="rounded-lg border px-3 py-2 text-sm" />
+            <input placeholder="Label (plural)" value={form.object_label_plural}
+              onChange={(e) => setForm({ ...form, object_label_plural: e.target.value })}
+              className="rounded-lg border px-3 py-2 text-sm" />
+          </div>
+          <textarea placeholder="Description" value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            className="w-full rounded-lg border px-3 py-2 text-sm" rows={2} />
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Associations</p>
+            {form.associations.map((a, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <select value={a.target_entity_type}
+                  onChange={(e) => {
+                    const assocs = [...form.associations];
+                    assocs[i] = { ...a, target_entity_type: e.target.value };
+                    setForm({ ...form, associations: assocs });
+                  }}
+                  className="rounded-lg border px-3 py-1.5 text-sm">
+                  {["contact", "company", "deal", "activity", "task"].map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <select value={a.relationship_type}
+                  onChange={(e) => {
+                    const assocs = [...form.associations];
+                    assocs[i] = { ...a, relationship_type: e.target.value };
+                    setForm({ ...form, associations: assocs });
+                  }}
+                  className="rounded-lg border px-3 py-1.5 text-sm">
+                  {["one_to_one", "one_to_many", "many_to_one", "many_to_many"].map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <button onClick={() => setForm({ ...form, associations: form.associations.filter((_, j) => j !== i) })}
+                  className="text-muted-foreground hover:text-red-500"><X className="h-4 w-4" /></button>
+              </div>
+            ))}
+            <button onClick={addAssoc} className="text-sm text-primary hover:underline">+ Add association</button>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={create}
+              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">Create</button>
+            <button onClick={() => setShowCreate(false)} className="text-sm text-muted-foreground hover:underline">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="h-20 rounded-lg bg-muted animate-pulse" />
+      ) : objects.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">No custom objects yet.</p>
+      ) : (
+        <div className="rounded-lg border divide-y">
+          {objects.map((o: any) => (
+            <div key={o.id} className="flex items-center justify-between px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">{o.objectLabel} ({o.objectLabelPlural})</p>
+                <p className="text-xs text-muted-foreground">{o.objectKey} &middot; {o.associations?.length ?? 0} association{(o.associations?.length ?? 0) !== 1 ? "s" : ""}</p>
+              </div>
+              <button onClick={() => remove(o.id)} className="text-muted-foreground hover:text-red-500">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Permissions Tab ─────────────────────────────────────────────────────────
+
+function PermissionsTab() {
+  const [view, setView] = useState<"fields" | "records" | "defaults">("fields");
+  const [entityType, setEntityType] = useState("contact");
+  const [perms, setPerms] = useState<any[]>([]);
+  const [defaults, setDefaults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const entityTypes = ["contact", "company", "deal", "activity", "task"];
+  const roles = ["rep", "manager", "admin", "read_only"];
+  const accessLevels = ["read_write", "read_only", "hidden"];
+
+  const loadFields = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/api/v1/permissions/fields?entityType=${entityType}`);
+      setPerms(res.data ?? []);
+    } catch { setPerms([]); }
+    setLoading(false);
+  };
+
+  const loadDefaults = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get("/api/v1/permissions/defaults");
+      setDefaults(res.data ?? []);
+    } catch { setDefaults([]); }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (view === "fields") loadFields();
+    else if (view === "defaults") loadDefaults();
+    else setLoading(false);
+  }, [view, entityType]);
+
+  const setFieldPerm = async (fieldName: string, role: string, accessLevel: string) => {
+    await api.post("/api/v1/permissions/fields", {
+      entity_type: entityType,
+      field_name: fieldName,
+      role,
+      access_level: accessLevel,
+    });
+    loadFields();
+  };
+
+  const setDefault = async (entType: string, ownerAccess: string, teamAccess: string, orgAccess: string) => {
+    await api.post("/api/v1/permissions/defaults", {
+      entity_type: entType,
+      owner_access: ownerAccess,
+      team_access: teamAccess,
+      org_access: orgAccess,
+    });
+    loadDefaults();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {(["fields", "records", "defaults"] as const).map((v) => (
+          <button key={v} onClick={() => setView(v)}
+            className={cn("rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors",
+              view === v ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
+            {v === "fields" ? "Field Permissions" : v === "records" ? "Record ACLs" : "Default Rules"}
+          </button>
+        ))}
+      </div>
+
+      {view === "fields" && (
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            {entityTypes.map((t) => (
+              <button key={t} onClick={() => setEntityType(t)}
+                className={cn("rounded-lg px-2 py-1 text-xs font-medium capitalize transition-colors",
+                  entityType === t ? "bg-primary/20 text-primary" : "text-muted-foreground hover:bg-muted")}>
+                {t}
+              </button>
+            ))}
+          </div>
+          {loading ? (
+            <div className="h-20 rounded-lg bg-muted animate-pulse" />
+          ) : perms.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No field permissions configured. All fields default to read_write.</p>
+          ) : (
+            <div className="rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b bg-muted/50">
+                  <th className="px-4 py-2 text-left font-medium">Field</th>
+                  <th className="px-4 py-2 text-left font-medium">Role</th>
+                  <th className="px-4 py-2 text-left font-medium">Access</th>
+                </tr></thead>
+                <tbody>
+                  {perms.map((p: any) => (
+                    <tr key={p.id} className="border-b">
+                      <td className="px-4 py-2">{p.fieldName}</td>
+                      <td className="px-4 py-2">{p.role}</td>
+                      <td className="px-4 py-2">
+                        <select value={p.accessLevel}
+                          onChange={(e) => setFieldPerm(p.fieldName, p.role, e.target.value)}
+                          className="rounded border px-2 py-1 text-xs">
+                          {accessLevels.map((l) => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === "defaults" && (
+        <div className="space-y-3">
+          {loading ? (
+            <div className="h-20 rounded-lg bg-muted animate-pulse" />
+          ) : (
+            <div className="rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b bg-muted/50">
+                  <th className="px-4 py-2 text-left font-medium">Entity Type</th>
+                  <th className="px-4 py-2 text-left font-medium">Owner Access</th>
+                  <th className="px-4 py-2 text-left font-medium">Team Access</th>
+                  <th className="px-4 py-2 text-left font-medium">Org Access</th>
+                </tr></thead>
+                <tbody>
+                  {entityTypes.map((et) => {
+                    const d = defaults.find((d: any) => d.entityType === et);
+                    return (
+                      <tr key={et} className="border-b">
+                        <td className="px-4 py-2 capitalize">{et}</td>
+                        {["ownerAccess", "teamAccess", "orgAccess"].map((field) => (
+                          <td key={field} className="px-4 py-2">
+                            <select value={d?.[field] ?? (field === "ownerAccess" ? "read_write_delete" : field === "teamAccess" ? "read" : "none")}
+                              onChange={(e) => setDefault(et,
+                                field === "ownerAccess" ? e.target.value : d?.ownerAccess ?? "read_write_delete",
+                                field === "teamAccess" ? e.target.value : d?.teamAccess ?? "read",
+                                field === "orgAccess" ? e.target.value : d?.orgAccess ?? "none")}
+                              className="rounded border px-2 py-1 text-xs">
+                              {["read_write_delete", "read_write", "read", "none"].map((l) => <option key={l} value={l}>{l}</option>)}
+                            </select>
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === "records" && (
+        <p className="text-sm text-muted-foreground py-4 text-center">
+          Record-level ACLs are managed per-record via the "Share" button on individual entity detail pages.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }>; adminOnly?: boolean }[] = [
@@ -1383,6 +1807,9 @@ const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }>; ad
   { id: "products",       label: "Products",       icon: Package,   adminOnly: true },
   { id: "communications", label: "Communications", icon: Phone,     adminOnly: true },
   { id: "billing",        label: "Billing",        icon: CreditCard, adminOnly: true },
+  { id: "custom-fields",  label: "Custom Fields",  icon: Columns3,   adminOnly: true },
+  { id: "custom-objects",  label: "Custom Objects", icon: Box,        adminOnly: true },
+  { id: "permissions",    label: "Permissions",    icon: LockKeyhole, adminOnly: true },
 ];
 
 const VALID_TABS = new Set(TABS.map((t) => t.id));
@@ -1449,6 +1876,9 @@ function SettingsInner() {
         {tab === "products"       && <ProductsTab />}
         {tab === "communications" && <CommunicationsTab />}
         {tab === "billing"        && <BillingTab />}
+        {tab === "custom-fields"  && <CustomFieldsTab />}
+        {tab === "custom-objects" && <CustomObjectsTab />}
+        {tab === "permissions"    && <PermissionsTab />}
       </div>
     </div>
   );

@@ -15,7 +15,11 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { Queue } from "bullmq";
 import { pool } from "../db";
+
+const REDIS_URL = process.env.REDIS_URL ?? "redis://:nexcrm_dev@localhost:6379";
+const exportQueue = new Queue("export", { connection: { url: REDIS_URL } });
 
 // ── S3 client ─────────────────────────────────────────────────────────────────
 
@@ -139,10 +143,14 @@ export async function exportRoutes(server: FastifyInstance) {
     );
 
     if (parseInt(count, 10) > 200_000) {
-      // TODO: queue as background BullMQ job and return a job ID
+      const job = await exportQueue.add("tenant-export", {
+        tenantId,
+        format: parsed.data.format,
+      });
+      server.log.info({ tenantId, jobId: job.id }, "export.queued");
       return reply.status(202).send({
         success: true,
-        data: { message: "Export queued. You will receive an email when it is ready." },
+        data: { jobId: job.id, message: "Export queued. You will receive an email when it is ready." },
       });
     }
 

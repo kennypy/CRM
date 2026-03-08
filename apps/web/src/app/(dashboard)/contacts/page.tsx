@@ -16,6 +16,7 @@ import {
   Users, Search, Plus, RefreshCw, AlertCircle,
   Building2, Mail, Phone, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil, Trash2,
 } from "lucide-react";
+import { BulkActionBar } from "@/components/bulk/bulk-action-bar";
 
 interface Contact {
   id: string;
@@ -84,7 +85,16 @@ export default function ContactsPage() {
   const [emailContact, setEmailContact] = useState<Contact | null>(null);
   const [phoneContact, setPhoneContact] = useState<Contact | null>(null);
   const [deletingId, setDeletingId]     = useState<string | null>(null);
+  const [selectedIds, setSelectedIds]   = useState<string[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+  const toggleSelectAll = () => {
+    if (selectedIds.length === contacts.length) setSelectedIds([]);
+    else setSelectedIds(contacts.map((c) => c.id));
+  };
 
   const handleSearchChange = (value: string) => {
     setSearch(value);
@@ -209,6 +219,12 @@ export default function ContactsPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
+              <th className="w-10 px-3 py-3">
+                <input type="checkbox"
+                  checked={contacts.length > 0 && selectedIds.length === contacts.length}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border" />
+              </th>
               {visibleCols.map((col) => (
                 <th key={col.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   {col.key === "actions" ? "" : col.label}
@@ -220,6 +236,7 @@ export default function ContactsPage() {
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
+                  <td className="px-3 py-3"><div className="h-4 w-4 rounded bg-muted" /></td>
                   {visibleCols.map((col) => (
                     <td key={col.key} className="px-4 py-3"><div className="h-4 w-3/4 rounded bg-muted" /></td>
                   ))}
@@ -227,13 +244,19 @@ export default function ContactsPage() {
               ))
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={visibleCols.length} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={visibleCols.length + 1} className="px-4 py-12 text-center text-muted-foreground">
                   {debouncedSearch ? "No contacts match your search" : "No contacts yet"}
                 </td>
               </tr>
             ) : (
               contacts.map((contact) => (
-                <tr key={contact.id} className="transition-colors hover:bg-muted/40">
+                <tr key={contact.id} className={cn("transition-colors hover:bg-muted/40", selectedIds.includes(contact.id) && "bg-primary/5")}>
+                  <td className="px-3 py-3">
+                    <input type="checkbox"
+                      checked={selectedIds.includes(contact.id)}
+                      onChange={() => toggleSelect(contact.id)}
+                      className="h-4 w-4 rounded border" />
+                  </td>
                   {/* Name — always visible */}
                   {visible.has("name") && (
                     <td className="px-4 py-3">
@@ -358,6 +381,13 @@ export default function ContactsPage() {
           </div>
         </div>
       )}
+
+      <BulkActionBar
+        entityType="contact"
+        selectedIds={selectedIds}
+        onClear={() => setSelectedIds([])}
+        onComplete={() => { setSelectedIds([]); fetchContacts(); }}
+      />
     </div>
   );
 }

@@ -18,6 +18,22 @@ export function safeNext(raw: string | null): string {
   return decoded;
 }
 
+/**
+ * Decode a JWT payload without verifying the signature.
+ * Verification happens server-side in the API proxy / auth service.
+ * This is only used to read claims for routing decisions in middleware.
+ */
+function decodeJWTPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC.some((p) => pathname.startsWith(p));
@@ -32,6 +48,15 @@ export function middleware(request: NextRequest) {
   if (token && isPublic) {
     return NextResponse.redirect(new URL("/", request.url));
   }
+
+  // Gate /admin routes to super_admin role only
+  if (pathname.startsWith("/admin") && token) {
+    const payload = decodeJWTPayload(token);
+    if (payload?.role !== "super_admin") {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+  }
+
   return NextResponse.next();
 }
 

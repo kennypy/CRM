@@ -28,6 +28,7 @@ const CreateDealSchema = z.object({
   archetype:           z.enum(["simple", "complex"]).optional(),
   declaredProbability: z.number().min(0).max(100).optional(),
   isExpansion:         z.boolean().optional(),
+  customFields:        z.record(z.unknown()).optional(),
 });
 
 const GetDealsQuery = z.object({
@@ -51,6 +52,7 @@ function dealReturnMap() {
     risk_flags: d.risk_flags, owner_id: d.owner_id,
     line_item: d.line_item, value_usd: d.value_usd, value_eur: d.value_eur,
     main_poc: d.main_poc, created_by: d.created_by,
+    custom_fields: d.custom_fields,
     last_opportunity_activity: d.last_opportunity_activity,
     created_at: d.created_at, updated_at: d.updated_at,
     company_id: c.id, company_name: c.name
@@ -95,6 +97,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     declared_probability: d.declared_probability,
     reality_score: d.reality_score, reality_explanation: d.reality_explanation,
     risk_flags: d.risk_flags, owner_id: d.owner_id,
+    custom_fields: d.custom_fields,
     created_at: d.created_at, updated_at: d.updated_at,
     company_id: c.id, company_name: c.name,
     buying_group_size: bgs
@@ -124,7 +127,7 @@ export async function dealsRoutes(server: FastifyInstance) {
 
     const id  = crypto.randomUUID();
     const now = new Date().toISOString();
-    const { name, stage, value, currency, closeDate, companyId, ownerId, archetype, declaredProbability, isExpansion } = body.data;
+    const { name, stage, value, currency, closeDate, companyId, ownerId, archetype, declaredProbability, isExpansion, customFields } = body.data;
 
     await cypher(
       `CREATE (d:Deal {
@@ -139,6 +142,7 @@ export async function dealsRoutes(server: FastifyInstance) {
         archetype:            $archetype,
         declared_probability: $declaredProbability,
         is_expansion:         $isExpansion,
+        custom_fields:        $customFields,
         reality_score:        50,
         risk_flags:           '[]',
         source:               'user',
@@ -152,6 +156,7 @@ export async function dealsRoutes(server: FastifyInstance) {
         archetype:           archetype           ?? "simple",
         declaredProbability: declaredProbability ?? null,
         isExpansion:         isExpansion         ?? false,
+        customFields:        JSON.stringify(customFields ?? {}),
         now,
       }
     );
@@ -203,6 +208,7 @@ export async function dealsRoutes(server: FastifyInstance) {
          declared_probability: d.declared_probability,
          reality_score: d.reality_score, reality_explanation: d.reality_explanation,
          risk_flags: d.risk_flags, owner_id: d.owner_id,
+         custom_fields: d.custom_fields,
          created_at: d.created_at, updated_at: d.updated_at,
          company_id: c.id, company_name: c.name,
          buying_group_size: bgs, stakeholders: stks
@@ -258,6 +264,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (f.archetype           !== undefined) { setParts.push("d.archetype            = $archetype");           params.archetype           = f.archetype; }
     if (f.isExpansion         !== undefined) { setParts.push("d.is_expansion         = $isExpansion");         params.isExpansion         = f.isExpansion; }
     if (f.declaredProbability !== undefined) { setParts.push("d.declared_probability = $declaredProbability"); params.declaredProbability = f.declaredProbability; }
+    if (f.customFields)                    { setParts.push("d.custom_fields        = $customFields");        params.customFields        = JSON.stringify(f.customFields); }
 
     let stageChanged = false;
     if (f.stage !== undefined) {
@@ -427,6 +434,7 @@ function toDealResponse(row: Record<string, unknown>) {
     realityExplanation:  row.reality_explanation,
     riskFlags:           row.risk_flags ? JSON.parse(row.risk_flags as string) : [],
     ownerId:             row.owner_id,
+    customFields:        row.custom_fields ? JSON.parse(row.custom_fields as string) : {},
     company:             companyId ? { id: companyId, name: companyName } : undefined,
     buyingGroupSize:            (row.buying_group_size as number) ?? 0,
     stakeholders:               (row.stakeholders     as unknown[]) ?? [],

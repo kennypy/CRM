@@ -7,7 +7,7 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDirs": ["src", "../../packages/shared-types/src"],
     "baseUrl": ".",
     "skipLibCheck": true,
     "paths": {

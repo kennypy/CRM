@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   FileText, Plus, Download, Search, Filter,
   CheckCircle2, Clock, Send, Eye, ThumbsDown,
-  TrendingUp, DollarSign, X, Pencil,
+  TrendingUp, DollarSign, X, Pencil, Trash2, AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -15,66 +15,6 @@ import {
 import { QuoteBuilderModal } from "@/components/modals/quote-builder-modal";
 import { generateQuotePDF } from "@/lib/quote-pdf";
 import { ActionBar } from "@/components/action-bar/action-bar";
-
-// ── Demo data ─────────────────────────────────────────────────────────────────
-const DEMO_QUOTES: Quote[] = [
-  {
-    id: "q-001", quoteNumber: "Q-2026-0012", title: "Acme Corp — CRM Pro 5 seats",
-    status: "accepted", approvalRequired: false, currency: "GBP",
-    subtotal: 4450, discountType: "none", discountValue: 0, taxRate: 0, total: 4450,
-    dealId: null, companyId: "c-001", contactId: null, createdBy: "u-001",
-    createdByName: "Sarah Kim", companyName: "Acme Corp",
-    validUntil: "2026-04-01", notes: null, terms: null,
-    sentAt: "2026-02-16T10:00:00Z", viewedAt: "2026-02-17T14:00:00Z",
-    acceptedAt: "2026-02-20T09:00:00Z", rejectedAt: null,
-    approvedBy: null, approvedAt: null,
-    createdAt: "2026-02-15T10:00:00Z", updatedAt: "2026-02-20T09:00:00Z",
-    items: [{ productName: "CRM Pro — Annual", quantity: 5, unitPrice: 890, discountPct: 0, lineTotal: 4450 }],
-  },
-  {
-    id: "q-002", quoteNumber: "Q-2026-0021", title: "TechStart — Enterprise upgrade",
-    status: "sent", approvalRequired: false, currency: "GBP",
-    subtotal: 14950, discountType: "none", discountValue: 0, taxRate: 0, total: 14950,
-    dealId: null, companyId: "c-002", contactId: null, createdBy: "u-001",
-    createdByName: "Marcus Chen", companyName: "TechStart",
-    validUntil: "2026-04-30", notes: null, terms: null,
-    sentAt: "2026-03-01T09:00:00Z", viewedAt: null, acceptedAt: null, rejectedAt: null,
-    approvedBy: null, approvedAt: null,
-    createdAt: "2026-03-01T08:00:00Z", updatedAt: "2026-03-01T09:00:00Z",
-    items: [
-      { productName: "CRM Enterprise — Annual", quantity: 5, unitPrice: 1490, discountPct: 0, lineTotal: 7450 },
-      { productName: "Implementation — Standard", quantity: 1, unitPrice: 4500, discountPct: 0, lineTotal: 4500 },
-      { productName: "Training — Half Day", quantity: 1, unitPrice: 1200, discountPct: 0, lineTotal: 1200 },
-      { productName: "Premium Support", quantity: 3, unitPrice: 250, discountPct: 0, lineTotal: 750 },
-    ],
-  },
-  {
-    id: "q-003", quoteNumber: "Q-2026-0029", title: "Globex — Standard plan draft",
-    status: "pending_approval", approvalRequired: true, currency: "GBP",
-    subtotal: 5340, discountType: "percent", discountValue: 15, taxRate: 0, total: 4539,
-    dealId: null, companyId: "c-003", contactId: null, createdBy: "u-002",
-    createdByName: "Priya Sharma", companyName: "Globex",
-    validUntil: "2026-05-01", notes: "15% first-year discount offered by sales director",
-    terms: null, sentAt: null, viewedAt: null, acceptedAt: null, rejectedAt: null,
-    approvedBy: null, approvedAt: null,
-    createdAt: "2026-03-04T11:00:00Z", updatedAt: "2026-03-04T11:00:00Z",
-    items: [
-      { productName: "CRM Pro — Annual", quantity: 6, unitPrice: 890, discountPct: 15, lineTotal: 4539 },
-    ],
-  },
-  {
-    id: "q-004", quoteNumber: "Q-2026-0031", title: "Initech — Renewal 2026",
-    status: "draft", approvalRequired: false, currency: "GBP",
-    subtotal: 8900, discountType: "none", discountValue: 0, taxRate: 0, total: 8900,
-    dealId: null, companyId: "c-004", contactId: null, createdBy: "u-001",
-    createdByName: "Alex Johnson", companyName: "Initech",
-    validUntil: "2026-04-15", notes: null, terms: null,
-    sentAt: null, viewedAt: null, acceptedAt: null, rejectedAt: null,
-    approvedBy: null, approvedAt: null,
-    createdAt: "2026-03-05T15:00:00Z", updatedAt: "2026-03-05T15:00:00Z",
-    items: [{ productName: "CRM Pro — Annual", quantity: 10, unitPrice: 890, discountPct: 0, lineTotal: 8900 }],
-  },
-];
 
 const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "",                 label: "All statuses" },
@@ -216,41 +156,80 @@ function QuotePreviewModal({
 }
 
 export default function QuotesPage() {
-  const [quotes,      setQuotes]      = useState<Quote[]>(DEMO_QUOTES);
-  const [loading,     setLoading]     = useState(true);
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [editQuote,   setEditQuote]   = useState<Quote | null>(null);
-  const [viewQuote,   setViewQuote]   = useState<Quote | null>(null);
-  const [search,      setSearch]      = useState("");
+  const [quotes,       setQuotes]       = useState<Quote[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState<string | null>(null);
+  const [showBuilder,  setShowBuilder]  = useState(false);
+  const [editQuote,    setEditQuote]    = useState<Quote | null>(null);
+  const [viewQuote,    setViewQuote]    = useState<Quote | null>(null);
+  const [search,       setSearch]       = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  useEffect(() => {
-    api.get("/api/v1/quotes")
-      .then((r) => r.json())
-      .then((j) => { if (j.data?.length) setQuotes(j.data); })
-      .catch(() => { /* use demo data */ })
-      .finally(() => setLoading(false));
+  const fetchQuotes = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get("/api/v1/quotes");
+      if (!res.ok) throw new Error(`Failed to load quotes (${res.status})`);
+      const json = await res.json();
+      setQuotes(json.data ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load quotes");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchQuotes(); }, [fetchQuotes]);
 
   const handleSaved = (q: Quote) => {
     setQuotes((prev) => {
       const idx = prev.findIndex((x) => x.id === q.id);
       return idx >= 0 ? prev.map((x) => x.id === q.id ? q : x) : [q, ...prev];
     });
+    // Also update the preview modal if the saved quote is currently being viewed
+    if (viewQuote?.id === q.id) setViewQuote(q);
   };
 
   const handleSend = async (id: string) => {
     try {
-      await api.post(`/api/v1/quotes/${id}/send`, {});
+      const res = await api.post(`/api/v1/quotes/${id}/send`, {});
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? "Failed to send quote");
+      }
       setQuotes((prev) => prev.map((q) => q.id === id ? { ...q, status: "sent" as QuoteStatus, sentAt: new Date().toISOString() } : q));
-    } catch { /* silent */ }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send quote");
+    }
   };
 
   const handleApprove = async (id: string) => {
     try {
-      await api.post(`/api/v1/quotes/${id}/approve`, {});
+      const res = await api.post(`/api/v1/quotes/${id}/approve`, {});
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? "Failed to approve quote");
+      }
       setQuotes((prev) => prev.map((q) => q.id === id ? { ...q, status: "draft" as QuoteStatus, approvalRequired: false } : q));
-    } catch { /* silent */ }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to approve quote");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this quote? This cannot be undone.")) return;
+    try {
+      const res = await api.delete(`/api/v1/quotes/${id}`);
+      if (!res.ok && res.status !== 204) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? "Failed to delete quote");
+      }
+      setQuotes((prev) => prev.filter((q) => q.id !== id));
+      if (viewQuote?.id === id) setViewQuote(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete quote");
+    }
   };
 
   const filtered = quotes.filter((q) => {
@@ -357,11 +336,38 @@ export default function QuotesPage() {
         </div>
       )}
 
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-red-800">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {error}
+          </div>
+          <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Quotes table */}
       {loading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
+        <div className="py-16 text-center">
+          <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mb-3" />
+          <p className="text-sm text-muted-foreground">Loading quotes…</p>
+        </div>
+      ) : error && quotes.length === 0 ? (
+        <div className="py-16 text-center">
+          <AlertCircle className="mx-auto h-8 w-8 text-red-400 mb-3" />
+          <p className="text-sm text-muted-foreground mb-3">Could not load quotes</p>
+          <button onClick={fetchQuotes}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
+            Retry
+          </button>
+        </div>
       ) : filtered.length === 0 ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">No quotes match your filters</div>
+        <div className="py-16 text-center text-sm text-muted-foreground">
+          {quotes.length === 0 ? "No quotes yet — create your first quote to get started" : "No quotes match your filters"}
+        </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
           <table className="w-full text-sm">
@@ -423,6 +429,12 @@ export default function QuotesPage() {
                         className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
                         <Download className="h-3.5 w-3.5" />
                       </button>
+                      {["draft","pending_approval"].includes(q.status) && (
+                        <button onClick={() => handleDelete(q.id)} title="Delete"
+                          className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

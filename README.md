@@ -142,9 +142,9 @@ Services will be available at:
 
 ---
 
-## MVP Scope (Phase 1 — Months 1–6)
+## Phase 1 — Months 1–6: Pilot (Complete)
 
-> **Status as of 2026-03-04 — Phase 1 complete.**
+> **Status: Complete as of 2026-03-04.**
 
 ### Completed
 - [x] Project scaffold + monorepo (Turborepo, Docker Compose, OTel)
@@ -170,8 +170,27 @@ Services will be available at:
 - [x] Workflows page scaffold (`/workflows` — UI shell, Phase 2 logic)
 - [x] Mobile-responsive web
 
-### Explicitly Out of Phase 1 Scope
-Native mobile app · Workflow builder logic · Marketplace · Multi-currency · Territories · Quote/CPQ · Advanced forecasting · SAML/SCIM · Zoom/Slack ingestion
+---
+
+## Phase 2 — Months 7–12: Expansion (Complete)
+
+> **Status: Complete as of 2026-03-07. All Phase 2 items delivered.**
+
+### Completed
+- [x] Quotes/CPQ basics — quote creation, line items, discounts, NL action bar integration (`/quotes`)
+- [x] Sequence/cadence builder — full sequence engine with outreach service (`/sequences`)
+- [x] Smart email compose — embedded email with templates
+- [x] Advanced reporting — cross-object joins, report builder, scheduled delivery (`/reports`)
+- [x] Dialer integration — embedded phone dialer
+- [x] Email templates — configurable outreach templates
+- [x] Zoom transcript ingestion + extraction — OAuth connect, transcript metadata, AI signal extraction
+- [x] Slack integration — OAuth connect, channel monitoring, user mapping, signature-verified interactions
+- [x] Workflow builder — full execution engine with trigger matching, condition evaluation, and 10+ action types
+- [x] AI lead scoring — ML-based scoring with factor breakdown and tier classification (`/lead-scoring`)
+- [x] Predictive close analytics — AI-predicted close probabilities with explainability (`/forecasting`)
+- [x] Anomaly detection — at-risk accounts, stalled deals, champion departure, competitor mentions (`/anomalies`)
+- [x] Marketplace foundation — 5 partner integrations (Zoom, Slack, Clearbit, HubSpot Import, Mailchimp) (`/marketplace`)
+- [x] Native mobile app — Flutter app with full CRM feature parity (cross web + mobile)
 
 ---
 

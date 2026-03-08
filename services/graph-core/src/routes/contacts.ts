@@ -25,6 +25,7 @@ const CreateContactSchema = z.object({
   companyId: z.string().uuid().optional(),
   isLead:    z.boolean().optional(),
   source:    z.string().max(50).optional(),
+  customFields: z.record(z.unknown()).optional(),
 });
 
 const GetContactsQuery = z.object({
@@ -47,6 +48,7 @@ const FETCH_ONE = `
     email: p.email, title: p.title, phone: p.phone,
     seniority: p.seniority, influence_score: p.influence_score,
     last_activity_at: p.last_activity_at, source: p.source,
+    custom_fields: p.custom_fields,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
   } LIMIT 1`;
@@ -91,6 +93,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     email: p.email, title: p.title, phone: p.phone,
     seniority: p.seniority, influence_score: p.influence_score,
     last_activity_at: p.last_activity_at, source: p.source,
+    custom_fields: p.custom_fields,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
   }
@@ -122,7 +125,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     }
     const tenantId = tq.data.tenantId;
 
-    const { firstName, lastName, email, title, phone, seniority, companyId, isLead, source } = body.data;
+    const { firstName, lastName, email, title, phone, seniority, companyId, isLead, source, customFields } = body.data;
     const id  = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -144,26 +147,28 @@ export async function contactsRoutes(server: FastifyInstance) {
 
     await cypher(
       `CREATE (p:Person {
-        id:         $id,
-        tenant_id:  $tenantId,
-        first_name: $firstName,
-        last_name:  $lastName,
-        email:      $email,
-        title:      $title,
-        phone:      $phone,
-        seniority:  $seniority,
-        is_lead:    $isLead,
-        source:     $source,
-        created_at: $now,
-        updated_at: $now
+        id:            $id,
+        tenant_id:     $tenantId,
+        first_name:    $firstName,
+        last_name:     $lastName,
+        email:         $email,
+        title:         $title,
+        phone:         $phone,
+        seniority:     $seniority,
+        is_lead:       $isLead,
+        source:        $source,
+        custom_fields: $customFields,
+        created_at:    $now,
+        updated_at:    $now
       }) RETURN {id: p.id}`,
       {
         id, tenantId, firstName, lastName, email,
-        title:     title     ?? "",
-        phone:     phone     ?? "",
-        seniority: seniority ?? "",
-        isLead:    isLead    ?? false,
-        source:    source    ?? "user",
+        title:        title        ?? "",
+        phone:        phone        ?? "",
+        seniority:    seniority    ?? "",
+        isLead:       isLead       ?? false,
+        source:       source       ?? "user",
+        customFields: JSON.stringify(customFields ?? {}),
         now,
       }
     );
@@ -231,6 +236,7 @@ export async function contactsRoutes(server: FastifyInstance) {
          email: p.email, title: p.title, phone: p.phone,
          seniority: p.seniority, influence_score: p.influence_score,
          last_activity_at: p.last_activity_at,
+         custom_fields: p.custom_fields,
          created_at: p.created_at, updated_at: p.updated_at,
          company_id: co.id, company_name: co.name, company_domain: co.domain,
          deal_memberships: deal_memberships
@@ -278,6 +284,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     if (fields.seniority) { setParts.push("p.seniority  = $seniority"); params.seniority = fields.seniority; }
     if (fields.isLead !== undefined) { setParts.push("p.is_lead = $isLead"); params.isLead = fields.isLead; }
     if (fields.source) { setParts.push("p.source = $source"); params.source = fields.source; }
+    if (fields.customFields) { setParts.push("p.custom_fields = $customFields"); params.customFields = JSON.stringify(fields.customFields); }
 
     await cypher(
       `MATCH (p:Person {id: $id, tenant_id: $tenantId})
@@ -358,6 +365,7 @@ function toContactResponse(row: Record<string, unknown>) {
     source:          (row.source as string) || "user",
     influenceScore:  row.influence_score,
     lastActivityAt:  row.last_activity_at,
+    customFields:    row.custom_fields ? JSON.parse(row.custom_fields as string) : {},
     dealMemberships: (row.deal_memberships as unknown[]) ?? undefined,
     company: row.company_id
       ? { id: row.company_id, name: row.company_name, domain: row.company_domain }

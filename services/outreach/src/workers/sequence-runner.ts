@@ -10,7 +10,7 @@
  * Architecture:
  *  - A repeatable "tick" job fires every 30 seconds
  *  - It picks up to 50 due steps from the DB (FOR UPDATE SKIP LOCKED)
- *    and immediately marks them "processing" so they won't be re-picked
+ *    which prevents them from being re-picked by concurrent ticks
  *  - Each execution is enqueued as an individual "execute-step" job
  *  - Workers process jobs with concurrency 5, up to 3 retries (exp backoff)
  *  - worker.on("failed") fires after all retries are exhausted — marks DB failed
@@ -166,10 +166,10 @@ async function scheduleDueSteps(): Promise<void> {
 
   if (!due.length) return;
 
-  // Atomically claim these executions so the next tick doesn't re-pick them.
+  // Reset to 'pending' — FOR UPDATE SKIP LOCKED already prevents re-picking.
   await pool.query(
     `UPDATE sequence_step_executions
-        SET status = 'processing', updated_at = NOW()
+        SET status = 'pending', updated_at = NOW()
       WHERE id = ANY($1)`,
     [due.map((e) => e.id)],
   );
@@ -402,7 +402,7 @@ async function createRepTask(exec: DueExecution): Promise<void> {
 
   await pool.query(
     `INSERT INTO tasks
-       (tenant_id, title, description, assigned_to, status, due_date, source, metadata)
+       (tenant_id, title, description, assignee_id, status, due_date, source, metadata)
      VALUES ($1, $2, $3, $4, 'pending', NOW() + INTERVAL '2 hours', 'sequence', $5::jsonb)`,
     [
       exec.tenant_id, title, description, exec.enrolled_by,

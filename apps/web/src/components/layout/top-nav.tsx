@@ -8,10 +8,13 @@ import {
   TrendingUp, CheckSquare, BarChart3, Layers, AlertCircle,
   Settings, Bell, ChevronDown, LogOut, User, Search,
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
+  Headphones, Target, Globe, GraduationCap, ShieldCheck,
+  Cog, LineChart, MailPlus, ShieldAlert, Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
 import { useCommandBarStore } from "@/stores/command-bar-store";
+import { usePermissions } from "@/lib/permissions";
 import type { StoredUser } from "@/lib/auth";
 
 const PRIMARY_NAV = [
@@ -24,12 +27,23 @@ const PRIMARY_NAV = [
 ];
 
 const MORE_NAV = [
-  { href: "/tasks",     icon: CheckSquare, label: "Tasks"        },
-  { href: "/quotes",    icon: FileText,    label: "Quotes"       },
-  { href: "/sequences", icon: Mail,        label: "Sequences"    },
-  { href: "/reports",   icon: BarChart3,   label: "Reports"      },
-  { href: "/review",    icon: AlertCircle, label: "Review Queue" },
-  { href: "/workflows", icon: Layers,      label: "Workflows"    },
+  { href: "/calling",      icon: Headphones,   label: "Calling"         },
+  { href: "/sequences",    icon: Mail,         label: "Sequences"       },
+  { href: "/tasks",        icon: CheckSquare,  label: "Tasks"           },
+  { href: "/quotes",       icon: FileText,     label: "Quotes"          },
+  { href: "/templates",    icon: MailPlus,      label: "Templates"      },
+  { href: "/reports",      icon: BarChart3,    label: "Reports"         },
+  { href: "/insights",     icon: LineChart,     label: "Insights"       },
+  { href: "/forecasting",  icon: Target,        label: "Forecasting"    },
+  { href: "/territories",  icon: Globe,         label: "Territories"    },
+  { href: "/coaching",     icon: GraduationCap, label: "Coaching"       },
+  { href: "/review",       icon: AlertCircle,  label: "Review Queue"    },
+  { href: "/workflows",    icon: Layers,       label: "Workflows"       },
+  { href: "/compliance",   icon: ShieldCheck,   label: "Compliance"     },
+  { href: "/lead-scoring", icon: Target,        label: "Lead Scoring"   },
+  { href: "/anomalies",    icon: ShieldAlert,   label: "Anomalies"      },
+  { href: "/marketplace",  icon: Store,         label: "Marketplace"    },
+  { href: "/admin",        icon: Cog,           label: "Admin"          },
 ];
 
 interface Notification {
@@ -261,6 +275,16 @@ export function TopNav() {
         <span className="hidden md:block">Search…</span>
         <kbd className="hidden md:inline rounded border bg-background px-1.5 py-0.5 font-mono text-xs">⌘K</kbd>
       </button>
+
+      {/* Admin — super_admin only */}
+      {usePermissions().isSuperAdmin && (
+        <Link href="/admin"
+          className={cn("rounded-md p-2 text-red-600 hover:bg-red-50 transition-colors",
+            pathname.startsWith("/admin") && "bg-red-100")}
+          title="Platform Admin">
+          <Shield className="h-4 w-4" />
+        </Link>
+      )}
 
       {/* Settings */}
       <Link href="/settings"

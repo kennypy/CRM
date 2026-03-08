@@ -1,4 +1,4 @@
-# OpenTelemetry Collector configuration for NexCRM local dev
+# OpenTelemetry Collector configuration for NexCRM
 receivers:
   otlp:
     protocols:
@@ -14,27 +14,37 @@ processors:
   memory_limiter:
     check_interval: 1s
     limit_mib: 400
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: dev
+        action: upsert
 
 exporters:
   debug:
-    verbosity: normal
-  # In production: replace with Tempo/Jaeger/DataDog/etc.
+    verbosity: basic
   otlp/tempo:
     endpoint: tempo:4317
     tls:
       insecure: true
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    tls:
+      insecure: true
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [debug]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/tempo, debug]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [debug]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheusremotewrite, debug]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [debug]
+      processors: [memory_limiter, resource, batch]
+      exporters: [loki, debug]
