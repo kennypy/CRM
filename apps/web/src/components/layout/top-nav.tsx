@@ -9,7 +9,7 @@ import {
   Settings, Bell, ChevronDown, LogOut, User, Search,
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
   Headphones, Target, Globe, GraduationCap, ShieldCheck,
-  Cog, LineChart, MailPlus,
+  Cog, LineChart, MailPlus, ShieldAlert, Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
@@ -27,20 +27,23 @@ const PRIMARY_NAV = [
 ];
 
 const MORE_NAV = [
-  { href: "/calling",      icon: Headphones,  label: "Calling"         },
-  { href: "/sequences",    icon: Mail,        label: "Sequences"       },
-  { href: "/tasks",        icon: CheckSquare, label: "Tasks"           },
-  { href: "/quotes",       icon: FileText,    label: "Quotes"         },
-  { href: "/templates",    icon: MailPlus,     label: "Templates"      },
-  { href: "/reports",      icon: BarChart3,   label: "Reports"        },
-  { href: "/insights",     icon: LineChart,    label: "Insights"       },
-  { href: "/forecasting",  icon: Target,       label: "Forecasting"    },
-  { href: "/territories",  icon: Globe,        label: "Territories"    },
-  { href: "/coaching",     icon: GraduationCap,label: "Coaching"       },
-  { href: "/review",       icon: AlertCircle, label: "Review Queue"   },
-  { href: "/workflows",    icon: Layers,      label: "Workflows"      },
-  { href: "/compliance",   icon: ShieldCheck,  label: "Compliance"     },
-  { href: "/admin",        icon: Cog,          label: "Admin"          },
+  { href: "/calling",      icon: Headphones,   label: "Calling"         },
+  { href: "/sequences",    icon: Mail,         label: "Sequences"       },
+  { href: "/tasks",        icon: CheckSquare,  label: "Tasks"           },
+  { href: "/quotes",       icon: FileText,     label: "Quotes"          },
+  { href: "/templates",    icon: MailPlus,      label: "Templates"      },
+  { href: "/reports",      icon: BarChart3,    label: "Reports"         },
+  { href: "/insights",     icon: LineChart,     label: "Insights"       },
+  { href: "/forecasting",  icon: Target,        label: "Forecasting"    },
+  { href: "/territories",  icon: Globe,         label: "Territories"    },
+  { href: "/coaching",     icon: GraduationCap, label: "Coaching"       },
+  { href: "/review",       icon: AlertCircle,  label: "Review Queue"    },
+  { href: "/workflows",    icon: Layers,       label: "Workflows"       },
+  { href: "/compliance",   icon: ShieldCheck,   label: "Compliance"     },
+  { href: "/lead-scoring", icon: Target,        label: "Lead Scoring"   },
+  { href: "/anomalies",    icon: ShieldAlert,   label: "Anomalies"      },
+  { href: "/marketplace",  icon: Store,         label: "Marketplace"    },
+  { href: "/admin",        icon: Cog,           label: "Admin"          },
 ];
 
 interface Notification {

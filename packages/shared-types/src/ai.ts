@@ -101,3 +101,83 @@ export interface LeadScore {
   }>;
   calculatedAt: string;
 }
+
+export interface PredictiveForecast {
+  dealId: string;
+  predictedCloseProbability: number;  // 0–100
+  predictedCloseDate?: string;
+  predictedValue?: number;
+  confidenceIntervalLow?: number;
+  confidenceIntervalHigh?: number;
+  factors: Array<{
+    name: string;
+    impact: number;
+    evidence: string;
+  }>;
+  modelVersion: string;
+  calculatedAt: string;
+}
+
+export type AnomalySeverity = "low" | "medium" | "high" | "critical";
+export type AnomalyStatus = "open" | "acknowledged" | "resolved" | "dismissed";
+export type AnomalyAlertType =
+  | "stalled_deal"
+  | "at_risk_account"
+  | "engagement_drop"
+  | "champion_left"
+  | "competitor_mention"
+  | "budget_cut_signal"
+  | "unusual_activity"
+  | "ghost_deal";
+
+export interface AnomalyAlert {
+  id: string;
+  entityType: "deal" | "contact" | "company";
+  entityId: string;
+  alertType: AnomalyAlertType;
+  severity: AnomalySeverity;
+  title: string;
+  description: string;
+  evidence: Array<{ label: string; detail: string }>;
+  status: AnomalyStatus;
+  acknowledgedBy?: string;
+  acknowledgedAt?: string;
+  resolvedAt?: string;
+  createdAt: string;
+}
+
+export type MarketplaceCategory =
+  | "communication"
+  | "productivity"
+  | "analytics"
+  | "data_enrichment"
+  | "marketing"
+  | "support"
+  | "finance"
+  | "custom";
+
+export interface MarketplaceApp {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  shortDescription?: string;
+  iconUrl?: string;
+  publisher: string;
+  category: MarketplaceCategory;
+  authType: "oauth2" | "api_key" | "webhook" | "none";
+  version: string;
+  isInstalled: boolean;
+  installId?: string;
+}
+
+export interface MarketplaceInstall {
+  id: string;
+  appId: string;
+  appName: string;
+  appSlug: string;
+  status: "active" | "paused" | "error" | "uninstalled";
+  config: Record<string, unknown>;
+  lastSyncedAt?: string;
+  createdAt: string;
+}

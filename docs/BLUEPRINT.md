@@ -573,23 +573,30 @@ Sandbox: dev environment never touches prod data.
 | Mobile-responsive web | Tailwind responsive layout throughout |
 
 #### NOT in Phase 1 Scope
-Native mobile app · Workflow builder logic · Marketplace / plugins · Multi-currency · Territories · Quote/CPQ · Advanced forecasting models · SAML/SCIM · Zoom / Slack ingestion
+Native mobile app · Workflow builder logic · Marketplace / plugins · Multi-currency · Territories · Advanced forecasting models · SAML/SCIM · Zoom / Slack ingestion
 
 ### Phase 2 — Months 7–12: Expansion
 **Goal**: 100+ customers, self-serve growth, workflow automation driving viral adoption.
 
-- Zoom transcript ingestion + extraction
-- Slack integration (channel monitoring)
-- Workflow builder (no-code automations)
-- AI lead scoring (ML model on engagement signals)
-- Predictive close analytics with explainability
-- Smart email compose + reply suggestions
-- Anomaly detection (at-risk accounts, stalled deals)
-- Marketplace foundation (first 5 partner integrations)
-- Advanced reporting + scheduled delivery
-- Sequence / cadence builder
-- Native mobile app (React Native) v1
-- Dialer integration (Aircall / RingCentral)
+> **Status: Complete as of 2026-03-07. All Phase 2 items delivered.**
+
+#### Built ✅
+| Item | Notes |
+|------|-------|
+| Quotes / CPQ basics | Quote creation with line items, discounts, NL action bar integration; `/quotes` page |
+| Sequence / cadence builder | Full sequence engine + outreach service; `/sequences` page |
+| Smart email compose | Embedded email with configurable templates |
+| Advanced reporting + scheduled delivery | Cross-object joins, report builder UI, enhanced `/reports` |
+| Dialer integration | Embedded phone dialer in contact/deal views |
+| Email templates | Configurable outreach templates for sequences and manual sends |
+| Zoom transcript ingestion | OAuth connect, transcript metadata ingestion, AI signal extraction via ingestion pipeline |
+| Slack integration | OAuth + signature-verified interactions, channel monitoring, user mapping, auto-sync |
+| Workflow builder | Full execution engine: trigger matching (deal/contact/activity/score events), condition evaluation, 10+ action types (create_task, send_email, fire_webhook, add_to_sequence, ai_score_lead, etc.) |
+| AI lead scoring | ML-based scoring with factor breakdown, tier classification (hot/warm/cold); `/lead-scoring` page |
+| Predictive close analytics | AI-predicted close probabilities, dates, and values with confidence intervals + explainability factors; `/forecasting` page |
+| Anomaly detection | 8 alert types (stalled_deal, at_risk_account, engagement_drop, champion_left, competitor_mention, budget_cut_signal, unusual_activity, ghost_deal) with severity levels; `/anomalies` page |
+| Marketplace foundation | 5 partner apps (Zoom, Slack, Clearbit, HubSpot Import, Mailchimp); install/uninstall/configure per tenant; `/marketplace` page |
+| Native mobile app | Flutter app with full CRM feature parity — contacts, companies, deals, pipeline, activities, quotes, reports, admin (cross web + mobile) |
 
 ### Phase 3 — Months 13–18: Enterprise
 **Goal**: Land $100K+ ACV deals; pass SOC 2 Type II.
@@ -605,7 +612,6 @@ Native mobile app · Workflow builder logic · Marketplace / plugins · Multi-cu
 - GDPR DSR workflow automation
 - Custom roles + permissions builder
 - Embedded analytics (iframe / white-label reports)
-- CPQ basics (quote generation, approval flows)
 
 ---
 
