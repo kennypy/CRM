@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useCallback, useState, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { Command } from "cmdk";
 import { Loader2, Sparkles } from "lucide-react";
 import { useCommandBarStore } from "@/stores/command-bar-store";
@@ -21,6 +22,7 @@ const SUGGESTIONS = [
 ];
 
 export function CommandBar() {
+  const t = useTranslations("commandBar");
   const { isOpen, close } = useCommandBarStore();
   const [query, setQuery] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -85,11 +87,11 @@ export function CommandBar() {
         }
       }
     } catch {
-      setChunks([{ type: "error", content: "Failed to process command. Please try again." }]);
+      setChunks([{ type: "error", content: t("error") }]);
     } finally {
       setStreaming(false);
     }
-  }, [query, streaming]);
+  }, [query, streaming, t]);
 
   if (!isOpen) return null;
 
@@ -117,7 +119,7 @@ export function CommandBar() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              placeholder='Try "show deals losing momentum" or "log that Acme legal is involved"'
+              placeholder={t("placeholder")}
             />
             {query && (
               <kbd className="ml-2 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
@@ -130,7 +132,7 @@ export function CommandBar() {
           <div className="max-h-96 overflow-y-auto p-2">
             {chunks.length === 0 && !streaming && (
               <div className="space-y-1 p-2">
-                <p className="text-xs font-medium text-muted-foreground">Suggestions</p>
+                <p className="text-xs font-medium text-muted-foreground">{t("suggestions")}</p>
                 {SUGGESTIONS.map((suggestion) => (
                   <button
                     key={suggestion}
@@ -150,7 +152,7 @@ export function CommandBar() {
             {streaming && chunks.length === 0 && (
               <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Thinking…
+                {t("thinking")}
               </div>
             )}
           </div>

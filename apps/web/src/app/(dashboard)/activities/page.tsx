@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { ActionBar } from "@/components/action-bar/action-bar";
@@ -123,6 +124,7 @@ function ActivityRow({ activity }: { activity: Activity }) {
 // ── Log Activity Modal ────────────────────────────────────────────────────────
 
 function ContactLeadSearch({ onSelect }: { onSelect: (item: { id: string; name: string; email: string; type: "contact" | "lead" }) => void }) {
+  const t = useTranslations("activities");
   const [query, setQuery]     = useState("");
   const [results, setResults] = useState<{ id: string; firstName: string; lastName: string; email: string; _type: "contact" | "lead" }[]>([]);
   const [open, setOpen]       = useState(false);
@@ -150,7 +152,7 @@ function ContactLeadSearch({ onSelect }: { onSelect: (item: { id: string; name: 
       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <input value={query} onChange={(e) => setQuery(e.target.value)}
         onFocus={() => results.length > 0 && setOpen(true)}
-        placeholder="Search contacts or leads…"
+        placeholder={t("searchContactsOrLeads")}
         className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
       {open && results.length > 0 && (
         <div className="absolute top-full mt-1 z-10 w-full rounded-xl border bg-card shadow-lg overflow-hidden max-h-48 overflow-y-auto">
@@ -160,7 +162,7 @@ function ContactLeadSearch({ onSelect }: { onSelect: (item: { id: string; name: 
               className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted transition-colors">
               <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium",
                 r._type === "contact" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
-                {r._type === "contact" ? "Contact" : "Lead"}
+                {r._type === "contact" ? t("contact") : t("lead")}
               </span>
               <span className="text-sm font-medium">{r.firstName} {r.lastName}</span>
               <span className="text-xs text-muted-foreground ml-auto">{r.email}</span>
@@ -173,6 +175,8 @@ function ContactLeadSearch({ onSelect }: { onSelect: (item: { id: string; name: 
 }
 
 function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const t = useTranslations("activities");
+  const tc = useTranslations("common");
   const [type, setType]       = useState<ActivityType>("call");
   const [subject, setSubject] = useState("");
   const [summary, setSummary] = useState("");
@@ -221,14 +225,14 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
       const res = await api.post("/api/v1/activities", body);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data?.error?.message ?? "Failed to log activity");
+        setError(data?.error?.message ?? t("failedToLog"));
         return;
       }
       setDone(true);
       onCreated();
       setTimeout(onClose, 1200);
     } catch {
-      setError("Network error — please try again");
+      setError(t("networkError"));
     } finally {
       setLoading(false);
     }
@@ -241,7 +245,7 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">Log Activity</h2>
+            <h2 className="font-semibold">{t("logActivity")}</h2>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
@@ -251,13 +255,13 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Contact / Lead link */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Linked contact or lead</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("linkedContactOrLead")}</label>
             {linkedEntity ? (
               <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
                 <div>
                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium mr-2",
                     linkedEntity.type === "contact" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
-                    {linkedEntity.type === "contact" ? "Contact" : "Lead"}
+                    {linkedEntity.type === "contact" ? t("contact") : t("lead")}
                   </span>
                   <span className="text-sm font-medium">{linkedEntity.name}</span>
                 </div>
@@ -273,7 +277,7 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
           {/* Opportunity link — appears after a contact/lead is selected */}
           {linkedEntity && (
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Link to opportunity <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <label className="mb-1.5 block text-sm font-medium">{t("linkToOpportunity")} <span className="text-muted-foreground font-normal">({tc("optional")})</span></label>
               {linkedDeal ? (
                 <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
                   <div>
@@ -290,7 +294,7 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
                   <button type="button"
                     onClick={() => setDealOpen((o) => !o)}
                     className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-left text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
-                    {dealOptions.length === 0 ? "No open opportunities found" : "Select an opportunity…"}
+                    {dealOptions.length === 0 ? t("noOpenOpportunities") : t("selectOpportunity")}
                   </button>
                   {dealOpen && dealOptions.length > 0 && (
                     <div className="absolute top-full mt-1 z-10 w-full rounded-xl border bg-card shadow-lg overflow-hidden max-h-48 overflow-y-auto">
@@ -314,7 +318,7 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
           {/* Type selector */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Type</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("type")}</label>
             <div className="flex gap-2 flex-wrap">
               {(Object.entries(ACTIVITY_META) as [ActivityType, typeof ACTIVITY_META[ActivityType]][]).map(([key, meta]) => {
                 const Icon = meta.icon;
@@ -330,28 +334,28 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Subject</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("subject")}</label>
             <input value={subject} onChange={(e) => setSubject(e.target.value)}
-              placeholder={type === "call" ? "Call with Acme Corp CEO" : type === "meeting" ? "Discovery call — TechStart" : "Subject…"}
+              placeholder={type === "call" ? t("subjectPlaceholderCall") : type === "meeting" ? t("subjectPlaceholderMeeting") : t("subjectPlaceholderDefault")}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Notes / Summary</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("notesSummary")}</label>
             <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={3}
-              placeholder="Key points discussed, outcomes, next steps…"
+              placeholder={t("notesPlaceholder")}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Date & Time</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("dateTime")}</label>
               <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
             {(type === "call" || type === "meeting") && (
               <div>
-                <label className="mb-1.5 block text-sm font-medium">Duration (minutes)</label>
+                <label className="mb-1.5 block text-sm font-medium">{t("durationMinutes")}</label>
                 <input type="number" min="1" value={duration} onChange={(e) => setDur(e.target.value)}
                   placeholder="30"
                   className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
@@ -366,19 +370,19 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
           )}
           {done && (
             <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-              <CheckCircle2 className="h-4 w-4" /> Activity logged!
+              <CheckCircle2 className="h-4 w-4" /> {t("activityLogged")}
             </div>
           )}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-              Cancel
+              {tc("cancel")}
             </button>
             <button type="submit" disabled={loading}
               className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                 loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-              {loading ? "Saving…" : "Log Activity"}
+              {loading ? t("saving") : t("logActivity")}
             </button>
           </div>
         </form>
@@ -389,17 +393,19 @@ function LogActivityModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-const TYPE_FILTERS: { key: ActivityType | "all"; label: string }[] = [
-  { key: "all",      label: "All"      },
-  { key: "email",    label: "Emails"   },
-  { key: "meeting",  label: "Meetings" },
-  { key: "call",     label: "Calls"    },
-  { key: "document", label: "Docs"     },
+const TYPE_FILTER_KEYS: { key: ActivityType | "all"; labelKey: string }[] = [
+  { key: "all",      labelKey: "filterAll"      },
+  { key: "email",    labelKey: "filterEmails"   },
+  { key: "meeting",  labelKey: "filterMeetings" },
+  { key: "call",     labelKey: "filterCalls"    },
+  { key: "document", labelKey: "filterDocs"     },
 ];
 
 const PAGE_SIZE = 50;
 
 export default function ActivitiesPage() {
+  const t = useTranslations("activities");
+  const tc = useTranslations("common");
   const [activities, setActivities] = useState<Activity[]>([]);
   // cursors[0] = undefined (first page), cursors[n] = `before` cursor for page n+1
   const [cursors, setCursors]       = useState<(string | undefined)[]>([undefined]);
@@ -432,11 +438,11 @@ export default function ActivitiesPage() {
         });
       }
     } catch (e: any) {
-      setError(e.message ?? "Failed to load activities");
+      setError(e.message ?? t("failedToLoad"));
     } finally {
       setLoading(false);
     }
-  }, [pageIdx, cursors, typeFilter]);
+  }, [pageIdx, cursors, typeFilter, t]);
 
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
@@ -466,11 +472,11 @@ export default function ActivitiesPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Zap className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Activity Feed</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           <ActionBar context="activities" />
           {!loading && activities.length > 0 && (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {activities.length}{hasMore ? "+" : ""} shown
+              {activities.length}{hasMore ? "+" : ""} {t("shown")}
             </span>
           )}
         </div>
@@ -478,11 +484,11 @@ export default function ActivitiesPage() {
           <button onClick={fetchActivities} disabled={loading}
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            Refresh
+            {tc("refresh")}
           </button>
           <button onClick={() => setShowAdd(true)}
             className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-            <Plus className="h-4 w-4" /> Log Activity
+            <Plus className="h-4 w-4" /> {t("logActivity")}
           </button>
         </div>
       </div>
@@ -492,11 +498,11 @@ export default function ActivitiesPage() {
       <div className="flex items-center gap-2">
         <Filter className="h-4 w-4 text-muted-foreground" />
         <div className="flex gap-1 rounded-lg bg-muted p-1">
-          {TYPE_FILTERS.map(({ key, label }) => (
+          {TYPE_FILTER_KEYS.map(({ key, labelKey }) => (
             <button key={key} onClick={() => handleTypeFilter(key)}
               className={cn("rounded-md px-3 py-1 text-sm font-medium transition-colors",
                 typeFilter === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </div>
@@ -527,12 +533,12 @@ export default function ActivitiesPage() {
             <Zap className="h-12 w-12 text-muted-foreground/30" />
             <p className="text-muted-foreground">
               {typeFilter !== "all"
-                ? `No ${typeFilter} activities yet`
-                : "No activities yet — connect Gmail or Outlook to start capturing automatically"}
+                ? t("noFilteredActivities", { type: typeFilter })
+                : t("noActivities")}
             </p>
             <button onClick={() => setShowAdd(true)}
               className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-              <Plus className="h-4 w-4" /> Log your first activity
+              <Plus className="h-4 w-4" /> {t("logFirstActivity")}
             </button>
           </div>
         ) : (
@@ -553,15 +559,15 @@ export default function ActivitiesPage() {
 
       {(pageIdx > 0 || hasMore) && (
         <div className="flex items-center justify-between text-sm">
-          <p className="text-muted-foreground">Page {pageIdx + 1}</p>
+          <p className="text-muted-foreground">{t("page", { page: pageIdx + 1 })}</p>
           <div className="flex gap-2">
             <button onClick={goPrev} disabled={pageIdx === 0 || loading}
               className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
-              <ChevronLeft className="h-4 w-4" /> Previous
+              <ChevronLeft className="h-4 w-4" /> {tc("previous")}
             </button>
             <button onClick={goNext} disabled={!hasMore || loading}
               className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
-              Next <ChevronRight className="h-4 w-4" />
+              {tc("next")} <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>

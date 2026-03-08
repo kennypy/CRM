@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
@@ -74,6 +75,8 @@ const DEMO_ALERTS: AnomalyAlert[] = [
 ];
 
 export default function AnomaliesPage() {
+  const t = useTranslations("anomalies");
+  const tc = useTranslations("common");
   const [alerts, setAlerts] = useState<AnomalyAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"open" | "acknowledged" | "resolved" | "dismissed">("open");
@@ -128,9 +131,9 @@ export default function AnomaliesPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ShieldAlert className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Anomaly Detection</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           {summary.open_count > 0 && (
-            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{summary.open_count} open</span>
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{t("openCount", { count: summary.open_count })}</span>
           )}
         </div>
         <div className="flex gap-2">
@@ -139,7 +142,7 @@ export default function AnomaliesPage() {
           </button>
           <button onClick={handleScan} disabled={scanning}
             className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
-            <Zap className="h-4 w-4" />{scanning ? "Scanning…" : "Run Scan"}
+            <Zap className="h-4 w-4" />{scanning ? t("scanning") : t("runScan")}
           </button>
         </div>
       </div>
@@ -147,10 +150,10 @@ export default function AnomaliesPage() {
       {/* Severity summary */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Critical", key: "critical_count", cls: "border-red-200 bg-red-50 text-red-700" },
-          { label: "High",     key: "high_count",     cls: "border-orange-200 bg-orange-50 text-orange-700" },
-          { label: "Medium",   key: "medium_count",   cls: "border-yellow-200 bg-yellow-50 text-yellow-700" },
-          { label: "Low",      key: "low_count",      cls: "border-blue-200 bg-blue-50 text-blue-700" },
+          { label: t("critical"), key: "critical_count", cls: "border-red-200 bg-red-50 text-red-700" },
+          { label: t("high"),     key: "high_count",     cls: "border-orange-200 bg-orange-50 text-orange-700" },
+          { label: t("medium"),   key: "medium_count",   cls: "border-yellow-200 bg-yellow-50 text-yellow-700" },
+          { label: t("low"),      key: "low_count",      cls: "border-blue-200 bg-blue-50 text-blue-700" },
         ].map(({ label, key, cls }) => (
           <div key={key} className={cn("rounded-lg border p-4", cls)}>
             <p className="text-xs font-medium">{label}</p>
@@ -182,8 +185,8 @@ export default function AnomaliesPage() {
         ) : alerts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <CheckCircle2 className="h-12 w-12 mb-3 text-green-400" />
-            <p className="font-medium">All clear</p>
-            <p className="text-sm">No {statusFilter} anomalies detected</p>
+            <p className="font-medium">{t("allClear")}</p>
+            <p className="text-sm">{t("noAnomalies", { status: statusFilter })}</p>
           </div>
         ) : (
           alerts.map((alert) => {
@@ -209,15 +212,15 @@ export default function AnomaliesPage() {
                   {statusFilter === "open" && (
                     <div className="flex shrink-0 gap-1">
                       <button onClick={(e) => { e.stopPropagation(); handleAction(alert.id, "acknowledged"); }}
-                        title="Acknowledge" className="rounded-md p-1.5 hover:bg-white/60">
+                        title={t("acknowledge")} className="rounded-md p-1.5 hover:bg-white/60">
                         <Eye className="h-4 w-4 text-muted-foreground" />
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); handleAction(alert.id, "resolved"); }}
-                        title="Resolve" className="rounded-md p-1.5 hover:bg-white/60">
+                        title={t("resolve")} className="rounded-md p-1.5 hover:bg-white/60">
                         <CheckCircle2 className="h-4 w-4 text-green-600" />
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); handleAction(alert.id, "dismissed"); }}
-                        title="Dismiss" className="rounded-md p-1.5 hover:bg-white/60">
+                        title={t("dismiss")} className="rounded-md p-1.5 hover:bg-white/60">
                         <X className="h-4 w-4 text-muted-foreground" />
                       </button>
                     </div>
@@ -225,7 +228,7 @@ export default function AnomaliesPage() {
                 </div>
                 {isExpanded && (
                   <div className="border-t px-4 py-3 space-y-2">
-                    <p className="text-xs font-medium uppercase text-muted-foreground">Evidence</p>
+                    <p className="text-xs font-medium uppercase text-muted-foreground">{t("evidence")}</p>
                     {(Array.isArray(alert.evidence) ? alert.evidence : []).map((ev, i) => (
                       <div key={i} className="flex items-start gap-2 text-sm">
                         <span className="font-medium text-muted-foreground shrink-0">{ev.label}:</span>

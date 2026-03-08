@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { ActionBar } from "@/components/action-bar/action-bar";
+import { useTranslations } from "next-intl";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -786,6 +787,7 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
+  const t = useTranslations("reports");
   const [tab,            setTab]            = useState<"saved" | "quick">("saved");
   const [reports,        setReports]        = useState<SavedReport[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -822,7 +824,7 @@ export default function ReportsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Reports</h1>
+          <h1 className="text-xl font-bold text-white">{t("title")}</h1>
           <p className="mt-0.5 text-xs text-white/40">
             Cross-object analytics across Activities, Deals, Companies, Contacts &amp; Quotes
           </p>

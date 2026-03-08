@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import {
   FileText, Plus, Download, Search, Filter,
   CheckCircle2, Clock, Send, Eye, ThumbsDown,
@@ -16,16 +17,19 @@ import { QuoteBuilderModal } from "@/components/modals/quote-builder-modal";
 import { generateQuotePDF } from "@/lib/quote-pdf";
 import { ActionBar } from "@/components/action-bar/action-bar";
 
-const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
-  { value: "",                 label: "All statuses" },
-  { value: "draft",            label: "Draft" },
-  { value: "pending_approval", label: "Pending approval" },
-  { value: "sent",             label: "Sent" },
-  { value: "viewed",           label: "Viewed" },
-  { value: "accepted",         label: "Accepted" },
-  { value: "rejected",         label: "Rejected" },
-  { value: "expired",          label: "Expired" },
-];
+function useStatusFilterOptions() {
+  const t = useTranslations("quotes");
+  return [
+    { value: "",                 label: t("allStatuses") },
+    { value: "draft",            label: t("draft") },
+    { value: "pending_approval", label: t("pendingApproval") },
+    { value: "sent",             label: t("sent") },
+    { value: "viewed",           label: t("viewed") },
+    { value: "accepted",         label: t("accepted") },
+    { value: "rejected",         label: t("rejected") },
+    { value: "expired",          label: t("expired") },
+  ];
+}
 
 // ── In-browser quote preview ──────────────────────────────────────────────────
 
@@ -38,6 +42,8 @@ function QuotePreviewModal({
   onClose: () => void;
   onEdit: () => void;
 }) {
+  const t = useTranslations("quotes");
+  const tc = useTranslations("common");
   const totals = computeQuoteTotals(quote.items, quote.discountType, quote.discountValue, quote.taxRate);
   const canEdit = ["draft", "pending_approval"].includes(quote.status);
 
@@ -72,7 +78,7 @@ function QuotePreviewModal({
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
               <tr>
-                {["Product / Description", "Qty", "Unit Price", "Disc %", "Line Total"].map((h) => (
+                {[t("productDescription"), t("qty"), t("unitPrice"), t("discPercent"), t("lineTotal")].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground last:text-right">{h}</th>
                 ))}
               </tr>
@@ -97,20 +103,20 @@ function QuotePreviewModal({
           <div className="border-t bg-muted/20 px-6 py-4">
             <div className="ml-auto w-56 space-y-1 text-sm">
               <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal</span><span>{fmtCurrency(totals.subtotal, quote.currency)}</span>
+                <span>{t("subtotal")}</span><span>{fmtCurrency(totals.subtotal, quote.currency)}</span>
               </div>
               {totals.orderDiscount > 0 && (
                 <div className="flex justify-between text-green-700">
-                  <span>Discount</span><span>−{fmtCurrency(totals.orderDiscount, quote.currency)}</span>
+                  <span>{t("discount")}</span><span>−{fmtCurrency(totals.orderDiscount, quote.currency)}</span>
                 </div>
               )}
               {quote.taxRate > 0 && (
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Tax ({quote.taxRate}%)</span><span>{fmtCurrency(totals.tax, quote.currency)}</span>
+                  <span>{t("tax", { rate: quote.taxRate })}</span><span>{fmtCurrency(totals.tax, quote.currency)}</span>
                 </div>
               )}
               <div className="flex justify-between border-t pt-1.5 text-base font-bold">
-                <span>Total</span><span>{fmtCurrency(totals.total, quote.currency)}</span>
+                <span>{tc("total")}</span><span>{fmtCurrency(totals.total, quote.currency)}</span>
               </div>
             </div>
           </div>
@@ -120,13 +126,13 @@ function QuotePreviewModal({
             <div className="border-t px-6 py-4 space-y-3">
               {quote.notes && (
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{tc("notes")}</p>
                   <p className="text-sm whitespace-pre-wrap">{quote.notes}</p>
                 </div>
               )}
               {quote.terms && (
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Terms & Conditions</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{t("termsConditions")}</p>
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">{quote.terms}</p>
                 </div>
               )}
@@ -136,17 +142,17 @@ function QuotePreviewModal({
 
         {/* Footer */}
         <div className="shrink-0 border-t px-6 py-4 flex items-center justify-between">
-          <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Close</button>
+          <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">{tc("close")}</button>
           <div className="flex gap-2">
             {canEdit && (
               <button onClick={onEdit}
                 className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">
-                <Pencil className="h-3.5 w-3.5" /> Edit
+                <Pencil className="h-3.5 w-3.5" /> {tc("edit")}
               </button>
             )}
             <button onClick={() => generateQuotePDF(quote)}
               className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-              <Download className="h-3.5 w-3.5" /> Download PDF
+              <Download className="h-3.5 w-3.5" /> {t("downloadPdf")}
             </button>
           </div>
         </div>
@@ -156,6 +162,9 @@ function QuotePreviewModal({
 }
 
 export default function QuotesPage() {
+  const t = useTranslations("quotes");
+  const tc = useTranslations("common");
+  const STATUS_FILTER_OPTIONS = useStatusFilterOptions();
   const [quotes,       setQuotes]       = useState<Quote[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
@@ -280,23 +289,23 @@ export default function QuotesPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <FileText className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Quotes</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{quotes.length}</span>
           <ActionBar context="quotes" onQuoteSaved={handleSaved} />
         </div>
         <button onClick={() => setShowBuilder(true)}
           className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> New Quote
+          <Plus className="h-4 w-4" /> {t("newQuote")}
         </button>
       </div>
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
-          { label: "Won (accepted)", value: fmtCurrency(totalAccepted, "GBP"), icon: CheckCircle2, color: "bg-green-100 text-green-700" },
-          { label: "In pipeline",    value: fmtCurrency(totalPending,  "GBP"), icon: TrendingUp,   color: "bg-blue-100 text-blue-700" },
-          { label: "Win rate",       value: `${winRate}%`,                      icon: DollarSign,   color: "bg-purple-100 text-purple-700" },
-          { label: "Awaiting approval", value: String(awaitingApproval),        icon: Clock,        color: "bg-yellow-100 text-yellow-700" },
+          { label: t("wonAccepted"), value: fmtCurrency(totalAccepted, "GBP"), icon: CheckCircle2, color: "bg-green-100 text-green-700" },
+          { label: t("inPipeline"),    value: fmtCurrency(totalPending,  "GBP"), icon: TrendingUp,   color: "bg-blue-100 text-blue-700" },
+          { label: t("winRate"),       value: `${winRate}%`,                      icon: DollarSign,   color: "bg-purple-100 text-purple-700" },
+          { label: t("awaitingApproval"), value: String(awaitingApproval),        icon: Clock,        color: "bg-yellow-100 text-yellow-700" },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="rounded-xl border bg-card p-4">
             <div className="flex items-center justify-between">
@@ -313,7 +322,7 @@ export default function QuotesPage() {
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search quotes, companies…"
+            placeholder={t("searchPlaceholder")}
             className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
@@ -327,11 +336,11 @@ export default function QuotesPage() {
         <div className="flex items-center justify-between rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3">
           <div className="flex items-center gap-2 text-sm text-yellow-800">
             <Clock className="h-4 w-4" />
-            <strong>{awaitingApproval}</strong> quote{awaitingApproval !== 1 ? "s" : ""} pending manager approval
+            {t("pendingApprovalBanner", { count: awaitingApproval })}
           </div>
           <button onClick={() => setStatusFilter("pending_approval")}
             className="text-xs font-medium text-yellow-700 hover:underline">
-            View all →
+            {t("viewAllArrow")}
           </button>
         </div>
       )}
@@ -353,27 +362,27 @@ export default function QuotesPage() {
       {loading ? (
         <div className="py-16 text-center">
           <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mb-3" />
-          <p className="text-sm text-muted-foreground">Loading quotes…</p>
+          <p className="text-sm text-muted-foreground">{t("loadingQuotes")}</p>
         </div>
       ) : error && quotes.length === 0 ? (
         <div className="py-16 text-center">
           <AlertCircle className="mx-auto h-8 w-8 text-red-400 mb-3" />
-          <p className="text-sm text-muted-foreground mb-3">Could not load quotes</p>
+          <p className="text-sm text-muted-foreground mb-3">{t("loadError")}</p>
           <button onClick={fetchQuotes}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-            Retry
+            {tc("retry")}
           </button>
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-16 text-center text-sm text-muted-foreground">
-          {quotes.length === 0 ? "No quotes yet — create your first quote to get started" : "No quotes match your filters"}
+          {quotes.length === 0 ? t("emptyState") : t("noMatch")}
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                {["Quote #", "Title", "Company", "Contact", "Status", "Total", "Valid Until", "Rep", "Actions"].map((h) => (
+                {[t("quoteNumber"), tc("title"), t("company"), t("contact"), tc("status"), t("total"), t("validUntil"), t("rep"), tc("actions")].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">{h}</th>
                 ))}
               </tr>
@@ -385,7 +394,7 @@ export default function QuotesPage() {
                   <td className="px-4 py-3 max-w-xs">
                     <p className="font-medium truncate">{q.title}</p>
                     {q.items.length > 0 && (
-                      <p className="text-xs text-muted-foreground truncate">{q.items.length} line item{q.items.length !== 1 ? "s" : ""}</p>
+                      <p className="text-xs text-muted-foreground truncate">{t("lineItems", { count: q.items.length })}</p>
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{q.companyName ?? "—"}</td>
@@ -403,34 +412,34 @@ export default function QuotesPage() {
                   <td className="px-4 py-3 text-muted-foreground">{q.createdByName ?? "—"}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => setViewQuote(q)} title="View quote"
+                      <button onClick={() => setViewQuote(q)} title={t("viewQuote")}
                         className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
                         <Eye className="h-3.5 w-3.5" />
                       </button>
                       {["draft","pending_approval"].includes(q.status) && (
-                        <button onClick={() => setEditQuote(q)} title="Edit"
+                        <button onClick={() => setEditQuote(q)} title={tc("edit")}
                           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground text-xs">
-                          Edit
+                          {tc("edit")}
                         </button>
                       )}
                       {q.status === "draft" && (
-                        <button onClick={() => handleSend(q.id)} title="Send"
+                        <button onClick={() => handleSend(q.id)} title={t("sendQuote")}
                           className="rounded p-1 text-blue-600 hover:bg-blue-50 text-xs">
-                          Send
+                          {t("sendQuote")}
                         </button>
                       )}
                       {q.status === "pending_approval" && (
-                        <button onClick={() => handleApprove(q.id)} title="Approve"
+                        <button onClick={() => handleApprove(q.id)} title={t("approve")}
                           className="rounded p-1 text-yellow-700 hover:bg-yellow-50 text-xs">
-                          Approve
+                          {t("approve")}
                         </button>
                       )}
-                      <button onClick={() => generateQuotePDF(q)} title="Download PDF"
+                      <button onClick={() => generateQuotePDF(q)} title={t("downloadPdf")}
                         className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
                         <Download className="h-3.5 w-3.5" />
                       </button>
                       {["draft","pending_approval"].includes(q.status) && (
-                        <button onClick={() => handleDelete(q.id)} title="Delete"
+                        <button onClick={() => handleDelete(q.id)} title={tc("delete")}
                           className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>

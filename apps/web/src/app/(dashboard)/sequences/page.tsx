@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import {
   Layers, Plus, RefreshCw, AlertCircle, Play, Pause,
   Archive, Users, BarChart3, Settings2, ChevronRight, Mail, Phone, Linkedin,
@@ -34,6 +35,8 @@ const STATUS_PILL: Record<string, string> = {
 };
 
 export default function SequencesPage() {
+  const t = useTranslations("sequences");
+  const tc = useTranslations("common");
   const perms = usePermissions();
 
   const [sequences,   setSequences]   = useState<Sequence[]>([]);
@@ -46,6 +49,20 @@ export default function SequencesPage() {
   const [editingId,   setEditingId]   = useState<string | undefined>(undefined);
   const [steps,       setSteps]       = useState<{ type: string }[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const STATUS_LABELS: Record<string, string> = {
+    draft: t("draft"),
+    active: t("active"),
+    paused: t("paused"),
+    archived: t("archived"),
+  };
+
+  const FILTER_LABELS: Record<string, string> = {
+    active: t("active"),
+    draft: t("draft"),
+    paused: t("paused"),
+    all: tc("all"),
+  };
 
   const fetchSequences = useCallback(async () => {
     setLoading(true);
@@ -128,7 +145,7 @@ export default function SequencesPage() {
         <div className="flex items-center justify-between pb-3">
           <div className="flex items-center gap-2">
             <Layers className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-semibold">Sequences</h1>
+            <h1 className="text-xl font-semibold">{t("title")}</h1>
           </div>
           <div className="flex gap-1">
             <button onClick={fetchSequences} disabled={loading} className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-40">
@@ -136,7 +153,7 @@ export default function SequencesPage() {
             </button>
             {perms.canWrite && (
               <button onClick={openNew} className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90">
-                <Plus className="h-3.5 w-3.5" /> New
+                <Plus className="h-3.5 w-3.5" /> {t("newSequence")}
               </button>
             )}
           </div>
@@ -153,7 +170,7 @@ export default function SequencesPage() {
                 filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {f}
+              {FILTER_LABELS[f] ?? f}
             </button>
           ))}
         </div>
@@ -176,9 +193,9 @@ export default function SequencesPage() {
           ) : sequences.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Layers className="h-8 w-8 text-muted-foreground/30" />
-              <p className="mt-2 text-sm text-muted-foreground">No sequences</p>
+              <p className="mt-2 text-sm text-muted-foreground">{t("noSequences")}</p>
               {perms.canWrite && (
-                <button onClick={openNew} className="mt-3 text-xs text-primary hover:underline">Create your first sequence</button>
+                <button onClick={openNew} className="mt-3 text-xs text-primary hover:underline">{t("newSequence")}</button>
               )}
             </div>
           ) : (
@@ -196,13 +213,13 @@ export default function SequencesPage() {
                 <div className="flex items-start justify-between gap-2">
                   <span className="flex-1 truncate text-sm font-medium">{seq.name}</span>
                   <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize", STATUS_PILL[seq.status])}>
-                    {seq.status}
+                    {STATUS_LABELS[seq.status] ?? seq.status}
                   </span>
                 </div>
                 {seq.goal && <p className="truncate text-xs text-muted-foreground">{seq.goal}</p>}
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><Users className="h-3 w-3" />{seq.active_enrollments} active</span>
-                  <span>{seq.completed_enrollments} done</span>
+                  <span className="flex items-center gap-1"><Users className="h-3 w-3" />{seq.active_enrollments} {t("active").toLowerCase()}</span>
+                  <span>{seq.completed_enrollments} {tc("done").toLowerCase()}</span>
                 </div>
               </button>
             ))
@@ -227,7 +244,7 @@ export default function SequencesPage() {
                   disabled={!!actionLoading}
                   className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
                 >
-                  <Play className="h-3 w-3" /> Activate
+                  <Play className="h-3 w-3" /> {t("activate")}
                 </button>
               )}
               {selected.status === "active" && perms.canWrite && (
@@ -236,7 +253,7 @@ export default function SequencesPage() {
                   disabled={!!actionLoading}
                   className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
                 >
-                  <Pause className="h-3 w-3" /> Pause
+                  <Pause className="h-3 w-3" /> {t("pause")}
                 </button>
               )}
               {selected.status === "paused" && perms.canWrite && (
@@ -245,7 +262,7 @@ export default function SequencesPage() {
                   disabled={!!actionLoading}
                   className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
                 >
-                  <Play className="h-3 w-3" /> Resume
+                  <Play className="h-3 w-3" /> {t("activate")}
                 </button>
               )}
               {selected.status !== "archived" && perms.isManager && (
@@ -253,7 +270,7 @@ export default function SequencesPage() {
                   onClick={() => setStatus(selected, "archived")}
                   disabled={!!actionLoading}
                   className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                  title="Archive"
+                  title={t("archive")}
                 >
                   <Archive className="h-3.5 w-3.5" />
                 </button>
@@ -263,7 +280,7 @@ export default function SequencesPage() {
                   onClick={() => openEdit(selected)}
                   className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
                 >
-                  <Settings2 className="h-3.5 w-3.5" /> Edit
+                  <Settings2 className="h-3.5 w-3.5" /> {tc("edit")}
                 </button>
               )}
             </div>
@@ -272,9 +289,9 @@ export default function SequencesPage() {
           {/* Detail tabs */}
           <div className="flex border-b border-border px-6">
             {([
-              { key: "builder",     label: "Steps",       icon: Layers },
-              { key: "enrollments", label: "Enrollments", icon: Users },
-              { key: "analytics",   label: "Analytics",   icon: BarChart3 },
+              { key: "builder",     label: t("builder"),     icon: Layers },
+              { key: "enrollments", label: t("enrollments"), icon: Users },
+              { key: "analytics",   label: t("analytics"),   icon: BarChart3 },
             ] as const).map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -298,10 +315,10 @@ export default function SequencesPage() {
                 {steps.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <Layers className="h-8 w-8 text-muted-foreground/30" />
-                    <p className="mt-2 text-sm text-muted-foreground">No steps yet</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{t("noSequences")}</p>
                     {perms.canWrite && (
                       <button onClick={() => openEdit(selected)} className="mt-3 text-xs text-primary hover:underline">
-                        Add steps in the builder
+                        {t("builder")}
                       </button>
                     )}
                   </div>
@@ -345,12 +362,12 @@ export default function SequencesPage() {
         <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border text-center">
           <Layers className="h-10 w-10 text-muted-foreground/30" />
           <div>
-            <p className="text-sm font-medium text-muted-foreground">Select a sequence</p>
-            <p className="text-xs text-muted-foreground/70">Or create a new one to get started</p>
+            <p className="text-sm font-medium text-muted-foreground">{t("title")}</p>
+            <p className="text-xs text-muted-foreground/70">{t("newSequence")}</p>
           </div>
           {perms.canWrite && (
             <button onClick={openNew} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-              <Plus className="h-4 w-4" /> New Sequence
+              <Plus className="h-4 w-4" /> {t("newSequence")}
             </button>
           )}
         </div>

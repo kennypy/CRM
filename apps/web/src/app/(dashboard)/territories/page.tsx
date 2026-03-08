@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
 import { usePermissions } from "@/lib/permissions";
+import { useTranslations } from "next-intl";
 import {
   Globe,
   Plus,
@@ -334,6 +335,7 @@ function conditionLabel(c: RuleCondition): string {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function TerritoriesPage() {
+  const t = useTranslations("territories");
   const tenant = useTenant();
   const { can } = usePermissions();
   const currency = tenant?.defaultCurrency ?? "USD";
@@ -502,7 +504,7 @@ export default function TerritoriesPage() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Territory Management</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">
             Configure territories, assignment rules, and track regional performance
           </p>

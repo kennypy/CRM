@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import {
   Bell, Check, CheckCheck, Filter, RefreshCw, Settings,
@@ -49,6 +50,8 @@ function formatTime(dateStr: string): string {
 }
 
 export default function NotificationsPage() {
+  const t = useTranslations("notifications");
+  const tc = useTranslations("common");
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread" | "high">("all");
@@ -114,7 +117,7 @@ export default function NotificationsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Bell className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Notifications</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           {unreadCount > 0 && (
             <span className="rounded-full bg-primary px-2.5 py-0.5 text-xs font-bold text-primary-foreground">{unreadCount}</span>
           )}
@@ -122,7 +125,7 @@ export default function NotificationsPage() {
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
             <button onClick={markAllRead} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted">
-              <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+              <CheckCheck className="h-3.5 w-3.5" /> {t("markAllRead")}
             </button>
           )}
           <button onClick={fetchNotifications} disabled={loading} className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-40">
@@ -138,9 +141,9 @@ export default function NotificationsPage() {
       <div className="flex items-center gap-3">
         <div className="flex gap-1 rounded-lg bg-muted p-1">
           {([
-            { key: "all", label: "All" },
-            { key: "unread", label: `Unread (${unreadCount})` },
-            { key: "high", label: `Priority (${highPriorityCount})` },
+            { key: "all", label: t("allTab") },
+            { key: "unread", label: t("unreadTab", { count: unreadCount }) },
+            { key: "high", label: t("priorityTab", { count: highPriorityCount }) },
           ] as const).map(({ key, label }) => (
             <button
               key={key}
@@ -164,7 +167,7 @@ export default function NotificationsPage() {
             onChange={(e) => setTypeFilter(e.target.value)}
             className="rounded-md border-0 bg-transparent px-1 py-0.5 text-xs text-muted-foreground focus:outline-none focus:ring-0"
           >
-            <option value="all">All types</option>
+            <option value="all">{t("allTypes")}</option>
             {uniqueTypes.map((t) => (
               <option key={t} value={t}>{t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</option>
             ))}
@@ -189,8 +192,8 @@ export default function NotificationsPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Bell className="h-12 w-12 text-muted-foreground/20" />
-            <p className="mt-3 text-sm font-medium text-muted-foreground">No notifications</p>
-            <p className="text-xs text-muted-foreground/70">You&apos;re all caught up!</p>
+            <p className="mt-3 text-sm font-medium text-muted-foreground">{t("empty")}</p>
+            <p className="text-xs text-muted-foreground/70">{t("caughtUp")}</p>
           </div>
         ) : (
           filtered.map((n) => {
@@ -228,7 +231,7 @@ export default function NotificationsPage() {
                       onClick={(e) => e.stopPropagation()}
                       className="mt-1.5 inline-block text-xs text-primary hover:underline"
                     >
-                      View details →
+                      {t("viewDetails")}
                     </Link>
                   )}
                 </div>

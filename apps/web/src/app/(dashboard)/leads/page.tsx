@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
@@ -49,17 +50,17 @@ function scoreTier(score: number): "hot" | "warm" | "cold" {
   return "cold";
 }
 
-function TierBadge({ tier }: { tier: string }) {
-  const cfg: Record<string, { label: string; icon: React.FC<{ className?: string }>; cls: string }> = {
-    hot:  { label: "Hot",  icon: Flame,     cls: "bg-red-100 text-red-700" },
-    warm: { label: "Warm", icon: Minus,     cls: "bg-yellow-100 text-yellow-700" },
-    cold: { label: "Cold", icon: Snowflake, cls: "bg-blue-100 text-blue-700" },
+function TierBadge({ tier, t }: { tier: string; t: (key: string) => string }) {
+  const cfg: Record<string, { labelKey: string; icon: React.FC<{ className?: string }>; cls: string }> = {
+    hot:  { labelKey: "hot",  icon: Flame,     cls: "bg-red-100 text-red-700" },
+    warm: { labelKey: "warm", icon: Minus,     cls: "bg-yellow-100 text-yellow-700" },
+    cold: { labelKey: "cold", icon: Snowflake, cls: "bg-blue-100 text-blue-700" },
   };
-  const { label, icon: Icon, cls } = cfg[tier] ?? cfg.cold;
+  const { labelKey, icon: Icon, cls } = cfg[tier] ?? cfg.cold;
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium", cls)}>
       <Icon className="h-3 w-3" />
-      {label}
+      {t(labelKey)}
     </span>
   );
 }
@@ -78,7 +79,7 @@ function ScoreBar({ score }: { score: number }) {
 
 // ── Add Lead Modal ─────────────────────────────────────────────────────────────
 
-function AddLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function AddLeadModal({ onClose, onCreated, t, tc }: { onClose: () => void; onCreated: () => void; t: (key: string) => string; tc: (key: string) => string }) {
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", title: "", company: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +108,7 @@ function AddLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
       onCreated();
       onClose();
     } catch {
-      setError("Network error — please try again");
+      setError(tc("networkError"));
     } finally {
       setLoading(false);
     }
@@ -120,7 +121,7 @@ function AddLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">Add Lead</h2>
+            <h2 className="font-semibold">{t("addLeadModal")}</h2>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
@@ -129,23 +130,23 @@ function AddLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-sm font-medium">First name *</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("firstNameRequired")}</label>
               <input value={form.firstName} onChange={set("firstName")} required placeholder="Ada"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Last name *</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("lastNameRequired")}</label>
               <input value={form.lastName} onChange={set("lastName")} required placeholder="Lovelace"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Email *</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("emailRequired")}</label>
             <input type="email" value={form.email} onChange={set("email")} required placeholder="ada@company.com"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Title</label>
+            <label className="mb-1.5 block text-sm font-medium">{tc("title")}</label>
             <input value={form.title} onChange={set("title")} placeholder="VP Engineering"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
@@ -157,12 +158,12 @@ function AddLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-              Cancel
+              {tc("cancel")}
             </button>
             <button type="submit" disabled={loading}
               className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                 loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-              {loading ? "Creating…" : "Create Lead"}
+              {loading ? t("creating") : t("createLead")}
             </button>
           </div>
         </form>
@@ -173,8 +174,8 @@ function AddLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
 
 // ── Convert Lead Modal ─────────────────────────────────────────────────────────
 
-function ConvertLeadModal({ lead, onClose, onConverted }: {
-  lead: Lead; onClose: () => void; onConverted: () => void;
+function ConvertLeadModal({ lead, onClose, onConverted, t, tc }: {
+  lead: Lead; onClose: () => void; onConverted: () => void; t: (key: string) => string; tc: (key: string) => string;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -193,7 +194,7 @@ function ConvertLeadModal({ lead, onClose, onConverted }: {
       setDone(true);
       setTimeout(() => { onConverted(); onClose(); }, 1200);
     } catch {
-      setError("Network error — please try again");
+      setError(tc("networkError"));
     } finally {
       setLoading(false);
     }
@@ -208,12 +209,12 @@ function ConvertLeadModal({ lead, onClose, onConverted }: {
             <User className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h2 className="font-semibold">Convert Lead</h2>
+            <h2 className="font-semibold">{t("convertLead")}</h2>
             <p className="text-sm text-muted-foreground">{lead.firstName} {lead.lastName}</p>
           </div>
         </div>
         <p className="text-sm text-muted-foreground mb-6">
-          This will convert the lead into a full contact record. The lead's history and score will be preserved.
+          {t("convertDescription")}
         </p>
         {error && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -222,18 +223,18 @@ function ConvertLeadModal({ lead, onClose, onConverted }: {
         )}
         {done && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-            <CheckCircle2 className="h-4 w-4" /> Converted to contact!
+            <CheckCircle2 className="h-4 w-4" /> {t("convertedToContact")}
           </div>
         )}
         <div className="flex gap-3">
           <button onClick={onClose}
             className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-            Cancel
+            {tc("cancel")}
           </button>
           <button onClick={handleConvert} disabled={loading || done}
             className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
               (loading || done) ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-            {loading ? "Converting…" : "Convert to Contact"}
+            {loading ? t("creating") : t("convertToContact")}
           </button>
         </div>
       </div>
@@ -246,6 +247,8 @@ function ConvertLeadModal({ lead, onClose, onConverted }: {
 const PAGE_SIZE = 50;
 
 export default function LeadsPage() {
+  const t  = useTranslations("leads");
+  const tc = useTranslations("common");
   const { visible, toggle } = useColumnPrefs("nexcrm_cols_leads", COL_DEFS);
   const [leads, setLeads]           = useState<Lead[]>([]);
   const [total, setTotal]           = useState(0);
@@ -258,6 +261,12 @@ export default function LeadsPage() {
   const [showAdd, setShowAdd]       = useState(false);
   const [converting, setConverting] = useState<Lead | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const tierLabels: Record<string, string> = {
+    hot: "Hot",
+    warm: "Warm",
+    cold: "Cold",
+  };
 
   const handleSearch = (v: string) => {
     setSearch(v);
@@ -311,7 +320,7 @@ export default function LeadsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Leads</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           <ActionBar context="leads" />
           {!loading && <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{total.toLocaleString()}</span>}
         </div>
@@ -321,26 +330,28 @@ export default function LeadsPage() {
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
           <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-            <Plus className="h-4 w-4" /> Add Lead
+            <Plus className="h-4 w-4" /> {t("addLead")}
           </button>
         </div>
       </div>
 
-      {showAdd && <AddLeadModal onClose={() => setShowAdd(false)} onCreated={fetchLeads} />}
+      {showAdd && <AddLeadModal onClose={() => setShowAdd(false)} onCreated={fetchLeads} t={t} tc={tc} />}
       {converting && (
         <ConvertLeadModal
           lead={converting}
           onClose={() => setConverting(null)}
           onConverted={fetchLeads}
+          t={t}
+          tc={tc}
         />
       )}
 
       {/* Tier summary */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { key: "hot",  label: "Hot",  icon: Flame,     color: "text-red-600",    bg: "bg-red-50",    val: stats.hot },
-          { key: "warm", label: "Warm", icon: Minus,     color: "text-yellow-600", bg: "bg-yellow-50", val: stats.warm },
-          { key: "cold", label: "Cold", icon: Snowflake, color: "text-blue-600",   bg: "bg-blue-50",   val: stats.cold },
+          { key: "hot",  label: tierLabels.hot,  icon: Flame,     color: "text-red-600",    bg: "bg-red-50",    val: stats.hot },
+          { key: "warm", label: tierLabels.warm, icon: Minus,     color: "text-yellow-600", bg: "bg-yellow-50", val: stats.warm },
+          { key: "cold", label: tierLabels.cold, icon: Snowflake, color: "text-blue-600",   bg: "bg-blue-50",   val: stats.cold },
         ].map(({ key, label, icon: Icon, color, bg, val }) => (
           <button
             key={key}
@@ -360,7 +371,7 @@ export default function LeadsPage() {
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
-          placeholder="Search leads…"
+          placeholder={t("searchPlaceholder")}
           value={search}
           onChange={(e) => handleSearch(e.target.value)}
           className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -396,7 +407,7 @@ export default function LeadsPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={COL_DEFS.filter((d) => visible.has(d.key)).length} className="px-4 py-12 text-center text-muted-foreground">
-                  {debounced ? "No leads match your search" : "No leads yet — connect an inbox to auto-capture"}
+                  {debounced ? t("noMatch") : t("empty")}
                 </td>
               </tr>
             ) : (
@@ -423,14 +434,14 @@ export default function LeadsPage() {
                     <td className="px-4 py-3"><ScoreBar score={lead.score} /></td>
                   )}
                   {visible.has("tier") && (
-                    <td className="px-4 py-3"><TierBadge tier={lead.tier} /></td>
+                    <td className="px-4 py-3"><TierBadge tier={lead.tier} t={t} /></td>
                   )}
                   {visible.has("source") && (
                     <td className="px-4 py-3 capitalize text-muted-foreground">{lead.source}</td>
                   )}
                   {visible.has("lastActivity") && (
                     <td className="px-4 py-3 text-muted-foreground">
-                      {lead.lastActivityAt ? formatRelativeTime(lead.lastActivityAt) : "Never"}
+                      {lead.lastActivityAt ? formatRelativeTime(lead.lastActivityAt) : tc("never")}
                     </td>
                   )}
                   {visible.has("actions") && (
@@ -439,7 +450,7 @@ export default function LeadsPage() {
                         onClick={() => setConverting(lead)}
                         className="flex items-center gap-1 text-xs text-primary hover:underline"
                       >
-                        Convert <ArrowRight className="h-3 w-3" />
+                        {t("convert")} <ArrowRight className="h-3 w-3" />
                       </button>
                     </td>
                   )}
@@ -452,13 +463,13 @@ export default function LeadsPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
-          <p className="text-muted-foreground">Page {page} of {totalPages}</p>
+          <p className="text-muted-foreground">{tc("pageOf", { page: String(page), totalPages: String(totalPages), total: String(total) })}</p>
           <div className="flex gap-2">
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1 || loading} className="flex items-center gap-1 rounded-md border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
-              <ChevronLeft className="h-4 w-4" /> Previous
+              <ChevronLeft className="h-4 w-4" /> {tc("previous")}
             </button>
             <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading} className="flex items-center gap-1 rounded-md border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
-              Next <ChevronRight className="h-4 w-4" />
+              {tc("next")} <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>

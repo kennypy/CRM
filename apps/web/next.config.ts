@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import createNextIntlPlugin from "next-intl/plugin";
+
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 // Gateway URL — server-side only. NEVER use NEXT_PUBLIC_ for internal service URLs.
 const GATEWAY_URL = process.env.API_GATEWAY_URL ?? "http://localhost:4000";
@@ -78,7 +81,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
+export default withSentryConfig(withNextIntl(nextConfig), {
   // Suppress verbose Sentry CLI output during builds
   silent: !process.env.CI,
   // Upload source maps only in CI to avoid bloating local builds

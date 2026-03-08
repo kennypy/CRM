@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
 import { usePermissions } from "@/lib/permissions";
+import { useTranslations } from "next-intl";
 import {
   BarChart3, TrendingUp, TrendingDown, Users, Phone, Mail,
   Calendar, CheckSquare, Target, Award, ArrowDown,
@@ -1158,6 +1159,7 @@ function AIInsightsPanel() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function InsightsPage() {
+  const t = useTranslations("insights");
   const { tenant } = useTenant();
   const permissions = usePermissions();
   const currency = tenant.defaultCurrency;
@@ -1193,7 +1195,7 @@ export default function InsightsPage() {
         <div className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5 text-primary" />
           <div>
-            <h1 className="text-xl font-semibold">Insights & Analytics</h1>
+            <h1 className="text-xl font-semibold">{t("title")}</h1>
             <p className="text-xs text-muted-foreground">
               Performance analytics, pipeline intelligence, and AI-powered recommendations
             </p>

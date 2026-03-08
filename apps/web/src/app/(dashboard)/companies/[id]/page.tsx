@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { useTenant } from "@/lib/tenant-context";
@@ -79,6 +80,8 @@ export default function CompanyDetailPage() {
   const router = useRouter();
   const perms  = usePermissions();
   const { tenant } = useTenant();
+  const t  = useTranslations("companies");
+  const tc = useTranslations("common");
   const id = params.id as string;
 
   const [data, setData]         = useState<DetailData | null>(null);
@@ -130,7 +133,7 @@ export default function CompanyDetailPage() {
           <span>{error ?? "Company not found"}</span>
         </div>
         <button onClick={() => router.back()} className="text-sm text-primary hover:underline">
-          ← Back to Companies
+          ← {t("backToCompanies")}
         </button>
       </div>
     );
@@ -145,7 +148,7 @@ export default function CompanyDetailPage() {
         onClick={() => router.push("/companies")}
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit"
       >
-        <ArrowLeft className="h-4 w-4" /> Back to Companies
+        <ArrowLeft className="h-4 w-4" /> {t("backToCompanies")}
       </button>
 
       {/* Company header */}
@@ -184,10 +187,10 @@ export default function CompanyDetailPage() {
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
-          { label: "Open Deals",    value: String(company.openDeals ?? 0),          icon: Briefcase },
-          { label: "Pipeline",      value: formatCurrency(company.openDealValue ?? 0, tenant.defaultCurrency, true, tenant.locale), icon: ChevronRight },
-          { label: "Contacts",      value: String(contacts.length),                 icon: Users },
-          { label: "Employees",     value: company.headcount ? `${company.headcount.toLocaleString()}` : "—", icon: Building2 },
+          { label: t("openDeals"),   value: String(company.openDeals ?? 0),          icon: Briefcase },
+          { label: t("pipeline"),    value: formatCurrency(company.openDealValue ?? 0, tenant.defaultCurrency, true, tenant.locale), icon: ChevronRight },
+          { label: t("contacts"),    value: String(contacts.length),                 icon: Users },
+          { label: t("employees"),   value: company.headcount ? `${company.headcount.toLocaleString()}` : "—", icon: Building2 },
         ].map(({ label, value, icon: Icon }) => (
           <div key={label} className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
@@ -203,43 +206,43 @@ export default function CompanyDetailPage() {
         company.segment || company.linkedinUrl || company.lastCompanyActivity ||
         company.opportunitiesName || company.createdBy) && (
         <div className="rounded-xl border border-border bg-card p-5">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">Additional Details</h3>
+          <h3 className="mb-4 text-sm font-semibold text-foreground">{t("additionalDetails")}</h3>
           <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
             {company.region && (
-              <div><p className="text-xs text-muted-foreground">Region</p><p className="text-sm">{company.region}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("region")}</p><p className="text-sm">{company.region}</p></div>
             )}
             {company.subRegion && (
-              <div><p className="text-xs text-muted-foreground">Sub Region</p><p className="text-sm">{company.subRegion}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("subRegion")}</p><p className="text-sm">{company.subRegion}</p></div>
             )}
             {company.subIndustry && (
-              <div><p className="text-xs text-muted-foreground">Sub Industry</p><p className="text-sm">{company.subIndustry}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("subIndustry")}</p><p className="text-sm">{company.subIndustry}</p></div>
             )}
             {company.segment && (
-              <div><p className="text-xs text-muted-foreground">Segment</p><p className="text-sm">{company.segment}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("segment")}</p><p className="text-sm">{company.segment}</p></div>
             )}
             {company.revenue != null && (
-              <div><p className="text-xs text-muted-foreground">Revenue ($)</p><p className="text-sm">{company.revenue.toLocaleString()}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("revenue")}</p><p className="text-sm">{company.revenue.toLocaleString()}</p></div>
             )}
             {company.opportunitiesName && (
-              <div><p className="text-xs text-muted-foreground">Opportunity Name</p><p className="text-sm">{company.opportunitiesName}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("opportunityName")}</p><p className="text-sm">{company.opportunitiesName}</p></div>
             )}
             {company.lastCompanyActivity && (
-              <div><p className="text-xs text-muted-foreground">Last Activity</p><p className="text-sm">{new Date(company.lastCompanyActivity).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("lastActivity")}</p><p className="text-sm">{new Date(company.lastCompanyActivity).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p></div>
             )}
             {company.createdBy && (
-              <div><p className="text-xs text-muted-foreground">Created By</p><p className="text-sm">{company.createdBy}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("createdBy")}</p><p className="text-sm">{company.createdBy}</p></div>
             )}
             {company.linkedinUrl && (
               <div className="col-span-2 sm:col-span-1">
-                <p className="text-xs text-muted-foreground">LinkedIn</p>
+                <p className="text-xs text-muted-foreground">{t("linkedin")}</p>
                 <a href={company.linkedinUrl} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1 text-sm text-primary hover:underline">
-                  View profile <ExternalLink className="h-3 w-3" />
+                  {t("viewProfile")} <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
             )}
             {company.updatedAt && (
-              <div><p className="text-xs text-muted-foreground">Last Updated</p><p className="text-sm text-muted-foreground">{new Date(company.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("lastUpdated")}</p><p className="text-sm text-muted-foreground">{new Date(company.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p></div>
             )}
           </div>
         </div>
@@ -253,7 +256,7 @@ export default function CompanyDetailPage() {
           <div className="flex items-center justify-between border-b px-5 py-3">
             <div className="flex items-center gap-2 font-medium">
               <Users className="h-4 w-4 text-primary" />
-              Contacts <span className="text-xs text-muted-foreground">({contacts.length})</span>
+              {t("contactsCount", { count: contacts.length })}
             </div>
             {perms.canWrite && (
               <button onClick={() => setShowAddContact(true)}
@@ -264,7 +267,7 @@ export default function CompanyDetailPage() {
           </div>
           <div className="divide-y divide-border">
             {contacts.length === 0 ? (
-              <p className="px-5 py-6 text-sm text-center text-muted-foreground">No contacts yet</p>
+              <p className="px-5 py-6 text-sm text-center text-muted-foreground">{t("noContacts")}</p>
             ) : contacts.map((c) => (
               <div key={c.id} className="flex items-center justify-between px-5 py-3 hover:bg-muted/30">
                 <div>
@@ -291,18 +294,18 @@ export default function CompanyDetailPage() {
           <div className="flex items-center justify-between border-b px-5 py-3">
             <div className="flex items-center gap-2 font-medium">
               <Briefcase className="h-4 w-4 text-primary" />
-              Deals <span className="text-xs text-muted-foreground">({deals.length})</span>
+              {t("dealsCount", { count: deals.length })}
             </div>
             {perms.canWrite && (
               <button onClick={() => setShowAddDeal(true)}
                 className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90">
-                <Plus className="h-3 w-3" /> Add Deal
+                <Plus className="h-3 w-3" /> {t("addDeal")}
               </button>
             )}
           </div>
           <div className="divide-y divide-border">
             {deals.length === 0 ? (
-              <p className="px-5 py-6 text-sm text-center text-muted-foreground">No deals yet</p>
+              <p className="px-5 py-6 text-sm text-center text-muted-foreground">{t("noDeals")}</p>
             ) : deals.map((d) => (
               <div key={d.id} className="flex items-center justify-between px-5 py-3 hover:bg-muted/30">
                 <div>
@@ -329,7 +332,7 @@ export default function CompanyDetailPage() {
       {activities.length > 0 && (
         <div className="rounded-xl border border-border bg-card">
           <div className="flex items-center gap-2 border-b px-5 py-3 font-medium">
-            <Activity className="h-4 w-4 text-primary" /> Recent Activities
+            <Activity className="h-4 w-4 text-primary" /> {t("recentActivities")}
           </div>
           <div className="divide-y divide-border">
             {activities.map((a) => (
@@ -353,17 +356,17 @@ export default function CompanyDetailPage() {
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="flex items-center gap-2 font-medium">
             <FileText className="h-4 w-4 text-primary" />
-            Quotes <span className="text-xs text-muted-foreground">({quotes.length})</span>
+            {t("quotesCount", { count: quotes.length })}
           </div>
           {perms.canWrite && (
             <button onClick={() => setShowNewQuote(true)}
               className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90">
-              <Plus className="h-3 w-3" /> New Quote
+              <Plus className="h-3 w-3" /> {t("newQuote")}
             </button>
           )}
         </div>
         {quotes.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-center text-muted-foreground">No quotes yet</p>
+          <p className="px-5 py-6 text-sm text-center text-muted-foreground">{t("noQuotes")}</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-muted/30">

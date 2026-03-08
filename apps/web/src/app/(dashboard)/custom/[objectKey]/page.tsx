@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2, Pencil, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 interface FieldDef {
   id: string;
@@ -23,6 +24,7 @@ interface Record {
 }
 
 export default function CustomObjectRecordsPage() {
+  const t = useTranslations("custom");
   const { objectKey } = useParams<{ objectKey: string }>();
   const [records, setRecords] = useState<Record[]>([]);
   const [fields, setFields] = useState<FieldDef[]>([]);
@@ -67,7 +69,7 @@ export default function CustomObjectRecordsPage() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Delete this record?")) return;
+    if (!confirm(t("deleteConfirm"))) return;
     await api.delete(`/api/v1/custom-objects/${objectKey}/records/${id}`);
     load();
   };
@@ -109,7 +111,7 @@ export default function CustomObjectRecordsPage() {
         </div>
         <button onClick={() => { setShowCreate(true); setEditId(null); setFormData({}); }}
           className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> New Record
+          <Plus className="h-4 w-4" /> {t("newRecord")}
         </button>
       </div>
 
@@ -143,7 +145,7 @@ export default function CustomObjectRecordsPage() {
       {loading ? (
         <div className="h-32 rounded-lg bg-muted animate-pulse" />
       ) : records.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-8 text-center">No records yet.</p>
+        <p className="text-sm text-muted-foreground py-8 text-center">{t("noRecords")}</p>
       ) : (
         <div className="rounded-lg border overflow-x-auto">
           <table className="w-full text-sm">

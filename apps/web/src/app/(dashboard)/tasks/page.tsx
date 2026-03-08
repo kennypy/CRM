@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
@@ -34,10 +35,10 @@ const DEMO_TASKS: Task[] = [
   { id: "7", title: "Intro call with Globex CFO",             priority: "high",   status: "in_progress", dueDate: new Date(Date.now() + 86400000 * 3).toISOString(),  assignee: "You", linkedEntity: { type: "contact", id: "c2", name: "CFO Globex"      }, createdAt: new Date().toISOString() },
 ];
 
-const PRIORITY_CFG: Record<Priority, { label: string; cls: string }> = {
-  high:   { label: "High",   cls: "bg-red-100 text-red-700"    },
-  medium: { label: "Medium", cls: "bg-yellow-100 text-yellow-700" },
-  low:    { label: "Low",    cls: "bg-green-100 text-green-700" },
+const PRIORITY_CFG: Record<Priority, { label: string; labelKey: string; cls: string }> = {
+  high:   { label: "High",   labelKey: "high",   cls: "bg-red-100 text-red-700"    },
+  medium: { label: "Medium", labelKey: "medium", cls: "bg-yellow-100 text-yellow-700" },
+  low:    { label: "Low",    labelKey: "low",    cls: "bg-green-100 text-green-700" },
 };
 
 // ── Linked entity search ──────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ function EntitySearch({ value, onChange }: {
   value: LinkedEntity | null;
   onChange: (v: LinkedEntity | null) => void;
 }) {
+  const t = useTranslations("tasks");
   const [search, setSearch]   = useState("");
   const [results, setResults] = useState<LinkedEntity[]>([]);
   const [open, setOpen]       = useState(false);
@@ -96,7 +98,7 @@ function EntitySearch({ value, onChange }: {
         onChange={(e) => handleChange(e.target.value)}
         onFocus={() => { if (results.length) setOpen(true); }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="Link to contact, company…"
+        placeholder={t("linkToContactPlaceholder")}
         className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
       />
       {open && results.length > 0 && (
@@ -121,6 +123,8 @@ function EntitySearch({ value, onChange }: {
 // ── Create Task Modal ─────────────────────────────────────────────────────────
 
 function CreateTaskModal({ onClose, onCreated }: { onClose: () => void; onCreated: (task: Task) => void }) {
+  const t = useTranslations("tasks");
+  const tc = useTranslations("common");
   const [title, setTitle]         = useState("");
   const [priority, setPriority]   = useState<Priority>("medium");
   const [dueDate, setDueDate]     = useState(new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 10));
@@ -176,7 +180,7 @@ function CreateTaskModal({ onClose, onCreated }: { onClose: () => void; onCreate
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <CheckSquare className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">New Task</h2>
+            <h2 className="font-semibold">{t("newTask")}</h2>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
@@ -185,34 +189,34 @@ function CreateTaskModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Task title *</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("taskTitle")} *</label>
             <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} required
-              placeholder="e.g. Follow up with Acme legal team"
+              placeholder={t("taskTitlePlaceholder")}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Priority</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("priority")}</label>
               <div className="flex gap-1">
                 {(["high", "medium", "low"] as Priority[]).map((p) => (
                   <button key={p} type="button" onClick={() => setPriority(p)}
                     className={cn("flex-1 rounded-md px-2 py-1.5 text-xs font-medium border capitalize transition-colors",
                       priority === p ? PRIORITY_CFG[p].cls + " border-current" : "border-border text-muted-foreground hover:bg-muted")}>
-                    {p}
+                    {t(PRIORITY_CFG[p].labelKey)}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Due date</label>
+              <label className="mb-1.5 block text-sm font-medium">{t("dueDate")}</label>
               <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Link to contact or account</label>
+            <label className="mb-1.5 block text-sm font-medium">{t("linkToContactOrAccount")}</label>
             <EntitySearch value={linked} onChange={setLinked} />
           </div>
 
@@ -225,12 +229,12 @@ function CreateTaskModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-              Cancel
+              {tc("cancel")}
             </button>
             <button type="submit" disabled={loading || !title.trim()}
               className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
                 (loading || !title.trim()) ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-              {loading ? "Creating…" : "Create Task"}
+              {loading ? t("creating") : t("createTask")}
             </button>
           </div>
         </form>
@@ -244,6 +248,8 @@ function CreateTaskModal({ onClose, onCreated }: { onClose: () => void; onCreate
 type Filter = "all" | "mine" | "overdue" | "done";
 
 export default function TasksPage() {
+  const t = useTranslations("tasks");
+  const tc = useTranslations("common");
   const [tasks, setTasks]         = useState<Task[]>([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState<Filter>("all");
@@ -271,11 +277,11 @@ export default function TasksPage() {
 
   const now = Date.now();
 
-  const filtered = tasks.filter((t) => {
-    if (filter === "mine")    return t.assignee === "You";
-    if (filter === "overdue") return t.status !== "done" && new Date(t.dueDate).getTime() < now;
-    if (filter === "done")    return t.status === "done";
-    return t.status !== "done";
+  const filtered = tasks.filter((task) => {
+    if (filter === "mine")    return task.assignee === "You";
+    if (filter === "overdue") return task.status !== "done" && new Date(task.dueDate).getTime() < now;
+    if (filter === "done")    return task.status === "done";
+    return task.status !== "done";
   });
 
   const toggle = async (id: string) => {
@@ -291,39 +297,46 @@ export default function TasksPage() {
     }
   };
 
-  const overdue = tasks.filter((t) => t.status !== "done" && new Date(t.dueDate).getTime() < now).length;
+  const overdue = tasks.filter((task) => task.status !== "done" && new Date(task.dueDate).getTime() < now).length;
+
+  const FILTER_LABELS: Record<Filter, string> = {
+    all:     t("filterOpen"),
+    mine:    t("filterMine"),
+    overdue: t("overdue"),
+    done:    t("completed"),
+  };
 
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CheckSquare className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Tasks</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           {overdue > 0 && (
             <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-              {overdue} overdue
+              {t("overdueCount", { count: overdue })}
             </span>
           )}
         </div>
         <button onClick={() => setShowModal(true)}
           className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> New Task
+          <Plus className="h-4 w-4" /> {t("newTask")}
         </button>
       </div>
 
       {showModal && (
         <CreateTaskModal
           onClose={() => setShowModal(false)}
-          onCreated={(t) => setTasks((ts) => [t, ...ts])}
+          onCreated={(task) => setTasks((ts) => [task, ...ts])}
         />
       )}
 
       <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
         {(["all", "mine", "overdue", "done"] as Filter[]).map((f) => (
           <button key={f} onClick={() => setFilter(f)}
-            className={cn("rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors",
+            className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
               filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            {f === "all" ? "Open" : f}
+            {FILTER_LABELS[f]}
           </button>
         ))}
       </div>
@@ -331,11 +344,11 @@ export default function TasksPage() {
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col gap-1">
           {loading ? (
-            <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">Loading tasks…</div>
+            <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">{t("loadingTasks")}</div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-16 text-center">
               <CheckCircle2 className="h-12 w-12 text-green-400" />
-              <p className="text-muted-foreground">All caught up!</p>
+              <p className="text-muted-foreground">{t("allCaughtUp")}</p>
             </div>
           ) : null}
           {!loading && filtered.length > 0 && (
@@ -345,7 +358,8 @@ export default function TasksPage() {
                 <div key={task.id}
                   className={cn("flex items-start gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-muted/30",
                     task.status === "done" && "opacity-60")}>
-                  <button onClick={() => toggle(task.id)} className="mt-0.5 shrink-0 text-muted-foreground hover:text-primary">
+                  <button onClick={() => toggle(task.id)} className="mt-0.5 shrink-0 text-muted-foreground hover:text-primary"
+                    title={task.status === "done" ? t("markIncomplete") : t("markComplete")}>
                     {task.status === "done"
                       ? <CheckCircle2 className="h-5 w-5 text-green-500" />
                       : <Circle className="h-5 w-5" />}
@@ -358,7 +372,7 @@ export default function TasksPage() {
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span className={cn("flex items-center gap-1", isOverdue ? "text-red-600" : "")}>
                         <Clock className="h-3 w-3" />
-                        {isOverdue ? "Overdue · " : "Due "}{formatRelativeTime(task.dueDate)}
+                        {isOverdue ? `${t("overdue")} · ` : `${t("due")} `}{formatRelativeTime(task.dueDate)}
                       </span>
                       <span className="flex items-center gap-1">
                         <Users className="h-3 w-3" /> {task.assignee}
@@ -372,7 +386,7 @@ export default function TasksPage() {
                   </div>
 
                   <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", PRIORITY_CFG[task.priority].cls)}>
-                    {PRIORITY_CFG[task.priority].label}
+                    {t(PRIORITY_CFG[task.priority].labelKey)}
                   </span>
                 </div>
               );

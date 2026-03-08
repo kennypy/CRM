@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useTenant } from "@/lib/tenant-context";
 import { usePermissions } from "@/lib/permissions";
+import { useTranslations } from "next-intl";
 import {
   Phone, PhoneOff, Mic, MicOff, Pause, Play, SkipForward,
   Volume2, VolumeX, Clock, Hash, Users, Search, ChevronRight,
@@ -260,6 +261,7 @@ const DTMF_KEYS = [
 /* ------------------------------------------------------------------ */
 
 export default function CallingPage() {
+  const t = useTranslations("calling");
   const tenant = useTenant();
   const { can } = usePermissions();
 
@@ -451,7 +453,7 @@ export default function CallingPage() {
         <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
           <div className="flex items-center gap-2">
             <Headphones className="w-5 h-5 text-primary" />
-            <h1 className="text-lg font-semibold">Power Dialer</h1>
+            <h1 className="text-lg font-semibold">{t("title")}</h1>
           </div>
 
           <div className="flex items-center gap-6">

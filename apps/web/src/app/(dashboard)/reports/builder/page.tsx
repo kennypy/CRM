@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useTranslations } from "next-intl";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -615,6 +616,7 @@ function Step3({ spec, editId, onSaved }: {
 // ── Main Builder ──────────────────────────────────────────────────────────────
 
 function BuilderContent() {
+  const t = useTranslations("reports");
   const router       = useRouter();
   const searchParams = useSearchParams();
   const editId       = searchParams.get("id");
@@ -714,7 +716,7 @@ function BuilderContent() {
           className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:bg-white/5 hover:text-white">
           <ArrowLeft className="h-3.5 w-3.5" />Back
         </button>
-        <h1 className="text-xl font-bold text-white">{editId ? "Edit Report" : "Report Builder"}</h1>
+        <h1 className="text-xl font-bold text-white">{editId ? "Edit Report" : t("reportBuilder")}</h1>
       </div>
 
       <StepIndicator step={step} total={3} />

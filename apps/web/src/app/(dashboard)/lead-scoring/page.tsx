@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
@@ -24,10 +25,11 @@ interface LeadScore {
 }
 
 function TierBadge({ tier }: { tier: string }) {
+  const t = useTranslations("leadScoring");
   const cfg: Record<string, { label: string; icon: React.FC<{ className?: string }>; cls: string }> = {
-    hot:  { label: "Hot",  icon: Flame,     cls: "bg-red-100 text-red-700" },
-    warm: { label: "Warm", icon: Minus,     cls: "bg-yellow-100 text-yellow-700" },
-    cold: { label: "Cold", icon: Snowflake, cls: "bg-blue-100 text-blue-700" },
+    hot:  { label: t("hot"),  icon: Flame,     cls: "bg-red-100 text-red-700" },
+    warm: { label: t("warm"), icon: Minus,     cls: "bg-yellow-100 text-yellow-700" },
+    cold: { label: t("cold"), icon: Snowflake, cls: "bg-blue-100 text-blue-700" },
   };
   const { label, icon: Icon, cls } = cfg[tier] ?? cfg.cold;
   return (
@@ -50,6 +52,7 @@ function ScoreBar({ score }: { score: number }) {
 }
 
 function FactorsPanel({ factors, onClose }: { factors: LeadScore["factors"]; onClose: () => void }) {
+  const t = useTranslations("leadScoring");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -57,12 +60,12 @@ function FactorsPanel({ factors, onClose }: { factors: LeadScore["factors"]; onC
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">Score Factors</h2>
+            <h2 className="font-semibold">{t("scoreFactors")}</h2>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-lg">&times;</button>
         </div>
         <div className="p-6 space-y-3 max-h-96 overflow-y-auto">
-          {factors.length === 0 && <p className="text-sm text-muted-foreground">No factor data available.</p>}
+          {factors.length === 0 && <p className="text-sm text-muted-foreground">{t("noFactors")}</p>}
           {factors.map((f, i) => (
             <div key={i} className="rounded-lg border p-3">
               <div className="flex items-center justify-between mb-1">
@@ -109,6 +112,8 @@ const DEMO_SCORES: LeadScore[] = [
 const PAGE_SIZE = 50;
 
 export default function LeadScoringPage() {
+  const t = useTranslations("leadScoring");
+  const tc = useTranslations("common");
   const [scores, setScores] = useState<LeadScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,7 +177,7 @@ export default function LeadScoringPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Target className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">AI Lead Scoring</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           {!loading && <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{total}</span>}
         </div>
         <div className="flex gap-2">
@@ -182,7 +187,7 @@ export default function LeadScoringPage() {
           <button onClick={handleComputeAll} disabled={computing}
             className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
             <Zap className="h-4 w-4" />
-            {computing ? "Computing…" : "Recompute All"}
+            {computing ? tc("loading") : t("recomputeAll")}
           </button>
         </div>
       </div>
@@ -190,13 +195,13 @@ export default function LeadScoringPage() {
       {/* Stats cards */}
       <div className="grid grid-cols-4 gap-3">
         <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Average Score</p>
+          <p className="text-xs text-muted-foreground">{t("averageScore")}</p>
           <p className="mt-1 text-2xl font-bold">{stats.avg}</p>
         </div>
         {[
-          { key: "hot", label: "Hot", icon: Flame, color: "text-red-600", bg: "bg-red-50", val: stats.hot },
-          { key: "warm", label: "Warm", icon: Minus, color: "text-yellow-600", bg: "bg-yellow-50", val: stats.warm },
-          { key: "cold", label: "Cold", icon: Snowflake, color: "text-blue-600", bg: "bg-blue-50", val: stats.cold },
+          { key: "hot", label: t("hot"), icon: Flame, color: "text-red-600", bg: "bg-red-50", val: stats.hot },
+          { key: "warm", label: t("warm"), icon: Minus, color: "text-yellow-600", bg: "bg-yellow-50", val: stats.warm },
+          { key: "cold", label: t("cold"), icon: Snowflake, color: "text-blue-600", bg: "bg-blue-50", val: stats.cold },
         ].map(({ key, label, icon: Icon, color, bg, val }) => (
           <button key={key} onClick={() => setTierFilter(tierFilter === key as any ? "all" : key as any)}
             className={cn("rounded-lg border p-4 text-left transition-all hover:shadow-sm", tierFilter === key ? `${bg} border-current` : "bg-card")}>
@@ -211,7 +216,7 @@ export default function LeadScoringPage() {
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Search scored leads…" value={search}
+        <input type="text" placeholder={t("searchPlaceholder")} value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
       </div>
@@ -228,12 +233,12 @@ export default function LeadScoringPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Lead</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Company</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Score</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Tier</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Top Factor</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Scored</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("lead")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("company")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("score")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("tier")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("topFactor")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("scored")}</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground"></th>
             </tr>
           </thead>
@@ -249,7 +254,7 @@ export default function LeadScoringPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                  No scored leads found
+                  {t("noLeads")}
                 </td>
               </tr>
             ) : (
@@ -279,7 +284,7 @@ export default function LeadScoringPage() {
                   <td className="px-4 py-3">
                     <button onClick={() => setSelectedFactors(s.factors)}
                       className="text-xs text-primary hover:underline">
-                      View factors
+                      {t("viewFactors")}
                     </button>
                   </td>
                 </tr>
@@ -295,11 +300,11 @@ export default function LeadScoringPage() {
           <div className="flex gap-2">
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1 || loading}
               className="flex items-center gap-1 rounded-md border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
-              <ChevronLeft className="h-4 w-4" /> Previous
+              <ChevronLeft className="h-4 w-4" /> {tc("previous")}
             </button>
             <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}
               className="flex items-center gap-1 rounded-md border px-3 py-1.5 hover:bg-muted disabled:opacity-40">
-              Next <ChevronRight className="h-4 w-4" />
+              {tc("next")} <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>

@@ -3,6 +3,7 @@
 import { Suspense, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { setAuth } from "@/lib/auth";
 import { useTenant } from "@/lib/tenant-context";
@@ -13,6 +14,7 @@ function LoginForm() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const { refresh }  = useTenant();
+  const t = useTranslations("auth");
 
   // Validate the ?next= param is a safe relative path (prevents open redirect CWE-601)
   const rawNext = searchParams.get("next") ?? "/";
@@ -51,7 +53,7 @@ function LoginForm() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError((data?.error?.message ?? data?.error) ?? "Invalid credentials");
+        setError((data?.error?.message ?? data?.error) ?? t("invalidCredentials"));
         return;
       }
 
@@ -73,7 +75,7 @@ function LoginForm() {
 
       router.replace(next);
     } catch {
-      setError("Unable to reach the server. Please try again.");
+      setError(t("serverError"));
     } finally {
       setLoading(false);
     }
@@ -83,7 +85,7 @@ function LoginForm() {
     <form ref={formRef} onSubmit={handleSubmit} className="space-y-4" suppressHydrationWarning>
       {/* Workspace */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium">Workspace</label>
+        <label className="mb-1.5 block text-sm font-medium">{t("workspace")}</label>
         <div className="flex items-center rounded-lg border border-border overflow-hidden focus-within:ring-2 focus-within:ring-primary/30">
           <span className="border-r bg-muted px-3 py-2 text-sm text-muted-foreground select-none">
             nexcrm.app /
@@ -92,7 +94,7 @@ function LoginForm() {
             type="text"
             name="tenantSlug"
             autoComplete="organization"
-            placeholder="your-team"
+            placeholder={t("workspacePlaceholder")}
             value={form.tenantSlug}
             onChange={(e) => setForm((f) => ({ ...f, tenantSlug: e.target.value }))}
             required
@@ -104,12 +106,12 @@ function LoginForm() {
 
       {/* Email */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium">Email</label>
+        <label className="mb-1.5 block text-sm font-medium">{t("email")}</label>
         <input
           type="email"
           name="email"
           autoComplete="email"
-          placeholder="you@company.com"
+          placeholder={t("emailPlaceholder")}
           value={form.email}
           onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
           required
@@ -121,10 +123,10 @@ function LoginForm() {
       {/* Password */}
       <div>
         <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-sm font-medium">Password</label>
+          <label className="text-sm font-medium">{t("password")}</label>
           <button type="button" className="text-xs text-primary hover:underline" tabIndex={-1}
-            onClick={() => alert("Contact your workspace admin to reset your password, or email support@nexcrm.dev")}>
-            Forgot password?
+            onClick={() => alert(t("forgotPasswordAlert"))}>
+            {t("forgotPassword")}
           </button>
         </div>
         <div className="relative">
@@ -166,13 +168,15 @@ function LoginForm() {
           loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90"
         )}
       >
-        {loading ? "Signing in…" : "Sign in"}
+        {loading ? t("signingIn") : t("signIn")}
       </button>
     </form>
   );
 }
 
 export default function LoginPage() {
+  const t = useTranslations("auth");
+
   return (
     <div className="w-full max-w-md">
       <div className="rounded-2xl border bg-card p-8 shadow-xl">
@@ -182,7 +186,7 @@ export default function LoginPage() {
             <Zap className="h-6 w-6 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-bold">NexCRM</h1>
-          <p className="text-sm text-muted-foreground">AI-Native Revenue OS</p>
+          <p className="text-sm text-muted-foreground">{t("tagline")}</p>
         </div>
 
         <Suspense fallback={<div className="h-64 animate-pulse rounded-lg bg-muted" />}>
@@ -190,9 +194,9 @@ export default function LoginPage() {
         </Suspense>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          Don&apos;t have a workspace?{" "}
+          {t("noWorkspace")}{" "}
           <Link href="/register" className="font-medium text-primary hover:underline">
-            Create one free
+            {t("createFree")}
           </Link>
         </p>
       </div>

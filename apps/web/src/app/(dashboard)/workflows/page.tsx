@@ -8,6 +8,7 @@ import {
   ArrowRight, X, Pencil, Trash2, Loader2, RefreshCw,
 } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
+import { useTranslations } from "next-intl";
 import { getStoredUser } from "@/lib/auth";
 import { WorkflowActivePanel } from "@/components/workflows/workflow-active-panel";
 
@@ -273,6 +274,7 @@ function WorkflowModal({ initial, onClose, onSave }: WorkflowModalProps) {
 type Filter = "all" | "deal" | "contact" | "activity" | "ai";
 
 export default function WorkflowsPage() {
+  const t = useTranslations("workflows");
   const perms = usePermissions();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -402,7 +404,7 @@ export default function WorkflowsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Layers className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">Workflows</h1>
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
           {!loading && (
             <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
               {active} active
@@ -423,7 +425,7 @@ export default function WorkflowsPage() {
             disabled={mutating}
             className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
           >
-            <Plus className="h-4 w-4" /> New Workflow
+            <Plus className="h-4 w-4" /> {t("newWorkflow")}
           </button>
         </div>
       </div>
@@ -493,7 +495,7 @@ export default function WorkflowsPage() {
               onClick={() => setShowCreate(true)}
               className="mt-2 flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
             >
-              <Plus className="h-4 w-4" /> New Workflow
+              <Plus className="h-4 w-4" /> {t("newWorkflow")}
             </button>
           </div>
         </div>
