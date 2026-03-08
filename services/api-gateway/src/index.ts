@@ -34,6 +34,11 @@ import { outboundWebhooksRoutes } from "./routes/outbound-webhooks";
 import { billingRoutes }          from "./routes/billing";
 import { exportRoutes }           from "./routes/export";
 import { apiKeysRoutes }          from "./routes/api-keys";
+import { complianceRoutes }       from "./routes/compliance";
+import { forecastingRoutes }      from "./routes/forecasting";
+import { coachingRoutes }         from "./routes/coaching";
+import { territoriesRoutes }      from "./routes/territories";
+import { notificationsRoutes }    from "./routes/notifications";
 import { errorHandler }           from "./middleware/error-handler";
 import { authMiddleware }         from "./middleware/auth";
 import { typeDefs }               from "./graphql/schema";
@@ -162,6 +167,11 @@ async function bootstrap() {
   await server.register(slackRoutes,            { prefix: "/api/v1/integrations/slack" });
   await server.register(importRoutes,           { prefix: "/api/v1/import" });
   await server.register(bulkRoutes,             { prefix: "/api/v1/bulk" });
+  await server.register(complianceRoutes,       { prefix: "/api/v1" });
+  await server.register(forecastingRoutes,      { prefix: "/api/v1/forecasting" });
+  await server.register(coachingRoutes,         { prefix: "/api/v1/coaching" });
+  await server.register(territoriesRoutes,      { prefix: "/api/v1/territories" });
+  await server.register(notificationsRoutes,    { prefix: "/api/v1/notifications" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
