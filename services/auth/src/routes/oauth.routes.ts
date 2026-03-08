@@ -19,6 +19,7 @@ import {
   scopesForRole,
 } from "../users";
 import { createRefreshToken, buildJWTPayload } from "../tokens";
+import { redis } from "../lib/redis";
 
 // ── OAuth token encryption (AES-256-GCM) ──────────────────────────────────────
 // Tokens from Google / Microsoft are encrypted before being persisted to the DB.
@@ -66,36 +67,21 @@ const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.readonly",
 ].join(" ");
 
-// ── In-memory state store ─────────────────────────────────────────────────────
-// TODO(production): Replace both Maps with Redis-backed stores using EXPIRE and
-// atomic SETNX to support multi-instance deployments. Current in-memory approach
-// means OAuth state/sessions are lost on service restart and broken across replicas.
-// Use: SET key value EX 600 NX  (state, 10-min TTL)
-//      SET key value EX 15  NX  (session, 15-second TTL)
-const stateStore = new Map<string, { tenantId: string; createdAt: number }>();
-
-/**
- * One-time session store — securely hands off tokens to the Next.js app
- * without exposing them in the URL fragment or query string.
- *
- * Flow:
- *   1. OAuth callback creates an entry here (15-second TTL, random ID)
- *   2. Auth service redirects to {APP_URL}/api/auth/oauth-callback?session=<id>
- *   3. Next.js Route Handler calls GET /auth/oauth-session/:id server-to-server
- *   4. Entry is consumed (deleted on first read) — one-time use only
- *   5. Next.js sets HttpOnly cookies and redirects the user to the app
- *
- * Only the internal Next.js server can reach /auth/oauth-session — the auth service
- * is not publicly exposed — so intercepting the session ID in the redirect URL
- * does not give an attacker access to the tokens.
- *
- * TODO(production): Replace with Redis — see comment above stateStore.
- */
-const oauthSessionStore = new Map<string, {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number; // epoch ms — sessions expire after 15 seconds
-}>();
+// ── Redis-backed state and session stores ─────────────────────────────────────
+// State and session entries are stored in Redis with automatic TTL expiration.
+// This supports multi-instance deployments and survives service restarts.
+// State entries: SET oauth:state:<state> <json> EX 600 NX  (10-min TTL)
+// Session entries: SET oauth:session:<id> <json> EX 15 NX  (15-second TTL)
+//
+// One-time session store — securely hands off tokens to the Next.js app
+// without exposing them in the URL fragment or query string.
+//
+// Flow:
+//   1. OAuth callback creates an entry here (15-second TTL, random ID)
+//   2. Auth service redirects to {APP_URL}/api/auth/oauth-callback?session=<id>
+//   3. Next.js Route Handler calls GET /auth/oauth-session/:id server-to-server
+//   4. Entry is consumed (deleted on first read) — one-time use only
+//   5. Next.js sets HttpOnly cookies and redirects the user to the app
 
 export async function oauthRoutes(server: FastifyInstance) {
   const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
@@ -122,11 +108,11 @@ export async function oauthRoutes(server: FastifyInstance) {
     }
 
     const state = crypto.randomBytes(16).toString("hex");
-    stateStore.set(state, { tenantId, createdAt: Date.now() });
-    // Clean up stale states (> 10 min)
-    for (const [k, v] of stateStore.entries()) {
-      if (Date.now() - v.createdAt > 10 * 60_000) stateStore.delete(k);
-    }
+    await redis.set(
+      `oauth:state:${state}`,
+      JSON.stringify({ tenantId }),
+      "EX", 600, // 10-minute TTL
+    );
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -153,11 +139,12 @@ export async function oauthRoutes(server: FastifyInstance) {
       return reply.redirect(`${process.env.APP_URL}/settings/integrations?error=oauth_denied`);
     }
 
-    const stateData = stateStore.get(state);
-    if (!stateData) {
+    const stateJson = await redis.get(`oauth:state:${state}`);
+    if (!stateJson) {
       return reply.status(400).send({ error: "Invalid or expired OAuth state" });
     }
-    stateStore.delete(state);
+    await redis.del(`oauth:state:${state}`);
+    const stateData = JSON.parse(stateJson) as { tenantId: string };
 
     // Exchange code for tokens
     let googleTokens: {
@@ -253,11 +240,11 @@ export async function oauthRoutes(server: FastifyInstance) {
     // Create a one-time session entry so the Next.js server can exchange it for
     // HttpOnly cookies without exposing tokens in the URL fragment or query string.
     const sessionId = crypto.randomBytes(32).toString("hex");
-    oauthSessionStore.set(sessionId, {
-      accessToken,
-      refreshToken,
-      expiresAt: Date.now() + 15_000, // 15-second window is plenty for server-to-server exchange
-    });
+    await redis.set(
+      `oauth:session:${sessionId}`,
+      JSON.stringify({ accessToken, refreshToken }),
+      "EX", 15, // 15-second TTL — plenty for server-to-server exchange
+    );
 
     const appUrl = process.env.APP_URL ?? "http://localhost:3000";
     return reply.redirect(`${appUrl}/api/auth/oauth-callback?session=${sessionId}`);
@@ -270,18 +257,18 @@ export async function oauthRoutes(server: FastifyInstance) {
    */
   server.get("/oauth-session/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const entry = oauthSessionStore.get(id);
+    // Atomically get and delete (one-time use) via pipeline
+    const pipeline = redis.pipeline();
+    pipeline.get(`oauth:session:${id}`);
+    pipeline.del(`oauth:session:${id}`);
+    const results = await pipeline.exec();
+    const sessionJson = results?.[0]?.[1] as string | null;
 
-    if (!entry) {
+    if (!sessionJson) {
       return reply.status(404).send({ error: "Session not found or already consumed" });
     }
 
-    oauthSessionStore.delete(id);
-
-    if (Date.now() > entry.expiresAt) {
-      return reply.status(410).send({ error: "Session expired" });
-    }
-
+    const entry = JSON.parse(sessionJson) as { accessToken: string; refreshToken: string };
     return reply.send({ accessToken: entry.accessToken, refreshToken: entry.refreshToken });
   });
 }

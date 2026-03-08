@@ -582,13 +582,13 @@ Source: `services/api-gateway/src/workers/webhook-delivery.ts`,
 
 #### Phase 2 (Months 7-12)
 
-- [ ] Replace in-memory OAuth state and session stores with Redis (`SET key value EX ttl NX`)
-- [ ] Connect `@fastify/rate-limit` to a shared Redis store for global rate limiting
-- [ ] Add per-email rate limiting on password reset (e.g., 3 per email per hour)
-- [ ] Disable GraphQL introspection in production
-- [ ] Require `REDIS_URL` env var in production for all worker services
-- [ ] GDPR DSR automation (data subject access requests)
-- [ ] CCPA compliance tooling
+- [x] Replace in-memory OAuth state and session stores with Redis (`SET key value EX ttl NX`)
+- [x] Connect `@fastify/rate-limit` to a shared Redis store for global rate limiting
+- [x] Add per-email rate limiting on password reset (e.g., 3 per email per hour)
+- [x] Disable GraphQL introspection in production
+- [x] Require `REDIS_URL` env var in production for all worker services
+- [x] GDPR DSR automation (data subject access requests)
+- [x] CCPA compliance tooling
 
 #### Phase 3 (Months 13-18)
 

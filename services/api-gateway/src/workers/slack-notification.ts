@@ -6,19 +6,9 @@
 import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
 import { sendDM } from "../lib/slack-client";
+import { redisConnection } from "../lib/redis";
 
 const QUEUE_NAME = "nexcrm-slack-notifications";
-
-function redisConnection() {
-  const url = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
-  const u = new URL(url);
-  return {
-    host:                 u.hostname || "localhost",
-    port:                 parseInt(u.port || "6379", 10),
-    password:             u.password ? decodeURIComponent(u.password) : undefined,
-    maxRetriesPerRequest: null as null,
-  };
-}
 
 export const slackNotificationQueue = new Queue(QUEUE_NAME, {
   connection: redisConnection(),

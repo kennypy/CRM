@@ -12,6 +12,7 @@ import { authRoutes } from "./routes/auth.routes";
 import { oauthRoutes } from "./routes/oauth.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { internalRoutes } from "./routes/internal.routes";
+import { redis } from "./lib/redis";
 
 const server = Fastify({
   logger: {
@@ -67,6 +68,7 @@ async function bootstrap() {
   await server.register(rateLimit, {
     max: 20,
     timeWindow: "1 minute",
+    redis,
     keyGenerator: (req) => req.ip ?? "unknown",
   });
 

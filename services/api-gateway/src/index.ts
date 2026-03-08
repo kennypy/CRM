@@ -58,6 +58,9 @@ import { startWorkflowEngine }        from "./workers/workflow-engine";
 import { startSlackNotificationWorker } from "./workers/slack-notification";
 import { startImportProcessorWorker }   from "./workers/import-processor";
 import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
+import { startDsrProcessorWorker }      from "./workers/dsr-processor";
+import { redis }                        from "./lib/redis";
+import { NoSchemaIntrospectionCustomRule } from "graphql";
 
 const server = Fastify({
   logger: {
@@ -116,6 +119,7 @@ async function bootstrap() {
   await server.register(rateLimit, {
     max: 200,
     timeWindow: "1 minute",
+    redis,
     // Key on verified JWT sub (user ID) — not a client-supplied header.
     // Falls back to IP for unauthenticated/pre-auth requests.
     keyGenerator: (req) => {
@@ -191,6 +195,9 @@ async function bootstrap() {
     resolvers,
     path: "/graphql",
     graphiql: isDev,
+    // Disable schema introspection in production — prevents attackers from
+    // enumerating the entire API schema via __schema / __type queries.
+    validationRules: isDev ? [] : [NoSchemaIntrospectionCustomRule],
     context: (request) => {
       const user = request.user;
       return {
@@ -210,6 +217,7 @@ async function bootstrap() {
   startSlackNotificationWorker();
   startImportProcessorWorker();
   startCloseDateCheckerWorker();
+  startDsrProcessorWorker();
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

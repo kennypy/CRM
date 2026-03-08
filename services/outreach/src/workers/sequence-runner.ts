@@ -32,14 +32,19 @@ const BATCH_SIZE  = 50;
 const APP_URL     = () => process.env.APP_URL ?? "http://localhost:3000";
 
 function redisConnection() {
-  const url = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
-  const u   = new URL(url);
+  const url = process.env.REDIS_URL;
+  if (!url && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "FATAL: REDIS_URL environment variable is not set. " +
+      "Refusing to start in production with hardcoded dev credentials.",
+    );
+  }
+  const redisUrl = url ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
+  const u = new URL(redisUrl);
   return {
     host:     u.hostname || "localhost",
     port:     parseInt(u.port || "6379", 10),
     password: u.password ? decodeURIComponent(u.password) : undefined,
-    // Required by BullMQ — disables per-command retry so the worker
-    // handles failures at the job level rather than the Redis level.
     maxRetriesPerRequest: null as null,
   };
 }

@@ -7,20 +7,10 @@
 import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
 import { slackNotificationQueue } from "./slack-notification";
+import { redisConnection } from "../lib/redis";
 
 const QUEUE_NAME = "nexcrm-close-date-checker";
 const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
-
-function redisConnection() {
-  const url = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
-  const u = new URL(url);
-  return {
-    host:                 u.hostname || "localhost",
-    port:                 parseInt(u.port || "6379", 10),
-    password:             u.password ? decodeURIComponent(u.password) : undefined,
-    maxRetriesPerRequest: null as null,
-  };
-}
 
 export const closeDateCheckerQueue = new Queue(QUEUE_NAME, {
   connection: redisConnection(),
