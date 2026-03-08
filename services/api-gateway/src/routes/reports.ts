@@ -306,7 +306,7 @@ async function fetchSQLSource(
 }
 
 // ── Core execution engine ─────────────────────────────────────────────────────
-async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
+export async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
   rows: Record<string, unknown>[];
   columns: { key: string; label: string }[];
   rowCount: number;

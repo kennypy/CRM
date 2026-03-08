@@ -73,6 +73,18 @@ function matchesTrigger(workflow: WorkflowDef, event: CrmEvent): boolean {
     case "activity.created":
       return event.event_type === "activity.created" && event.entity_type === "activity";
 
+    case "contact.updated":
+      return event.event_type === "contact.updated" && event.entity_type === "person";
+
+    case "lead.lifecycle_changed":
+      return event.event_type === "contact.updated" &&
+        event.entity_type === "person" &&
+        event.payload?.lifecycleStage !== undefined &&
+        (!trigger.toStage || event.payload.lifecycleStage === trigger.toStage);
+
+    case "company.updated":
+      return event.event_type === "company.updated" && event.entity_type === "company";
+
     case "score.threshold":
       return event.event_type === "reality_score.updated" &&
         typeof event.payload?.score === "number" &&

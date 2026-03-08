@@ -62,6 +62,8 @@ import { startSlackNotificationWorker } from "./workers/slack-notification";
 import { startImportProcessorWorker }   from "./workers/import-processor";
 import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
 import { startDsrProcessorWorker }      from "./workers/dsr-processor";
+import { startScheduledReportsWorker }   from "./workers/scheduled-reports";
+import { dedupRoutes }                   from "./routes/dedup";
 import { redis }                        from "./lib/redis";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
 
@@ -191,6 +193,7 @@ async function bootstrap() {
   await server.register(coachingRoutes,         { prefix: "/api/v1/coaching" });
   await server.register(territoriesRoutes,      { prefix: "/api/v1/territories" });
   await server.register(notificationsRoutes,    { prefix: "/api/v1/notifications" });
+  await server.register(dedupRoutes,             { prefix: "/api/v1/admin" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
@@ -224,6 +227,7 @@ async function bootstrap() {
   startImportProcessorWorker();
   startCloseDateCheckerWorker();
   startDsrProcessorWorker();
+  startScheduledReportsWorker();
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

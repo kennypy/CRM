@@ -16,6 +16,8 @@ class ContactDetailScreen extends ConsumerStatefulWidget {
 
 class _ContactDetailScreenState extends ConsumerState<ContactDetailScreen> {
   Map<String, dynamic>? _contact;
+  List<String> _tags = [];
+  List<Map<String, dynamic>> _notes = [];
   bool _loading = true;
   String? _error;
 
@@ -30,10 +32,69 @@ class _ContactDetailScreenState extends ConsumerState<ContactDetailScreen> {
     try {
       final res = await ApiClient.instance.dio.get('${Endpoints.contacts}/${widget.contactId}');
       if (mounted) setState(() => _contact = res.data['data']);
+      // Load tags
+      try {
+        final tagRes = await ApiClient.instance.dio.get('${Endpoints.tags}/contact/${widget.contactId}');
+        if (mounted) {
+          final tagData = tagRes.data['data'] ?? [];
+          setState(() => _tags = List<String>.from(tagData.map((t) => t is String ? t : t['tag'] ?? '')));
+        }
+      } catch (_) {}
+      // Load notes
+      try {
+        final noteRes = await ApiClient.instance.dio.get('${Endpoints.notes}/contact/${widget.contactId}');
+        if (mounted) {
+          setState(() => _notes = List<Map<String, dynamic>>.from(noteRes.data['data'] ?? []));
+        }
+      } catch (_) {}
     } catch (e) {
       if (mounted) setState(() => _error = 'Failed to load contact');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _addTag() async {
+    final ctl = TextEditingController();
+    final tag = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Tag'),
+        content: TextField(
+          controller: ctl,
+          decoration: const InputDecoration(hintText: 'Tag name'),
+          autofocus: true,
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: const Text('Add')),
+        ],
+      ),
+    );
+    if (tag == null || tag.isEmpty) return;
+    try {
+      await ApiClient.instance.dio.post('${Endpoints.tags}/contact/${widget.contactId}', data: {'tags': [tag]});
+      setState(() => _tags.add(tag));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to add tag')));
+    }
+  }
+
+  Future<void> _removeTag(String tag) async {
+    try {
+      await ApiClient.instance.dio.delete('${Endpoints.tags}/contact/${widget.contactId}/$tag');
+      setState(() => _tags.remove(tag));
+    } catch (_) {}
+  }
+
+  String _formatDate(dynamic dateStr) {
+    if (dateStr == null) return '';
+    try {
+      final d = DateTime.parse(dateStr.toString());
+      return '${d.day}/${d.month}/${d.year}';
+    } catch (_) {
+      return '';
     }
   }
 
@@ -273,6 +334,92 @@ class _ContactDetailScreenState extends ConsumerState<ContactDetailScreen> {
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Tags section
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('Tags',
+                                          style: theme.textTheme.titleSmall
+                                              ?.copyWith(fontWeight: FontWeight.w600)),
+                                      IconButton(
+                                        icon: const Icon(Icons.add, size: 20),
+                                        onPressed: _addTag,
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _tags.isEmpty
+                                      ? Text('No tags',
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                              color: theme.colorScheme.onSurfaceVariant))
+                                      : Wrap(
+                                          spacing: 6,
+                                          runSpacing: 6,
+                                          children: _tags.map((tag) => Chip(
+                                            label: Text(tag, style: const TextStyle(fontSize: 12)),
+                                            deleteIcon: const Icon(Icons.close, size: 14),
+                                            onDeleted: () => _removeTag(tag),
+                                            visualDensity: VisualDensity.compact,
+                                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          )).toList(),
+                                        ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Notes section
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Notes',
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 8),
+                                  if (_notes.isEmpty)
+                                    Text('No notes yet',
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                            color: theme.colorScheme.onSurfaceVariant))
+                                  else
+                                    ..._notes.take(5).map((note) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            note['content'] ?? '',
+                                            style: theme.textTheme.bodyMedium,
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${note['authorName'] ?? 'Unknown'} • ${_formatDate(note['createdAt'])}',
+                                            style: theme.textTheme.bodySmall?.copyWith(
+                                                color: theme.colorScheme.onSurfaceVariant,
+                                                fontSize: 11),
+                                          ),
+                                          if (note != _notes.last) const Divider(height: 16),
+                                        ],
+                                      ),
+                                    )),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),

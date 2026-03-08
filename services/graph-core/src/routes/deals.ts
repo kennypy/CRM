@@ -316,6 +316,14 @@ export async function dealsRoutes(server: FastifyInstance) {
        RETURN {id: d.id}`,
       { id, tenantId, now: new Date().toISOString() }
     );
+
+    // Emit event for workflow engine
+    await pool.query(
+      `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
+       VALUES ($1, 'deal.deleted', 'user', 'deal', $2, '{}')`,
+      [tenantId, id]
+    ).catch(() => {});
+
     return reply.status(204).send();
   });
 

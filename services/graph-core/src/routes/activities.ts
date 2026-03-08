@@ -388,6 +388,13 @@ export async function activitiesRoutes(server: FastifyInstance) {
       values
     );
 
+    // Emit event for workflow engine
+    await pool.query(
+      `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
+       VALUES ($1, 'activity.updated', 'user', 'activity', $2, $3)`,
+      [tenantId, id, JSON.stringify(f)]
+    ).catch((err: any) => console.error("crm_events insert failed:", err.message));
+
     const { rows } = await pool.query(
       `SELECT a.*, COALESCE(
          json_agg(
@@ -429,6 +436,14 @@ export async function activitiesRoutes(server: FastifyInstance) {
        WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
       [id, tenantId]
     );
+
+    // Emit event for workflow engine
+    await pool.query(
+      `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
+       VALUES ($1, 'activity.deleted', 'user', 'activity', $2, '{}')`,
+      [tenantId, id]
+    ).catch((err: any) => console.error("crm_events insert failed:", err.message));
+
     return reply.status(204).send();
   });
 }

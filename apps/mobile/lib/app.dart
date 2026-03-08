@@ -45,6 +45,7 @@ import 'features/admin/admin_screen.dart';
 import 'features/leads/leads_screen.dart';
 import 'features/review/review_queue_screen.dart';
 import 'features/import/import_screen.dart';
+import 'features/marketing/campaigns_screen.dart';
 
 class NexCRMApp extends ConsumerWidget {
   const NexCRMApp({super.key});
@@ -177,6 +178,7 @@ class NexCRMApp extends ConsumerWidget {
         GoRoute(path: '/leads', builder: (_, __) => const LeadsScreen()),
         GoRoute(path: '/review', builder: (_, __) => const ReviewQueueScreen()),
         GoRoute(path: '/import', builder: (_, __) => const ImportScreen()),
+        GoRoute(path: '/marketing', builder: (_, __) => const CampaignsScreen()),
 
         // Deal routes (top-level since pipeline is a shell branch)
         GoRoute(path: '/deals/new', builder: (_, __) => const DealFormScreen()),
@@ -267,6 +269,7 @@ class _MoreScreen extends ConsumerWidget {
           _MoreTile(icon: Icons.bar_chart, label: 'Reports', route: '/reports'),
           _MoreTile(icon: Icons.rate_review, label: 'Review Queue', route: '/review'),
           _MoreTile(icon: Icons.upload_file, label: 'Import', route: '/import'),
+          _MoreTile(icon: Icons.campaign, label: 'Marketing', route: '/marketing'),
           _MoreTile(icon: Icons.auto_awesome, label: 'AI Assistant', route: '/ai'),
           const Divider(),
           _MoreTile(icon: Icons.settings, label: 'Settings', route: '/settings'),
