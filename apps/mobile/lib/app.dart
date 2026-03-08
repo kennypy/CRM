@@ -49,6 +49,7 @@ import 'features/review/review_queue_screen.dart';
 import 'features/import/import_screen.dart';
 import 'features/marketing/campaigns_screen.dart';
 import 'features/notifications/notifications_screen.dart';
+import 'features/custom_objects/custom_objects_browser_screen.dart';
 
 class NexCRMApp extends ConsumerWidget {
   const NexCRMApp({super.key});
@@ -195,6 +196,12 @@ class NexCRMApp extends ConsumerWidget {
         GoRoute(path: '/import', builder: (_, __) => const ImportScreen()),
         GoRoute(path: '/marketing', builder: (_, __) => const CampaignsScreen()),
         GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
+        GoRoute(
+          path: '/custom/:objectKey',
+          builder: (_, state) => CustomObjectsBrowserScreen(
+            objectKey: state.pathParameters['objectKey']!,
+          ),
+        ),
 
         // Deal routes (top-level since pipeline is a shell branch)
         GoRoute(path: '/deals/new', builder: (_, __) => const DealFormScreen()),
