@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import {
   Layers, Plus, RefreshCw, AlertCircle, Play, Pause,
-  Archive, Users, BarChart3, Settings2, ChevronRight, Mail, Phone, Linkedin,
+  Archive, Users, BarChart3, Settings2, ChevronRight, Mail, Phone, Linkedin, MessageSquare, Clock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -324,7 +324,7 @@ export default function SequencesPage() {
                   </div>
                 ) : (
                   steps.map((step: any, i) => {
-                    const TypeIcon = { email: Mail, call: Phone, linkedin_task: Linkedin }[step.type as string] ?? Mail;
+                    const TypeIcon = { email: Mail, call: Phone, linkedin_task: Linkedin, sms: MessageSquare, task: Clock }[step.type as string] ?? Mail;
                     return (
                       <div key={step.id} className="flex items-center gap-3 rounded-lg border border-border p-3">
                         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
