@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db";
+import { redis } from "../lib/redis";
 
 // ── Stripe signature verification ─────────────────────────────────────────────
 
@@ -232,16 +233,12 @@ export async function webhookRoutes(fastify: FastifyInstance) {
 
     // Publish to Redis Stream for async meeting summary processing
     try {
-      const redisUrl = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
-      const { default: Redis } = await import("ioredis");
-      const redis = new Redis(redisUrl);
       await redis.xadd(
         "nexcrm:zoom_events",
         "*",
         "payload", rawBody.toString("utf8"),
         "event_type", (request.body as any)?.event ?? "unknown"
       );
-      await redis.quit();
     } catch (err: any) {
       fastify.log.error({ err: err.message }, "zoom.webhook.redis_publish_error");
     }
@@ -293,16 +290,12 @@ export async function webhookRoutes(fastify: FastifyInstance) {
 
     // Publish to Redis Stream for async processing
     try {
-      const redisUrl = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
-      const { default: Redis } = await import("ioredis");
-      const redis = new Redis(redisUrl);
       await redis.xadd(
         "nexcrm:slack_events",
         "*",
         "payload", rawBody.toString("utf8"),
         "event_type", String(body?.type ?? "unknown")
       );
-      await redis.quit();
     } catch (err: any) {
       fastify.log.error({ err: err.message }, "slack.webhook.redis_publish_error");
     }

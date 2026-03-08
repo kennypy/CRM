@@ -22,8 +22,13 @@
  * POST  /api/v1/compliance/retention       — save retention policy
  *
  * GET   /api/v1/compliance/dsr             — GDPR data subject requests
- * POST  /api/v1/compliance/dsr             — create DSR
+ * POST  /api/v1/compliance/dsr             — create DSR (auto-enqueues worker)
  * PATCH /api/v1/compliance/dsr/:id         — update DSR status
+ * GET   /api/v1/compliance/dsr/:id/download — download completed DSR data
+ *
+ * GET   /api/v1/compliance/ccpa/status     — CCPA compliance posture
+ * POST  /api/v1/compliance/ccpa/opt-out    — mark contact as do-not-sell
+ * GET   /api/v1/compliance/ccpa/disclosures — data categories & sharing
  *
  * GET   /api/v1/compliance/encryption      — encryption status
  */
@@ -31,6 +36,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
+import { dsrQueue } from "../workers/dsr-processor";
 
 // ── SOC2 Control definitions ────────────────────────────────────────────────
 
@@ -71,6 +77,28 @@ const SOC2_CONTROLS = [
   { id: "BC-01", category: "Business Continuity", name: "Disaster Recovery", description: "Multi-region failover with RTO < 4h, RPO < 1h" },
   { id: "BC-02", category: "Business Continuity", name: "Backup Testing", description: "Monthly backup restoration testing" },
 ];
+
+// Helper for DSR download — gathers all data associated with a subject email
+async function gatherSubjectDataForDownload(tenantId: string, subjectEmail: string): Promise<Record<string, unknown>> {
+  const data: Record<string, unknown> = {};
+  try {
+    const { rows: contacts } = await pool.query(
+      `SELECT * FROM contacts WHERE tenant_id = $1 AND email = $2`, [tenantId, subjectEmail]);
+    data.contacts = contacts;
+    if (contacts.length > 0) {
+      const ids = contacts.map((c: any) => c.id);
+      const { rows: activities } = await pool.query(
+        `SELECT * FROM activities WHERE tenant_id = $1 AND contact_id = ANY($2)`, [tenantId, ids]);
+      data.activities = activities;
+    }
+    const { rows: emails } = await pool.query(
+      `SELECT id, thread_id, direction, from_email, to_recipients, subject, body_text, sent_at, created_at
+       FROM email_messages WHERE tenant_id = $1 AND (from_email = $2 OR to_recipients::text ILIKE $3)`,
+      [tenantId, subjectEmail, `%${subjectEmail}%`]);
+    data.emails = emails;
+  } catch { /* tables may not all exist */ }
+  return data;
+}
 
 export async function complianceRoutes(server: FastifyInstance) {
   // ── GET /compliance/status ──────────────────────────────────────────────
@@ -444,7 +472,10 @@ export async function complianceRoutes(server: FastifyInstance) {
   server.post("/compliance/dsr", async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const parsed = z.object({
-      type: z.enum(["access", "erasure", "portability", "rectification", "restriction"]),
+      type: z.enum([
+        "access", "erasure", "portability", "rectification", "restriction",
+        "do_not_sell", "ccpa_access", "ccpa_delete",
+      ]),
       subjectEmail: z.string().email(),
       subjectName: z.string().max(200).optional(),
       notes: z.string().max(2000).optional(),
@@ -457,6 +488,17 @@ export async function complianceRoutes(server: FastifyInstance) {
        VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)`,
       [id, tenantId, parsed.data.type, parsed.data.subjectEmail, parsed.data.subjectName ?? null, parsed.data.notes ?? null, userId],
     );
+
+    // Enqueue DSR for automated processing by the worker
+    await dsrQueue.add("process-dsr", {
+      dsrId: id,
+      tenantId,
+      type: parsed.data.type,
+      subjectEmail: parsed.data.subjectEmail,
+    }, {
+      attempts: 3,
+      backoff: { type: "exponential", delay: 10_000 },
+    });
 
     return reply.status(201).send({ success: true, data: { id, status: "pending" } });
   });
@@ -477,6 +519,124 @@ export async function complianceRoutes(server: FastifyInstance) {
     );
 
     return reply.send({ success: true });
+  });
+
+  // ── DSR Download ─────────────────────────────────────────────────────
+
+  server.get("/compliance/dsr/:id/download", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { tenantId } = request.user;
+
+    const { rows: [dsr] } = await readPool.query(
+      `SELECT * FROM data_subject_requests WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
+
+    if (!dsr) {
+      return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+    }
+    if (dsr.status !== "completed" || !dsr.download_url) {
+      return reply.status(400).send({ success: false, error: { code: "NOT_READY", message: "DSR is not yet completed" } });
+    }
+
+    // In production, this would generate a presigned S3/MinIO URL.
+    // For now, re-gather the data and return it directly.
+    const data = await gatherSubjectDataForDownload(tenantId, dsr.subject_email);
+    return reply.header("content-disposition", `attachment; filename="dsr-${id}.json"`).send(data);
+  });
+
+  // ── CCPA Endpoints ──────────────────────────────────────────────────
+
+  server.get("/compliance/ccpa/status", async (request, reply) => {
+    const { tenantId } = request.user;
+
+    let optOutCount = 0;
+    try {
+      const { rows: [{ count }] } = await readPool.query(
+        `SELECT COUNT(*) FROM contacts WHERE tenant_id = $1 AND do_not_sell = TRUE`,
+        [tenantId],
+      );
+      optOutCount = parseInt(count, 10);
+    } catch { /* column may not exist yet */ }
+
+    let pendingDsrs = 0;
+    try {
+      const { rows: [{ count }] } = await readPool.query(
+        `SELECT COUNT(*) FROM data_subject_requests
+         WHERE tenant_id = $1 AND type IN ('do_not_sell', 'ccpa_access', 'ccpa_delete')
+         AND status IN ('pending', 'in_progress')`,
+        [tenantId],
+      );
+      pendingDsrs = parseInt(count, 10);
+    } catch { /* ok */ }
+
+    return reply.send({
+      success: true,
+      data: {
+        optOutContacts: optOutCount,
+        pendingRequests: pendingDsrs,
+        dataCategories: [
+          "Contact information (name, email, phone, address)",
+          "Communication history (emails, calls, meetings)",
+          "Deal and pipeline data",
+          "Activity and engagement records",
+          "Sequence enrollment history",
+        ],
+        rightsSupported: [
+          "Right to know / access",
+          "Right to delete",
+          "Right to opt-out of sale",
+          "Right to non-discrimination",
+        ],
+      },
+    });
+  });
+
+  server.post("/compliance/ccpa/opt-out", async (request, reply) => {
+    const { tenantId, sub: userId } = request.user;
+    const parsed = z.object({
+      email: z.string().email(),
+    }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR" } });
+
+    // Create a DSR record and enqueue for automated processing
+    const id = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO data_subject_requests (id, tenant_id, type, subject_email, status, created_by)
+       VALUES ($1, $2, 'do_not_sell', $3, 'pending', $4)`,
+      [id, tenantId, parsed.data.email, userId],
+    );
+
+    await dsrQueue.add("process-dsr", {
+      dsrId: id,
+      tenantId,
+      type: "do_not_sell",
+      subjectEmail: parsed.data.email,
+    });
+
+    return reply.status(201).send({ success: true, data: { id, status: "pending" } });
+  });
+
+  server.get("/compliance/ccpa/disclosures", async (request, reply) => {
+    return reply.send({
+      success: true,
+      data: {
+        categoriesCollected: [
+          { category: "Identifiers", examples: "Name, email address, phone number, IP address", purpose: "Account management and communication" },
+          { category: "Commercial Information", examples: "Deal values, product interests, purchase history", purpose: "CRM functionality and sales analytics" },
+          { category: "Internet Activity", examples: "Email opens, link clicks, page views", purpose: "Engagement tracking and sequence automation" },
+          { category: "Professional Information", examples: "Job title, company, industry", purpose: "Contact enrichment and segmentation" },
+          { category: "Geolocation Data", examples: "Timezone, approximate location from IP", purpose: "Scheduling and localization" },
+          { category: "Audio/Visual", examples: "Call recordings, meeting transcripts", purpose: "Sales coaching and record keeping" },
+        ],
+        thirdPartySharing: [
+          { recipient: "Email providers (Google, Microsoft)", purpose: "Sending emails on behalf of users", categories: ["Identifiers"] },
+          { recipient: "Telephony (Twilio)", purpose: "Call functionality", categories: ["Identifiers", "Audio/Visual"] },
+          { recipient: "AI processing (OpenAI)", purpose: "Meeting summaries and AI features", categories: ["Commercial Information", "Audio/Visual"] },
+        ],
+        retentionPeriod: "Data is retained per tenant-configured retention policies (default: 2 years for contacts, 1 year for activities)",
+      },
+    });
   });
 
   // ── Encryption Status ──────────────────────────────────────────────────

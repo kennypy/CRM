@@ -25,6 +25,12 @@ import {
   sendPasswordResetEmail,
 } from "../lib/email";
 import { pool } from "../db";
+import { redis } from "../lib/redis";
+
+// Per-email rate limit for password reset: max 3 requests per email per hour.
+// The email is SHA-256 hashed before use as a Redis key to avoid storing PII.
+const PWD_RESET_MAX_PER_HOUR = 3;
+const PWD_RESET_WINDOW_SECS = 3600;
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -248,10 +254,16 @@ export async function authRoutes(server: FastifyInstance) {
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR" } });
     }
 
+    // Per-email rate limit — hash the email to avoid PII in Redis keys
+    const emailHash = createHash("sha256").update(body.data.email.toLowerCase()).digest("hex");
+    const rateLimitKey = `pwd_reset:${emailHash}`;
+    const currentCount = await redis.get(rateLimitKey);
+    const isRateLimited = currentCount !== null && parseInt(currentCount, 10) >= PWD_RESET_MAX_PER_HOUR;
+
     const tenant = await findTenantBySlug(body.data.tenantSlug);
     const user   = tenant ? await findUserByEmail(tenant.id, body.data.email) : null;
 
-    if (user && tenant) {
+    if (user && tenant && !isRateLimited) {
       const rawToken  = randomBytes(32).toString("hex");
       const tokenHash = createHash("sha256").update(rawToken).digest("hex");
 
@@ -260,6 +272,12 @@ export async function authRoutes(server: FastifyInstance) {
          VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
         [user.id, tokenHash],
       );
+
+      // Increment rate limit counter (set TTL on first use)
+      const pipeline = redis.pipeline();
+      pipeline.incr(rateLimitKey);
+      pipeline.expire(rateLimitKey, PWD_RESET_WINDOW_SECS);
+      await pipeline.exec();
 
       sendPasswordResetEmail({
         to:         user.email,
