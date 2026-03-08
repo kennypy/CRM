@@ -17,7 +17,9 @@ import 'features/deals/deals_screen.dart';
 import 'features/deals/deal_detail_screen.dart';
 import 'features/deals/deal_form_screen.dart';
 import 'features/activities/activities_screen.dart';
+import 'features/activities/activity_form_screen.dart';
 import 'features/tasks/tasks_screen.dart';
+import 'features/tasks/task_form_screen.dart';
 import 'features/sequences/sequences_screen.dart';
 import 'features/sequences/sequence_form_screen.dart';
 import 'features/quotes/quotes_screen.dart';
@@ -46,6 +48,7 @@ import 'features/leads/leads_screen.dart';
 import 'features/review/review_queue_screen.dart';
 import 'features/import/import_screen.dart';
 import 'features/marketing/campaigns_screen.dart';
+import 'features/notifications/notifications_screen.dart';
 
 class NexCRMApp extends ConsumerWidget {
   const NexCRMApp({super.key});
@@ -124,8 +127,20 @@ class NexCRMApp extends ConsumerWidget {
             ),
           ],
         ),
-        GoRoute(path: '/activities', builder: (_, __) => const ActivitiesScreen()),
-        GoRoute(path: '/tasks', builder: (_, __) => const TasksScreen()),
+        GoRoute(
+          path: '/activities',
+          builder: (_, __) => const ActivitiesScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const ActivityFormScreen()),
+          ],
+        ),
+        GoRoute(
+          path: '/tasks',
+          builder: (_, __) => const TasksScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const TaskFormScreen()),
+          ],
+        ),
         GoRoute(
           path: '/sequences',
           builder: (_, __) => const SequencesScreen(),
@@ -179,6 +194,7 @@ class NexCRMApp extends ConsumerWidget {
         GoRoute(path: '/review', builder: (_, __) => const ReviewQueueScreen()),
         GoRoute(path: '/import', builder: (_, __) => const ImportScreen()),
         GoRoute(path: '/marketing', builder: (_, __) => const CampaignsScreen()),
+        GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
 
         // Deal routes (top-level since pipeline is a shell branch)
         GoRoute(path: '/deals/new', builder: (_, __) => const DealFormScreen()),
@@ -272,6 +288,7 @@ class _MoreScreen extends ConsumerWidget {
           _MoreTile(icon: Icons.campaign, label: 'Marketing', route: '/marketing'),
           _MoreTile(icon: Icons.auto_awesome, label: 'AI Assistant', route: '/ai'),
           const Divider(),
+          _MoreTile(icon: Icons.notifications_outlined, label: 'Notifications', route: '/notifications'),
           _MoreTile(icon: Icons.settings, label: 'Settings', route: '/settings'),
           if (user != null && user.isAdmin)
             _MoreTile(

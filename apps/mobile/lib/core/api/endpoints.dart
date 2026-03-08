@@ -36,12 +36,19 @@ class Endpoints {
   static String get tenant => '$apiUrl/api/v1/tenant';
   static String get integrations => '$apiUrl/api/v1/integrations';
 
+  // Notifications
+  static String get notifications => '$apiUrl/api/v1/notifications';
+
   // Outreach
   static String get sequences => '$apiUrl/api/v1/outreach/sequences';
 
   // AI
   static String get aiNl => '$apiUrl/api/v1/ai/nl';
   static String get aiReviewQueue => '$apiUrl/api/v1/ai/review-queue';
+  static String get aiForecast => '$apiUrl/api/v1/ai/forecast';
+
+  // Reports
+  static String get reportsRun => '$apiUrl/api/v1/reports/run';
 
   // Import / Export
   static String get import_ => '$apiUrl/api/v1/import';
