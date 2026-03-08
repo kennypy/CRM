@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'core/auth/auth_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/login_screen.dart';
@@ -54,6 +55,7 @@ class NexCRMApp extends ConsumerWidget {
 
     final router = GoRouter(
       initialLocation: '/login',
+      observers: [SentryNavigatorObserver()],
       redirect: (context, state) {
         final isAuth = authState.status == AuthStatus.authenticated;
         final isAuthRoute = state.matchedLocation == '/login' || state.matchedLocation == '/register';

@@ -21,7 +21,12 @@
     "docker:up": "docker compose -f docker-compose.yml up -d",
     "docker:down": "docker compose -f docker-compose.yml down",
     "docker:logs": "docker compose logs -f",
-    "clean": "turbo run clean && find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +"
+    "clean": "turbo run clean && find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +",
+    "test:e2e": "npx playwright test",
+    "test:e2e:perf": "npx playwright test tests/e2e/performance/",
+    "test:load": "k6 run tests/load/api-gateway.k6.js",
+    "test:load:graphql": "k6 run tests/load/graphql.k6.js",
+    "analyze": "npm run analyze --workspace=@nexcrm/web"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.0.0",

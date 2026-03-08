@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node -r tsx/cjs src/__tests__/currency.test.ts"
+    "test": "node -r tsx/cjs src/__tests__/currency.test.ts",
+    "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
     "@nexcrm/shared-types": "*",
@@ -35,6 +36,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^16.1.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",

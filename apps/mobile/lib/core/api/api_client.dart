@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:sentry_dio/sentry_dio.dart';
 import '../auth/token_storage.dart';
 import 'endpoints.dart';
 
@@ -44,6 +45,9 @@ class ApiClient {
         handler.next(error);
       },
     ));
+
+    // Sentry performance tracing for all HTTP requests
+    d.addSentry();
 
     return d;
   }

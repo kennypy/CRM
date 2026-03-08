@@ -1,0 +1,153 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Largest Contentful Paint (LCP)",
+      "description": "Target: < 2.5s (good), < 4s (needs improvement)",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.75, sum(rate(web_vitals_lcp_bucket[5m])) by (le))",
+          "legendFormat": "p75 LCP"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2500 },
+              { "color": "red", "value": 4000 }
+            ]
+          },
+          "max": 6000
+        }
+      }
+    },
+    {
+      "title": "First Input Delay (FID)",
+      "description": "Target: < 100ms (good), < 300ms (needs improvement)",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.75, sum(rate(web_vitals_fid_bucket[5m])) by (le))",
+          "legendFormat": "p75 FID"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 300 }
+            ]
+          },
+          "max": 500
+        }
+      }
+    },
+    {
+      "title": "Cumulative Layout Shift (CLS)",
+      "description": "Target: < 0.1 (good), < 0.25 (needs improvement)",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.75, sum(rate(web_vitals_cls_bucket[5m])) by (le))",
+          "legendFormat": "p75 CLS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "red", "value": 0.25 }
+            ]
+          },
+          "max": 0.5
+        }
+      }
+    },
+    {
+      "title": "Page Load Time by Route",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{http_route=~\"/|/contacts|/pipeline|/login|/companies\"}[5m])) by (le, http_route))",
+          "legendFormat": "p95 {{http_route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Client-Side JavaScript Errors",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(client_js_errors_total[5m]))",
+          "legendFormat": "JS Errors/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "errors/s",
+          "custom": { "drawStyle": "bars", "fillOpacity": 50 },
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        }
+      }
+    },
+    {
+      "title": "Time to First Byte (TTFB)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(web_vitals_ttfb_bucket[5m])) by (le))",
+          "legendFormat": "p50 TTFB"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(web_vitals_ttfb_bucket[5m])) by (le))",
+          "legendFormat": "p95 TTFB"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "fillOpacity": 5 }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["nexcrm", "web-vitals", "performance"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "NexCRM Web Vitals",
+  "uid": "nexcrm-web-vitals"
+}
