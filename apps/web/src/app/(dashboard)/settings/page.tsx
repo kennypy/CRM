@@ -736,8 +736,25 @@ function QuotingTab() {
   const [saving,     setSaving]     = useState(false);
   const [saved,      setSaved]      = useState(false);
   const [quotingMap, setQuotingMap] = useState<Record<string, boolean>>({});
+  const [roleThresholds, setRoleThresholds] = useState<Record<string, number>>({
+    rep: 10,
+    manager: 25,
+    admin: 50,
+  });
+  const [tcvTiers, setTcvTiers] = useState([
+    { label: "< $10k", maxTcv: 10000, maxDiscount: 15, approver: "manager" },
+    { label: "$10k – $50k", maxTcv: 50000, maxDiscount: 10, approver: "manager" },
+    { label: "$50k – $250k", maxTcv: 250000, maxDiscount: 8, approver: "admin" },
+    { label: "> $250k", maxTcv: Infinity, maxDiscount: 5, approver: "admin" },
+  ]);
 
   const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+
+  const updateTcvTier = (index: number, field: "maxDiscount" | "approver", value: number | string) => {
+    setTcvTiers((prev) =>
+      prev.map((tier, i) => (i === index ? { ...tier, [field]: value } : tier))
+    );
+  };
 
   useEffect(() => {
     api.get("/api/v1/users")
@@ -757,7 +774,18 @@ function QuotingTab() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.patch("/api/v1/tenant", { discountApprovalThreshold: threshold, quoteValidDays: validDays, quoteSendMethod: sendMethod });
+      await api.patch("/api/v1/tenant", {
+        discountApprovalThreshold: threshold,
+        quoteValidDays: validDays,
+        quoteSendMethod: sendMethod,
+        roleThresholds,
+        tcvTiers: tcvTiers.map((t) => ({
+          label: t.label,
+          maxTcv: t.maxTcv === Infinity ? null : t.maxTcv,
+          maxDiscount: t.maxDiscount,
+          approver: t.approver,
+        })),
+      });
       // Update quoting skill per user
       for (const [id, canQuote] of Object.entries(quotingMap)) {
         await api.patch(`/api/v1/users/${id}`, { canQuote }).catch(() => {});
@@ -770,32 +798,99 @@ function QuotingTab() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* Approval thresholds */}
+      {/* Role-Based Discount Limits */}
       <div className="rounded-xl border bg-card p-5 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Approval Rules</h3>
+        <h3 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Role-Based Discount Limits</h3>
+        <p className="text-xs text-muted-foreground">
+          Maximum discount each role can apply without requiring further approval.
+        </p>
+        <div className="divide-y divide-border rounded-lg border overflow-hidden">
+          {(["rep", "manager", "admin"] as const).map((role) => (
+            <div key={role} className="flex items-center gap-4 px-4 py-3 bg-card">
+              <span className="text-sm font-medium w-24 capitalize">{role === "rep" ? "Rep" : role === "manager" ? "Manager" : "Admin"}</span>
+              <div className="flex items-center gap-2 flex-1">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={roleThresholds[role]}
+                  onChange={(e) =>
+                    setRoleThresholds((prev) => ({ ...prev, [role]: parseInt(e.target.value) || 0 }))
+                  }
+                  className="w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <span className="text-sm text-muted-foreground">% max discount</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* TCV-Based Approval Rules */}
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> TCV-Based Approval Rules</h3>
+        <p className="text-xs text-muted-foreground">
+          Configure maximum discount percentages and required approvers based on the Total Contract Value of the deal.
+        </p>
+        <div className="rounded-lg border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Deal Size Tier</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Max Discount %</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Required Approver</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {tcvTiers.map((tier, idx) => (
+                <tr key={tier.label} className="bg-card">
+                  <td className="px-4 py-2.5 font-medium">{tier.label}</td>
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={tier.maxDiscount}
+                      onChange={(e) => updateTcvTier(idx, "maxDiscount", parseInt(e.target.value) || 0)}
+                      className="w-20 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <select
+                      value={tier.approver}
+                      onChange={(e) => updateTcvTier(idx, "approver", e.target.value)}
+                      className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value="manager">Manager</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Quote defaults */}
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Quote Defaults</h3>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">Discount approval threshold (%)</label>
-            <input type="number" min="0" max="100" step="1" value={threshold}
-              onChange={(e) => setThreshold(parseInt(e.target.value) || 0)} className={inputCls} />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Discounts above this % require a manager to approve before the quote can be sent.
-              Set to 100 to disable approval requirement.
-            </p>
-          </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">Default quote validity (days)</label>
             <input type="number" min="1" max="365" step="1" value={validDays}
               onChange={(e) => setValidDays(parseInt(e.target.value) || 30)} className={inputCls} />
           </div>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">Default send method</label>
-          <select value={sendMethod} onChange={(e) => setSendMethod(e.target.value)} className={inputCls}>
-            <option value="email">Email from CRM (rep's address)</option>
-            <option value="link">Shareable link</option>
-            <option value="both">Email + Shareable link</option>
-          </select>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Default send method</label>
+            <select value={sendMethod} onChange={(e) => setSendMethod(e.target.value)} className={inputCls}>
+              <option value="email">Email from CRM (rep's address)</option>
+              <option value="link">Shareable link</option>
+              <option value="both">Email + Shareable link</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -937,6 +1032,27 @@ function ProductsTab() {
 function IntegrationsTab() {
   const [integrations,   setIntegrations]   = useState(INTEGRATIONS);
   const [disconnecting,  setDisconnecting]  = useState<string | null>(null);
+  const [connectingId,   setConnectingId]   = useState<string | null>(null);
+  const [connectResult,  setConnectResult]  = useState<{id: string; success: boolean} | null>(null);
+
+  const demoAccounts: Record<string, string> = {
+    slack: "acme-workspace",
+    zoom: "admin@acme.com",
+    outlook: "admin@acme.com",
+    stripe: "acct_acme_prod",
+  };
+
+  const connect = (id: string) => {
+    setConnectingId(id);
+    setTimeout(() => {
+      setIntegrations((prev) =>
+        prev.map((i) => i.id === id ? { ...i, status: "connected", account: demoAccounts[id] ?? "demo-account" } : i)
+      );
+      setConnectingId(null);
+      setConnectResult({ id, success: true });
+      setTimeout(() => setConnectResult(null), 3000);
+    }, 2000);
+  };
 
   const disconnect = async (id: string) => {
     setDisconnecting(id);
@@ -973,7 +1089,15 @@ function IntegrationsTab() {
                 </button>
               </div>
             ) : (
-              <button className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted shrink-0">Connect</button>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <button onClick={() => connect(intg.id)} disabled={connectingId === intg.id}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
+                  {connectingId === intg.id ? "Connecting…" : "Connect"}
+                </button>
+                {connectResult?.id === intg.id && connectResult.success && (
+                  <span className="text-xs text-green-600 font-medium">Connected successfully!</span>
+                )}
+              </div>
             )}
           </div>
         </div>

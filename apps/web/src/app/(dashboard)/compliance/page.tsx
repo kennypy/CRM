@@ -11,7 +11,7 @@ import {
   RefreshCw, Upload, Download, Play, TestTube,
   ChevronRight, Calendar, FileText, Archive,
   HardDrive, Cloud, Settings, Eye, Trash2,
-  AlertTriangle, Info, Plus, Search,
+  AlertTriangle, Info, Plus, Search, Edit3, Save, X,
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────────────
@@ -233,9 +233,21 @@ function SyncStatusBadge({ status }: { status: string }) {
 
 // ── Tab Components ──────────────────────────────────────────────────────────────
 
+const SAMPLE_DOCUMENTS = [
+  { name: "SOC2 Type II Report 2025", type: "PDF", size: "2.4 MB", date: "2025-08-15", url: "#" },
+  { name: "Risk Assessment Framework", type: "PDF", size: "1.1 MB", date: "2026-01-05", url: "#" },
+  { name: "Information Security Policy", type: "PDF", size: "890 KB", date: "2025-11-20", url: "#" },
+  { name: "Business Continuity Plan", type: "PDF", size: "1.8 MB", date: "2025-12-08", url: "#" },
+  { name: "Incident Response Playbook", type: "PDF", size: "640 KB", date: "2026-02-05", url: "#" },
+  { name: "Vendor Assessment Template", type: "XLSX", size: "245 KB", date: "2025-10-15", url: "#" },
+];
+
 function SOC2Tab() {
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [nextAuditDate, setNextAuditDate] = useState("2026-06-15");
+  const [nextAuditor, setNextAuditor] = useState("Deloitte LLP");
+  const [editingAudit, setEditingAudit] = useState(false);
 
   const filtered = DEMO_CONTROLS.filter((c) => {
     if (filterCategory !== "all" && c.category !== filterCategory) return false;
@@ -289,12 +301,64 @@ function SOC2Tab() {
       </div>
 
       {/* Next Audit */}
-      <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
-        <Calendar className="h-5 w-5 text-blue-600" />
-        <div>
-          <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Next SOC2 Audit Scheduled</p>
-          <p className="text-sm text-blue-600 dark:text-blue-400">June 15, 2026 - Auditor: Deloitte LLP</p>
+      <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
+        <div className="flex items-center gap-3">
+          <Calendar className="h-5 w-5 text-blue-600" />
+          {editingAudit ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-blue-700 dark:text-blue-300">Audit Date</label>
+                <input
+                  type="date"
+                  value={nextAuditDate}
+                  onChange={(e) => setNextAuditDate(e.target.value)}
+                  className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-sm dark:bg-blue-950 dark:border-blue-700"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-blue-700 dark:text-blue-300">Auditor</label>
+                <input
+                  type="text"
+                  value={nextAuditor}
+                  onChange={(e) => setNextAuditor(e.target.value)}
+                  className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-sm dark:bg-blue-950 dark:border-blue-700"
+                />
+              </div>
+              <div className="flex items-end gap-2 pt-4">
+                <button
+                  onClick={() => setEditingAudit(false)}
+                  className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Save
+                </button>
+                <button
+                  onClick={() => setEditingAudit(false)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors dark:text-blue-300 dark:border-blue-700"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Next SOC2 Audit Scheduled</p>
+              <p className="text-sm text-blue-600 dark:text-blue-400">
+                {formatDate(nextAuditDate)} - Auditor: {nextAuditor}
+              </p>
+            </div>
+          )}
         </div>
+        {!editingAudit && (
+          <button
+            onClick={() => setEditingAudit(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors dark:text-blue-300 dark:border-blue-700"
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            Edit
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -366,6 +430,55 @@ function SOC2Tab() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Documents & Evidence */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="border-b border-border px-6 py-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Documents & Evidence
+          </h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-muted/50">
+              <tr>
+                <th className="px-6 py-3 text-left font-medium text-muted-foreground">Document</th>
+                <th className="px-6 py-3 text-left font-medium text-muted-foreground">Type</th>
+                <th className="px-6 py-3 text-left font-medium text-muted-foreground">Size</th>
+                <th className="px-6 py-3 text-left font-medium text-muted-foreground">Date</th>
+                <th className="px-6 py-3 text-left font-medium text-muted-foreground">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {SAMPLE_DOCUMENTS.map((doc) => (
+                <tr key={doc.name} className="hover:bg-muted/30 transition-colors">
+                  <td className="px-6 py-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">{doc.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-3">
+                    <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium">{doc.type}</span>
+                  </td>
+                  <td className="px-6 py-3 text-muted-foreground">{doc.size}</td>
+                  <td className="px-6 py-3 text-muted-foreground">{formatDate(doc.date)}</td>
+                  <td className="px-6 py-3">
+                    <a
+                      href={doc.url}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -532,9 +645,20 @@ function MirroringTab() {
     gcs: ["us-central1", "us-east1", "europe-west1", "asia-east1", "australia-southeast1"],
   };
 
+  const [testResult, setTestResult] = useState<{id: string; success: boolean; message: string} | null>(null);
+
   const handleTestConnection = (destId: string) => {
     setTestingConnection(destId);
-    setTimeout(() => setTestingConnection(null), 2500);
+    setTestResult(null);
+    setTimeout(() => {
+      setTestingConnection(null);
+      const success = Math.random() > 0.2;
+      setTestResult({
+        id: destId,
+        success,
+        message: success ? "Connection successful — bucket is accessible and writable" : "Connection failed — check bucket permissions and credentials",
+      });
+    }, 2500);
   };
 
   const handleToggleObject = (obj: string) => {
@@ -715,6 +839,12 @@ function MirroringTab() {
               Configure
             </button>
           </div>
+          {testResult?.id === dest.id && (
+            <div className={cn("mt-3 flex items-center gap-2 rounded-lg border p-3 text-sm", testResult.success ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700")}>
+              {testResult.success ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+              {testResult.message}
+            </div>
+          )}
         </div>
       ))}
 
@@ -761,6 +891,13 @@ function MirroringTab() {
 function ResidencyTab() {
   const [currentRegion] = useState("us-east");
   const [selectedMigrationTarget, setSelectedMigrationTarget] = useState<string | null>(null);
+  const [overrideRules, setOverrideRules] = useState([
+    { id: "r1", scope: "client_country" as const, match: "Germany", region: "eu-central", reason: "GDPR / Bundesdatenschutzgesetz" },
+    { id: "r2", scope: "client_country" as const, match: "Japan", region: "ap-northeast", reason: "APPI compliance" },
+    { id: "r3", scope: "user_group" as const, match: "EMEA Sales Team", region: "eu-west", reason: "Performance optimization" },
+  ]);
+  const [showAddRule, setShowAddRule] = useState(false);
+  const [newRule, setNewRule] = useState({ scope: "client_country" as "client_country" | "user_group", match: "", region: "us-east", reason: "" });
 
   return (
     <div className="space-y-6">
@@ -818,6 +955,142 @@ function ResidencyTab() {
         </div>
       </div>
 
+      {/* Regional Override Rules */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Regional Override Rules
+          </h3>
+          <button
+            onClick={() => setShowAddRule(!showAddRule)}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add Rule
+          </button>
+        </div>
+
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
+          <Info className="mt-0.5 h-5 w-5 text-blue-600" />
+          <p className="text-sm text-blue-600 dark:text-blue-400">
+            Regional override rules ensure data for specific clients or user groups is stored in a designated region, enabling compliance with local data protection regulations like GDPR, BDSG, LGPD, or APPI.
+          </p>
+        </div>
+
+        {showAddRule && (
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-950/20">
+            <h4 className="mb-3 font-semibold text-sm">New Override Rule</h4>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium">Scope</label>
+                <select
+                  value={newRule.scope}
+                  onChange={(e) => setNewRule({ ...newRule, scope: e.target.value as "client_country" | "user_group" })}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="client_country">Client Country</option>
+                  <option value="user_group">User Group</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium">Match Value</label>
+                <input
+                  type="text"
+                  value={newRule.match}
+                  onChange={(e) => setNewRule({ ...newRule, match: e.target.value })}
+                  placeholder={newRule.scope === "client_country" ? "e.g. Brazil" : "e.g. APAC Sales Team"}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium">Data Region</label>
+                <select
+                  value={newRule.region}
+                  onChange={(e) => setNewRule({ ...newRule, region: e.target.value })}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                >
+                  {AVAILABLE_REGIONS.filter((r) => r.available).map((r) => (
+                    <option key={r.id} value={r.id}>{r.name} ({r.location})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium">Reason</label>
+                <input
+                  type="text"
+                  value={newRule.reason}
+                  onChange={(e) => setNewRule({ ...newRule, reason: e.target.value })}
+                  placeholder="e.g. LGPD compliance"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex gap-3">
+              <button
+                onClick={() => {
+                  if (newRule.match && newRule.reason) {
+                    setOverrideRules([...overrideRules, { id: `r-${Date.now()}`, ...newRule }]);
+                    setNewRule({ scope: "client_country", match: "", region: "us-east", reason: "" });
+                    setShowAddRule(false);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+              >
+                <Save className="h-3.5 w-3.5" />
+                Save Rule
+              </button>
+              <button
+                onClick={() => setShowAddRule(false)}
+                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-muted/50">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Scope</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Match</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Data Region</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Reason</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {overrideRules.map((rule) => {
+                const regionInfo = AVAILABLE_REGIONS.find((r) => r.id === rule.region);
+                return (
+                  <tr key={rule.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium">
+                        {rule.scope === "client_country" ? "Client Country" : "User Group"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-medium">{rule.match}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{regionInfo?.name ?? rule.region}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{rule.reason}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setOverrideRules(overrideRules.filter((r) => r.id !== rule.id))}
+                        className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors dark:hover:bg-red-950/20"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Migration Tool */}
       {selectedMigrationTarget && (
         <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-6 dark:border-yellow-800 dark:bg-yellow-950/20">
@@ -851,6 +1124,8 @@ function ResidencyTab() {
 
 function EncryptionTab() {
   const [byokKey, setByokKey] = useState("");
+  const [dataSize] = useState(4.8);
+  const estimatedTime = dataSize < 1 ? "under 15 minutes" : dataSize < 5 ? "approximately 1-2 hours" : dataSize < 20 ? "approximately 4-8 hours" : "up to 24 hours";
 
   return (
     <div className="space-y-6">
@@ -992,7 +1267,7 @@ function EncryptionTab() {
           <div className="flex items-center gap-2 rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950/20">
             <AlertTriangle className="h-4 w-4 text-yellow-600" />
             <p className="text-sm text-yellow-700 dark:text-yellow-400">
-              Enabling BYOK will re-encrypt all data. This process may take up to 2 hours.
+              Enabling BYOK will re-encrypt all data ({dataSize.toFixed(1)} GB). Estimated time: {estimatedTime}.
             </p>
           </div>
           <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
@@ -1006,6 +1281,8 @@ function EncryptionTab() {
 
 function RetentionTab() {
   const [policies, setPolicies] = useState(DEMO_RETENTION_POLICIES);
+  const [editingPolicy, setEditingPolicy] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<{ retentionDays: number; archiveAfterDays: number; deleteAfterDays: number; legalHold: boolean }>({ retentionDays: 0, archiveAfterDays: 0, deleteAfterDays: 0, legalHold: false });
   const [legalHolds, setLegalHolds] = useState([
     { id: "lh-1", name: "SEC Investigation 2026-Q1", entityTypes: ["Deals", "Emails"], createdAt: "2026-01-15", expiresAt: "2026-07-15", status: "active" as const },
     { id: "lh-2", name: "Contract Dispute - Acme Corp", entityTypes: ["Contacts", "Emails", "Attachments"], createdAt: "2025-11-01", expiresAt: "2026-05-01", status: "active" as const },
@@ -1034,25 +1311,112 @@ function RetentionTab() {
                 <th className="px-6 py-3 text-left font-medium text-muted-foreground">Archive After</th>
                 <th className="px-6 py-3 text-left font-medium text-muted-foreground">Delete After</th>
                 <th className="px-6 py-3 text-left font-medium text-muted-foreground">Legal Hold</th>
+                <th className="px-6 py-3 text-left font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {policies.map((policy) => (
                 <tr key={policy.entityType} className="hover:bg-muted/30 transition-colors">
                   <td className="px-6 py-3 font-medium">{policy.entityType}</td>
-                  <td className="px-6 py-3 text-muted-foreground">{daysToYears(policy.retentionDays)}</td>
-                  <td className="px-6 py-3 text-muted-foreground">{daysToYears(policy.archiveAfterDays)}</td>
-                  <td className="px-6 py-3 text-muted-foreground">{daysToYears(policy.deleteAfterDays)}</td>
-                  <td className="px-6 py-3">
-                    {policy.legalHold ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                        <Lock className="h-3 w-3" />
-                        Active
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">None</span>
-                    )}
-                  </td>
+                  {editingPolicy === policy.entityType ? (
+                    <>
+                      <td className="px-6 py-3">
+                        <input
+                          type="number"
+                          value={editValues.retentionDays}
+                          onChange={(e) => setEditValues({ ...editValues, retentionDays: parseInt(e.target.value) || 0 })}
+                          className="w-24 rounded-lg border border-border bg-background px-2 py-1 text-sm"
+                          min={0}
+                        />
+                        <span className="ml-1 text-xs text-muted-foreground">days</span>
+                      </td>
+                      <td className="px-6 py-3">
+                        <input
+                          type="number"
+                          value={editValues.archiveAfterDays}
+                          onChange={(e) => setEditValues({ ...editValues, archiveAfterDays: parseInt(e.target.value) || 0 })}
+                          className="w-24 rounded-lg border border-border bg-background px-2 py-1 text-sm"
+                          min={0}
+                        />
+                        <span className="ml-1 text-xs text-muted-foreground">days</span>
+                      </td>
+                      <td className="px-6 py-3">
+                        <input
+                          type="number"
+                          value={editValues.deleteAfterDays}
+                          onChange={(e) => setEditValues({ ...editValues, deleteAfterDays: parseInt(e.target.value) || 0 })}
+                          className="w-24 rounded-lg border border-border bg-background px-2 py-1 text-sm"
+                          min={0}
+                        />
+                        <span className="ml-1 text-xs text-muted-foreground">days</span>
+                      </td>
+                      <td className="px-6 py-3">
+                        <label className="inline-flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editValues.legalHold}
+                            onChange={(e) => setEditValues({ ...editValues, legalHold: e.target.checked })}
+                            className="rounded"
+                          />
+                          <span className="text-xs">{editValues.legalHold ? "Active" : "None"}</span>
+                        </label>
+                      </td>
+                      <td className="px-6 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setPolicies(policies.map((p) => p.entityType === policy.entityType ? { ...p, ...editValues } : p));
+                              setEditingPolicy(null);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                          >
+                            <Save className="h-3 w-3" />
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingPolicy(null)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-6 py-3 text-muted-foreground">{daysToYears(policy.retentionDays)}</td>
+                      <td className="px-6 py-3 text-muted-foreground">{daysToYears(policy.archiveAfterDays)}</td>
+                      <td className="px-6 py-3 text-muted-foreground">{daysToYears(policy.deleteAfterDays)}</td>
+                      <td className="px-6 py-3">
+                        {policy.legalHold ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                            <Lock className="h-3 w-3" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">None</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3">
+                        <button
+                          onClick={() => {
+                            setEditingPolicy(policy.entityType);
+                            setEditValues({
+                              retentionDays: policy.retentionDays,
+                              archiveAfterDays: policy.archiveAfterDays,
+                              deleteAfterDays: policy.deleteAfterDays,
+                              legalHold: policy.legalHold,
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted transition-colors"
+                        >
+                          <Edit3 className="h-3 w-3" />
+                          Edit
+                        </button>
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
