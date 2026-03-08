@@ -13,11 +13,22 @@ import { PhoneDrawer }      from "@/components/phone/PhoneDrawer";
 import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
 import { ContactDrawer } from "@/components/contacts/ContactDrawer";
+import { TagInput } from "@/components/ui/tag-input";
+import { OwnerPicker } from "@/components/ui/owner-picker";
 import {
   Users, Search, Plus, RefreshCw, AlertCircle,
   Building2, Mail, Phone, ChevronLeft, ChevronRight, ExternalLink, Star, Pencil, Trash2,
 } from "lucide-react";
 import { BulkActionBar } from "@/components/bulk/bulk-action-bar";
+
+const LIFECYCLE_COLORS: Record<string, string> = {
+  subscriber:  "bg-gray-100 text-gray-700",
+  lead:        "bg-blue-100 text-blue-700",
+  mql:         "bg-purple-100 text-purple-700",
+  sql:         "bg-indigo-100 text-indigo-700",
+  opportunity: "bg-orange-100 text-orange-700",
+  customer:    "bg-green-100 text-green-700",
+};
 
 interface Contact {
   id: string;
@@ -32,6 +43,10 @@ interface Contact {
   lastActivityAt?: string;
   linkedinUrl?: string;
   source: string;
+  lifecycleStage?: string;
+  ownerId?: string;
+  gdprConsent?: boolean;
+  doNotContact?: boolean;
   createdAt: string;
 }
 
@@ -59,13 +74,16 @@ function SourcePill({ source }: { source: string }) {
 }
 
 const COL_DEFS: ColDef[] = [
-  { key: "name",         label: "Name",          required: true },
-  { key: "company",      label: "Company" },
-  { key: "title",        label: "Title" },
-  { key: "lastActivity", label: "Last Activity" },
-  { key: "influence",    label: "Influence" },
-  { key: "source",       label: "Source" },
-  { key: "actions",      label: "Actions",       required: true },
+  { key: "name",           label: "Name",          required: true },
+  { key: "company",        label: "Company" },
+  { key: "title",          label: "Title" },
+  { key: "lifecycleStage", label: "Stage" },
+  { key: "owner",          label: "Owner" },
+  { key: "tags",           label: "Tags" },
+  { key: "lastActivity",   label: "Last Activity" },
+  { key: "influence",      label: "Influence" },
+  { key: "source",         label: "Source" },
+  { key: "actions",        label: "Actions",       required: true },
 ];
 
 const PAGE_SIZE = 50;
@@ -74,6 +92,7 @@ export default function ContactsPage() {
   const perms = usePermissions();
   const t = useTranslations("contacts");
   const tc = useTranslations("common");
+  const tl = useTranslations("lifecycle");
   const { visible, toggle } = useColumnPrefs("nexcrm_cols_contacts", COL_DEFS);
 
   const [contacts, setContacts]   = useState<Contact[]>([]);
@@ -312,6 +331,32 @@ export default function ContactsPage() {
                   )}
                   {visible.has("title") && (
                     <td className="px-4 py-3 text-muted-foreground">{contact.title ?? "—"}</td>
+                  )}
+                  {visible.has("lifecycleStage") && (
+                    <td className="px-4 py-3">
+                      {contact.lifecycleStage ? (
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium capitalize", LIFECYCLE_COLORS[contact.lifecycleStage] ?? "bg-gray-100")}>
+                          {tl(contact.lifecycleStage as any, { defaultValue: contact.lifecycleStage })}
+                        </span>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  )}
+                  {visible.has("owner") && (
+                    <td className="px-4 py-3">
+                      <OwnerPicker
+                        value={contact.ownerId}
+                        onChange={async (userId) => {
+                          await api.patch(`/api/v1/contacts/${contact.id}`, { ownerId: userId });
+                          fetchContacts();
+                        }}
+                        compact
+                      />
+                    </td>
+                  )}
+                  {visible.has("tags") && (
+                    <td className="px-4 py-3">
+                      <TagInput entityType="contact" entityId={contact.id} />
+                    </td>
                   )}
                   {visible.has("lastActivity") && (
                     <td className="px-4 py-3 text-muted-foreground">

@@ -96,6 +96,10 @@ function toCampaign(row: Record<string, unknown>) {
     closedWon:       row.closed_won ?? 0,
     revenue:         row.revenue != null ? Number(row.revenue) : 0,
     tags:            row.tags ?? [],
+    approvalStatus:  row.approval_status ?? "none",
+    approvedBy:      row.approved_by ?? null,
+    approvedAt:      row.approved_at ?? null,
+    abTest:          row.ab_test ?? null,
     contactCount:    Number(row.contact_count ?? 0),
     createdAt:       row.created_at,
     updatedAt:       row.updated_at,
@@ -296,6 +300,121 @@ export async function campaignsRoutes(server: FastifyInstance) {
     );
 
     return reply.send({ success: true, data: rows });
+  });
+
+  // ── POST /api/v1/campaigns/:id/clone ────────────────────────────────────
+  server.post("/:id/clone", { preHandler: [requireRep] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { tenantId, sub: userId } = request.user;
+
+    const { rows: orig } = await pool.query(
+      `SELECT * FROM campaigns WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
+    if (!orig.length) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+    const c = orig[0];
+
+    const { rows } = await pool.query(
+      `INSERT INTO campaigns
+         (tenant_id, name, description, type, status, channel,
+          start_date, end_date, budget, currency, target_audience,
+          goals, owner_id, tags)
+       VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING *, 0 AS contact_count`,
+      [tenantId, `${c.name} (Copy)`, c.description, c.type,
+       c.channel, c.start_date, c.end_date, c.budget, c.currency,
+       c.target_audience, c.goals, userId, JSON.stringify(c.tags ?? [])],
+    );
+
+    return reply.status(201).send({ success: true, data: toCampaign(rows[0]) });
+  });
+
+  // ── POST /api/v1/campaigns/:id/submit-for-approval ────────────────────
+  server.post("/:id/submit-for-approval", { preHandler: [requireRep] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { tenantId } = request.user;
+    const { rows } = await pool.query(
+      `UPDATE campaigns SET approval_status = 'pending'
+       WHERE id = $1 AND tenant_id = $2 AND approval_status IN ('none','rejected')
+       RETURNING *, 0 AS contact_count`,
+      [id, tenantId],
+    );
+    if (!rows.length) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+    return reply.send({ success: true, data: toCampaign(rows[0]) });
+  });
+
+  // ── POST /api/v1/campaigns/:id/approve ────────────────────────────────
+  server.post("/:id/approve", { preHandler: [requireManager] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { tenantId, sub: userId } = request.user;
+    const { rows } = await pool.query(
+      `UPDATE campaigns SET approval_status = 'approved', approved_by = $3, approved_at = now()
+       WHERE id = $1 AND tenant_id = $2 AND approval_status = 'pending'
+       RETURNING *, 0 AS contact_count`,
+      [id, tenantId, userId],
+    );
+    if (!rows.length) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+    return reply.send({ success: true, data: toCampaign(rows[0]) });
+  });
+
+  // ── POST /api/v1/campaigns/:id/reject ─────────────────────────────────
+  server.post("/:id/reject", { preHandler: [requireManager] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { tenantId } = request.user;
+    const { rows } = await pool.query(
+      `UPDATE campaigns SET approval_status = 'rejected'
+       WHERE id = $1 AND tenant_id = $2 AND approval_status = 'pending'
+       RETURNING *, 0 AS contact_count`,
+      [id, tenantId],
+    );
+    if (!rows.length) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+    return reply.send({ success: true, data: toCampaign(rows[0]) });
+  });
+
+  // ── GET /api/v1/campaigns/dashboard ───────────────────────────────────
+  server.get("/dashboard", { preHandler: [requireRep] }, async (request, reply) => {
+    const { tenantId } = request.user;
+
+    const { rows: stats } = await pool.query(
+      `SELECT
+         COUNT(*)::int AS total_campaigns,
+         COUNT(*) FILTER (WHERE status = 'active')::int AS active_campaigns,
+         SUM(sent)::int AS total_sent,
+         SUM(opened)::int AS total_opened,
+         SUM(clicked)::int AS total_clicked,
+         SUM(converted)::int AS total_converted,
+         SUM(leads_generated)::int AS total_leads,
+         SUM(mqls)::int AS total_mqls,
+         SUM(sqls)::int AS total_sqls,
+         SUM(revenue)::numeric AS total_revenue,
+         SUM(budget)::numeric AS total_budget,
+         SUM(actual_spend)::numeric AS total_spend
+       FROM campaigns WHERE tenant_id = $1`,
+      [tenantId],
+    );
+
+    const { rows: byChannel } = await pool.query(
+      `SELECT channel, COUNT(*)::int AS count, SUM(revenue)::numeric AS revenue
+       FROM campaigns WHERE tenant_id = $1 AND channel IS NOT NULL
+       GROUP BY channel ORDER BY revenue DESC`,
+      [tenantId],
+    );
+
+    const { rows: topCampaigns } = await pool.query(
+      `SELECT id, name, type, status, revenue, opened, clicked, converted
+       FROM campaigns WHERE tenant_id = $1
+       ORDER BY revenue DESC LIMIT 10`,
+      [tenantId],
+    );
+
+    return reply.send({
+      success: true,
+      data: {
+        summary: stats[0] ?? {},
+        byChannel,
+        topCampaigns,
+      },
+    });
   });
 
   // ── POST /api/v1/campaigns/:id/contacts ─────────────────────────────────

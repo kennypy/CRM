@@ -7,20 +7,38 @@ import { api } from "@/lib/api";
 import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
 import { ActionBar } from "@/components/action-bar/action-bar";
+import { TagInput } from "@/components/ui/tag-input";
+import { OwnerPicker } from "@/components/ui/owner-picker";
 import {
   TrendingUp, Search, RefreshCw, AlertCircle, Plus,
   ChevronLeft, ChevronRight, Flame, Minus, Snowflake,
   ArrowRight, Building2, Mail, X, User, CheckCircle2,
+  Tag, UserCircle, Activity,
 } from "lucide-react";
 
+const LIFECYCLE_STAGES = ["subscriber", "lead", "mql", "sql", "opportunity", "customer"] as const;
+
+const LIFECYCLE_COLORS: Record<string, string> = {
+  subscriber:  "bg-gray-100 text-gray-700",
+  lead:        "bg-blue-100 text-blue-700",
+  mql:         "bg-purple-100 text-purple-700",
+  sql:         "bg-indigo-100 text-indigo-700",
+  opportunity: "bg-orange-100 text-orange-700",
+  customer:    "bg-green-100 text-green-700",
+};
+
 const COL_DEFS: ColDef[] = [
-  { key: "name",         label: "Lead",          required: true },
-  { key: "company",      label: "Company" },
-  { key: "score",        label: "Score" },
-  { key: "tier",         label: "Tier" },
-  { key: "source",       label: "Source" },
-  { key: "lastActivity", label: "Last Activity" },
-  { key: "actions",      label: "Actions",       required: true },
+  { key: "select",         label: "",              required: true },
+  { key: "name",           label: "Lead",          required: true },
+  { key: "company",        label: "Company" },
+  { key: "score",          label: "Score" },
+  { key: "tier",           label: "Tier" },
+  { key: "lifecycleStage", label: "Stage" },
+  { key: "owner",          label: "Owner" },
+  { key: "source",         label: "Source" },
+  { key: "tags",           label: "Tags" },
+  { key: "lastActivity",   label: "Last Activity" },
+  { key: "actions",        label: "Actions",       required: true },
 ];
 
 interface Lead {
@@ -33,6 +51,8 @@ interface Lead {
   score: number;
   tier: "hot" | "warm" | "cold";
   source: string;
+  lifecycleStage: string;
+  ownerId?: string;
   lastActivityAt?: string;
   createdAt: string;
 }
@@ -249,6 +269,8 @@ const PAGE_SIZE = 50;
 export default function LeadsPage() {
   const t  = useTranslations("leads");
   const tc = useTranslations("common");
+  const tl = useTranslations("lifecycle");
+  const tb = useTranslations("bulk");
   const { visible, toggle } = useColumnPrefs("nexcrm_cols_leads", COL_DEFS);
   const [leads, setLeads]           = useState<Lead[]>([]);
   const [total, setTotal]           = useState(0);
@@ -256,11 +278,31 @@ export default function LeadsPage() {
   const [search, setSearch]         = useState("");
   const [debounced, setDebounced]   = useState("");
   const [tierFilter, setTierFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [showAdd, setShowAdd]       = useState(false);
   const [converting, setConverting] = useState<Lead | null>(null);
+  const [selected, setSelected]     = useState<Set<string>>(new Set());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    if (selected.size === filtered.length) setSelected(new Set());
+    else setSelected(new Set(filtered.map((l) => l.id)));
+  };
+  const handleBulkDelete = async () => {
+    if (!confirm(`Delete ${selected.size} leads?`)) return;
+    await Promise.all([...selected].map((id) => api.delete(`/api/v1/contacts/${id}`)));
+    setSelected(new Set());
+    fetchLeads();
+  };
 
   const tierLabels: Record<string, string> = {
     hot: "Hot",
@@ -284,13 +326,15 @@ export default function LeadsPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const raw: Lead[] = (json.data ?? []).map((c: any) => {
-        const score = hashScore(c.id);
+        const score = c.engagementScore ?? hashScore(c.id);
         return {
           id: c.id, firstName: c.firstName, lastName: c.lastName, email: c.email,
           title: c.title, company: c.company,
           score,
           tier: scoreTier(score),
           source: c.source ?? "auto",
+          lifecycleStage: c.lifecycleStage ?? "lead",
+          ownerId: c.ownerId,
           lastActivityAt: c.lastActivityAt,
           createdAt: c.createdAt,
         };
@@ -306,7 +350,9 @@ export default function LeadsPage() {
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
-  const filtered = tierFilter === "all" ? leads : leads.filter((l) => l.tier === tierFilter);
+  const filtered = leads
+    .filter((l) => tierFilter === "all" || l.tier === tierFilter)
+    .filter((l) => stageFilter === "all" || l.lifecycleStage === stageFilter);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const stats = {
@@ -367,16 +413,45 @@ export default function LeadsPage() {
         ))}
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder={t("searchPlaceholder")}
-          value={search}
-          onChange={(e) => handleSearch(e.target.value)}
-          className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder={t("searchPlaceholder")}
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+        <div className="flex gap-1 rounded-lg border p-1">
+          {["all", ...LIFECYCLE_STAGES].map((s) => (
+            <button
+              key={s}
+              onClick={() => setStageFilter(s)}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                stageFilter === s ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+              )}
+            >
+              {s === "all" ? tc("all") : tl(s)}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Bulk actions bar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border bg-primary/5 px-4 py-2">
+          <span className="text-sm font-medium">{tb("selected", { count: selected.size })}</span>
+          <button onClick={handleBulkDelete} className="rounded-md bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200">
+            {tb("deleteSelected")}
+          </button>
+          <button onClick={() => setSelected(new Set())} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
+            {tb("clearSelection")}
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -390,7 +465,10 @@ export default function LeadsPage() {
             <tr>
               {COL_DEFS.filter((d) => visible.has(d.key)).map((col) => (
                 <th key={col.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  {col.key === "actions" ? "" : col.label}
+                  {col.key === "select" ? (
+                    <input type="checkbox" checked={selected.size > 0 && selected.size === filtered.length}
+                      onChange={toggleSelectAll} className="rounded border-border" />
+                  ) : col.key === "actions" ? "" : col.label}
                 </th>
               ))}
             </tr>
@@ -412,7 +490,13 @@ export default function LeadsPage() {
               </tr>
             ) : (
               filtered.map((lead) => (
-                <tr key={lead.id} className="hover:bg-muted/40 transition-colors">
+                <tr key={lead.id} className={cn("hover:bg-muted/40 transition-colors", selected.has(lead.id) && "bg-primary/5")}>
+                  {visible.has("select") && (
+                    <td className="px-4 py-3 w-10">
+                      <input type="checkbox" checked={selected.has(lead.id)}
+                        onChange={() => toggleSelect(lead.id)} className="rounded border-border" />
+                    </td>
+                  )}
                   {visible.has("name") && (
                     <td className="px-4 py-3">
                       <p className="font-medium">{lead.firstName} {lead.lastName}</p>
@@ -436,8 +520,32 @@ export default function LeadsPage() {
                   {visible.has("tier") && (
                     <td className="px-4 py-3"><TierBadge tier={lead.tier} t={t} /></td>
                   )}
+                  {visible.has("lifecycleStage") && (
+                    <td className="px-4 py-3">
+                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium capitalize", LIFECYCLE_COLORS[lead.lifecycleStage] ?? "bg-gray-100")}>
+                        {tl(lead.lifecycleStage as any, { defaultValue: lead.lifecycleStage })}
+                      </span>
+                    </td>
+                  )}
+                  {visible.has("owner") && (
+                    <td className="px-4 py-3">
+                      <OwnerPicker
+                        value={lead.ownerId}
+                        onChange={async (userId) => {
+                          await api.patch(`/api/v1/contacts/${lead.id}`, { ownerId: userId });
+                          fetchLeads();
+                        }}
+                        compact
+                      />
+                    </td>
+                  )}
                   {visible.has("source") && (
                     <td className="px-4 py-3 capitalize text-muted-foreground">{lead.source}</td>
+                  )}
+                  {visible.has("tags") && (
+                    <td className="px-4 py-3">
+                      <TagInput entityType="lead" entityId={lead.id} />
+                    </td>
                   )}
                   {visible.has("lastActivity") && (
                     <td className="px-4 py-3 text-muted-foreground">

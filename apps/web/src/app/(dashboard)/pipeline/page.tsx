@@ -116,8 +116,14 @@ function DealCard({
   };
 
   return (
-    <div className={cn(
-      "rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md",
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", deal.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      className={cn(
+      "rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing",
       isWon  && "border-green-200 bg-green-50/50",
       isLost && "border-red-200 bg-red-50/50 opacity-70",
     )}>
@@ -203,6 +209,7 @@ function DealCard({
 
 function KanbanColumn({
   stage, deals, currency, locale, onMove, onScoreClick, onDeclaredChange, onDetailClick, stageLabel, noDealLabel, scoreEvidenceTitle,
+  onDrop,
 }: {
   stage: (typeof STAGES)[number]; deals: Deal[]; currency: string; locale: string;
   onMove: (id: string, direction: "prev" | "next") => void;
@@ -212,13 +219,25 @@ function KanbanColumn({
   stageLabel: string;
   noDealLabel: string;
   scoreEvidenceTitle: string;
+  onDrop?: (dealId: string, targetStage: DealStage) => void;
 }) {
   const total   = deals.reduce((s, d) => s + d.value, 0);
   const isFirst = stage.key === STAGE_ORDER[0];
   const isLast  = stage.key === STAGE_ORDER[STAGE_ORDER.length - 1];
+  const [dragOver, setDragOver] = useState(false);
 
   return (
-    <div className="flex w-64 shrink-0 flex-col gap-2">
+    <div
+      className={cn("flex w-64 shrink-0 flex-col gap-2", dragOver && "ring-2 ring-primary/40 rounded-lg")}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const dealId = e.dataTransfer.getData("text/plain");
+        if (dealId && onDrop) onDrop(dealId, stage.key);
+      }}
+    >
       <div className={cn("rounded-t-lg border-t-4 bg-muted/50 px-3 py-2", stage.color)}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold">{stageLabel}</span>
@@ -331,6 +350,17 @@ export default function PipelinePage() {
     }
   }, [deals]);
 
+  const handleStageChange = useCallback(async (id: string, newStage: DealStage) => {
+    const deal = deals.find((d) => d.id === id);
+    if (!deal || deal.stage === newStage) return;
+    setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: newStage, updatedAt: new Date().toISOString() } : d));
+    try {
+      await api.patch(`/api/v1/deals/${id}`, { stage: newStage });
+    } catch {
+      setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: deal.stage, updatedAt: deal.updatedAt } : d));
+    }
+  }, [deals]);
+
   const handleDeclaredChange = useCallback(async (id: string, pct: number) => {
     setDeals((prev) => prev.map((d) => d.id === id ? { ...d, declaredProbability: pct } : d));
     try {
@@ -401,6 +431,12 @@ export default function PipelinePage() {
                 stageLabel={t(stage.labelKey)}
                 noDealLabel={t("noDeals")}
                 scoreEvidenceTitle={t("scoreEvidence")}
+                onDrop={(dealId, targetStage) => {
+                  const deal = deals.find((d) => d.id === dealId);
+                  if (deal && deal.stage !== targetStage) {
+                    handleStageChange(dealId, targetStage);
+                  }
+                }}
               />
             ))}
           </div>

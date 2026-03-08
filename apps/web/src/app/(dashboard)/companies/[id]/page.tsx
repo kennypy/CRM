@@ -17,9 +17,12 @@ import {
 import {
   Building2, Globe, Users, Briefcase, Calendar, ArrowLeft,
   Plus, Pencil, ExternalLink, AlertCircle, Mail, Activity,
-  ChevronRight, FileText, Eye, Download,
+  ChevronRight, FileText, Eye, Download, Heart,
 } from "lucide-react";
 import { generateQuotePDF } from "@/lib/quote-pdf";
+import { TagInput } from "@/components/ui/tag-input";
+import { NotesPanel } from "@/components/ui/notes-panel";
+import { OwnerPicker } from "@/components/ui/owner-picker";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,6 +33,10 @@ interface Company {
   subIndustry?: string; revenue?: number; segment?: string;
   createdBy?: string; lastCompanyActivity?: string; opportunitiesName?: string;
   openDeals: number; openDealValue: number; createdAt: string; updatedAt?: string;
+  parentCompanyId?: string; parentCompanyName?: string;
+  healthScore?: number; ownerId?: string;
+  marketingTier?: string; isTargetAccount?: boolean;
+  accountScore?: number;
 }
 
 interface ContactRow {
@@ -247,6 +254,74 @@ export default function CompanyDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Health Score, Parent Company, Owner, Tags & Notes */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Health Score */}
+        <div className="rounded-xl border bg-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Heart className="h-4 w-4 text-red-500" />
+            <h3 className="text-sm font-semibold">Account Health</h3>
+          </div>
+          {company.healthScore != null ? (
+            <div>
+              <div className="flex items-end gap-2">
+                <span className="text-3xl font-bold">{company.healthScore}</span>
+                <span className="text-sm text-muted-foreground mb-1">/100</span>
+              </div>
+              <div className="mt-2 h-2 w-full rounded-full bg-muted overflow-hidden">
+                <div className={cn("h-full rounded-full",
+                  company.healthScore >= 70 ? "bg-green-500" : company.healthScore >= 40 ? "bg-yellow-500" : "bg-red-500"
+                )} style={{ width: `${company.healthScore}%` }} />
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Not scored yet</p>
+          )}
+          {company.isTargetAccount && (
+            <span className="mt-2 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Target Account</span>
+          )}
+        </div>
+
+        {/* Owner & Parent Company */}
+        <div className="rounded-xl border bg-card p-5 space-y-4">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Owner</p>
+            <OwnerPicker
+              value={company.ownerId}
+              onChange={async (userId) => {
+                await api.patch(`/api/v1/companies/${company.id}`, { ownerId: userId });
+              }}
+            />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Parent Company</p>
+            {company.parentCompanyName ? (
+              <button onClick={() => company.parentCompanyId && router.push(`/companies/${company.parentCompanyId}`)}
+                className="flex items-center gap-1 text-sm text-primary hover:underline">
+                <Building2 className="h-3.5 w-3.5" /> {company.parentCompanyName}
+              </button>
+            ) : (
+              <p className="text-sm text-muted-foreground">None</p>
+            )}
+          </div>
+          {company.marketingTier && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Marketing Tier</p>
+              <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 capitalize">{company.marketingTier}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Tags */}
+        <div className="rounded-xl border bg-card p-5">
+          <h3 className="text-sm font-semibold mb-3">Tags</h3>
+          <TagInput entityType="company" entityId={company.id} readOnly={!perms.canWrite} />
+          <div className="mt-4">
+            <NotesPanel entityType="company" entityId={company.id} readOnly={!perms.canWrite} />
+          </div>
+        </div>
+      </div>
 
       {/* Two-column layout: Contacts + Deals */}
       <div className="grid gap-4 lg:grid-cols-2">

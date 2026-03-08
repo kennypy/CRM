@@ -616,6 +616,42 @@
     "metricSQLs": "SQLs",
     "metricRevenue": "Receita"
   },
+  "notes": {
+    "title": "Notas",
+    "placeholder": "Adicionar uma nota…",
+    "empty": "Nenhuma nota ainda",
+    "pin": "Fixar nota",
+    "unpin": "Desafixar nota"
+  },
+  "tags": {
+    "title": "Tags",
+    "addTag": "Adicionar tag",
+    "empty": "Sem tags"
+  },
+  "ownership": {
+    "owner": "Proprietário",
+    "unassigned": "Não atribuído",
+    "assignTo": "Atribuir a"
+  },
+  "gdpr": {
+    "consent": "Consentimento LGPD",
+    "consentDate": "Data do Consentimento",
+    "doNotContact": "Não Contatar",
+    "doNotContactReason": "Motivo",
+    "commPrefs": "Preferências de Comunicação",
+    "emailOptIn": "E-mail",
+    "phoneOptIn": "Telefone",
+    "smsOptIn": "SMS"
+  },
+  "lifecycle": {
+    "subscriber": "Inscrito",
+    "lead": "Lead",
+    "mql": "MQL",
+    "sql": "SQL",
+    "opportunity": "Oportunidade",
+    "customer": "Cliente",
+    "evangelist": "Evangelista"
+  },
   "bulk": {
     "selected": "{count} selecionado(s)",
     "assignTo": "Atribuir a…",

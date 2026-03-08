@@ -558,6 +558,42 @@
     "rep": "Rep",
     "readOnly": "Read Only"
   },
+  "notes": {
+    "title": "Notes",
+    "placeholder": "Add a note…",
+    "empty": "No notes yet",
+    "pin": "Pin note",
+    "unpin": "Unpin note"
+  },
+  "tags": {
+    "title": "Tags",
+    "addTag": "Add tag",
+    "empty": "No tags"
+  },
+  "ownership": {
+    "owner": "Owner",
+    "unassigned": "Unassigned",
+    "assignTo": "Assign to"
+  },
+  "gdpr": {
+    "consent": "GDPR Consent",
+    "consentDate": "Consent Date",
+    "doNotContact": "Do Not Contact",
+    "doNotContactReason": "Reason",
+    "commPrefs": "Communication Preferences",
+    "emailOptIn": "Email",
+    "phoneOptIn": "Phone",
+    "smsOptIn": "SMS"
+  },
+  "lifecycle": {
+    "subscriber": "Subscriber",
+    "lead": "Lead",
+    "mql": "MQL",
+    "sql": "SQL",
+    "opportunity": "Opportunity",
+    "customer": "Customer",
+    "evangelist": "Evangelist"
+  },
   "bulk": {
     "selected": "{count} selected",
     "assignTo": "Assign to…",
