@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../core/auth/auth_provider.dart';
@@ -399,6 +400,65 @@ class _AdminScreenState extends ConsumerState<AdminScreen> with SingleTickerProv
                   const SizedBox(height: 12),
                   _OverviewRow(label: 'Users', value: '${_users.length}'),
                   _OverviewRow(label: 'AI Enabled', value: tenant?['settings']?['aiEnabled'] == true ? 'Yes' : 'No'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Admin Tools
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Icon(Icons.build, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text('Admin Tools', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                  ]),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                      child: const Icon(Icons.find_replace, color: Colors.orange, size: 20),
+                    ),
+                    title: const Text('Data Deduplication', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+                    subtitle: Text('Find and merge duplicate records', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                    trailing: const Icon(Icons.chevron_right, size: 20),
+                    onTap: () => context.push('/admin/dedup'),
+                  ),
+                  if (isSuperAdmin) ...[
+                    const Divider(height: 1),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.business, color: Colors.blue, size: 20),
+                      ),
+                      title: const Text('Workspaces', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+                      subtitle: Text('Manage all workspaces', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                      trailing: const Icon(Icons.chevron_right, size: 20),
+                      onTap: () => context.push('/admin/workspaces'),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: Colors.purple.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.merge, color: Colors.purple, size: 20),
+                      ),
+                      title: const Text('Workspace Merges', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+                      subtitle: Text('Manage merge jobs', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                      trailing: const Icon(Icons.chevron_right, size: 20),
+                      onTap: () => context.push('/admin/merges'),
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -44,6 +44,9 @@ import 'features/settings/custom_fields_settings_screen.dart';
 import 'features/settings/custom_objects_settings_screen.dart';
 import 'features/settings/permissions_settings_screen.dart';
 import 'features/admin/admin_screen.dart';
+import 'features/admin/dedup_screen.dart';
+import 'features/admin/merges_screen.dart';
+import 'features/admin/workspaces_screen.dart';
 import 'features/leads/leads_screen.dart';
 import 'features/review/review_queue_screen.dart';
 import 'features/import/import_screen.dart';
@@ -190,7 +193,15 @@ class NexCRMApp extends ConsumerWidget {
             GoRoute(path: 'permissions', builder: (_, __) => const PermissionsSettingsScreen()),
           ],
         ),
-        GoRoute(path: '/admin', builder: (_, __) => const AdminScreen()),
+        GoRoute(
+          path: '/admin',
+          builder: (_, __) => const AdminScreen(),
+          routes: [
+            GoRoute(path: 'dedup', builder: (_, __) => const DedupScreen()),
+            GoRoute(path: 'merges', builder: (_, __) => const MergesScreen()),
+            GoRoute(path: 'workspaces', builder: (_, __) => const WorkspacesScreen()),
+          ],
+        ),
         GoRoute(path: '/leads', builder: (_, __) => const LeadsScreen()),
         GoRoute(path: '/review', builder: (_, __) => const ReviewQueueScreen()),
         GoRoute(path: '/import', builder: (_, __) => const ImportScreen()),
