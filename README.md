@@ -22,7 +22,7 @@ NexCRM flips the model:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        CLIENT LAYER                          │
-│  Next.js Web App  │  React Native Mobile  │  CLI / NL REPL  │
+│  Next.js Web App  │  Flutter Mobile  │  CLI / NL REPL        │
 └───────────────────────────┬─────────────────────────────────┘
                             │ REST + GraphQL + WebSockets
 ┌───────────────────────────▼─────────────────────────────────┐
@@ -51,23 +51,26 @@ NexCRM flips the model:
 ```
 nexcrm/
 ├── apps/
-│   ├── web/                    # Next.js 14 (App Router) — main UI
-│   └── mobile/                 # React Native (Phase 2)
+│   ├── web/                    # Next.js 15 (App Router) — main UI
+│   └── mobile/                 # Flutter — native mobile app (iOS + Android)
 ├── services/
 │   ├── api-gateway/            # Fastify — unified API surface
 │   ├── graph-core/             # Node.js — graph operations + Postgres
 │   ├── ingestion/              # Python — zero-entry ingestion pipeline
 │   ├── ai-engine/              # Python — LLM extraction, scoring, RAG
-│   └── auth/                   # Node.js — JWT, OAuth, RBAC, SCIM
+│   ├── auth/                   # Node.js — JWT, OAuth, RBAC, SCIM
+│   └── outreach/               # Node.js — sequences, email cadences
 ├── packages/
 │   ├── shared-types/           # TypeScript types shared across services
 │   ├── graph-client/           # Graph query client library
-│   └── ui-components/          # Shared React components (shadcn base)
+│   └── ui-components/          # Shared React components (Tailwind + CVA)
 ├── infra/
-│   ├── db/                     # DB init scripts + migrations
-│   ├── k8s/                    # Kubernetes manifests
-│   ├── terraform/              # Cloud infrastructure (Phase 2)
-│   └── otel/                   # OpenTelemetry config
+│   ├── db/                     # DB init scripts + migrations (27 migrations)
+│   ├── otel/                   # OpenTelemetry collector config
+│   ├── grafana/                # Grafana dashboards + provisioning
+│   ├── prometheus/             # Prometheus scrape config
+│   ├── loki/                   # Loki log aggregation config
+│   └── tempo/                  # Tempo distributed tracing config
 ├── docs/
 │   ├── BLUEPRINT.md            # Full architecture blueprint
 │   ├── DATA_MODEL.md           # Graph schema, nodes, edges, queries
@@ -108,8 +111,14 @@ Services will be available at:
 | Web UI          | http://localhost:3000        |
 | API Gateway     | http://localhost:4000        |
 | GraphQL         | http://localhost:4000/graphql|
+| Auth Service    | http://localhost:4001        |
+| Graph Core      | http://localhost:4002        |
+| Outreach        | http://localhost:4003        |
 | AI Engine       | http://localhost:5001        |
+| Grafana         | http://localhost:3001        |
+| Prometheus      | http://localhost:9090        |
 | MinIO Console   | http://localhost:9001        |
+| Typesense       | http://localhost:8108        |
 | Mailhog UI      | http://localhost:8025        |
 
 ---
@@ -129,15 +138,16 @@ Services will be available at:
 
 | Layer | Choice | Why |
 |-------|--------|-----|
-| Frontend | Next.js 14 + TypeScript | App Router, RSC, proven at scale |
-| Styling | Tailwind CSS + shadcn/ui | Fast, accessible, composable |
+| Frontend | Next.js 15 + TypeScript | App Router, RSC, proven at scale |
+| Mobile | Flutter (Dart) | Cross-platform iOS + Android from single codebase |
+| Styling | Tailwind CSS + CVA | Fast, accessible, composable utility-first components |
 | API Gateway | Fastify | 2–3× faster than Express, schema-first |
 | Graph DB | PostgreSQL 16 + Apache AGE | SQL + Cypher on one engine; pgvector for embeddings |
 | Cache/Streams | Redis 7 | Streams for event bus, sorted sets for scoring |
 | File Storage | S3-compatible (MinIO dev, S3 prod) | Standard, portable |
 | Search | Typesense | Fast, typo-tolerant, self-hostable |
 | AI/LLM | Claude (claude-sonnet-4-6) | Best-in-class reasoning, long context |
-| Observability | OpenTelemetry + Grafana | Vendor-neutral, full traces + metrics |
+| Observability | OpenTelemetry + Grafana + Prometheus + Loki + Tempo | Full observability stack: metrics, logs, traces |
 | Auth | Custom JWT + OAuth2 | RBAC, SCIM, SSO/SAML ready |
 
 ---
