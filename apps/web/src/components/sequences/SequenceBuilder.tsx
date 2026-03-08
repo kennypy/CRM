@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Plus, Save, Mail, Phone, Linkedin, Settings, RefreshCw, AlertCircle, X } from "lucide-react";
+import { Plus, Save, Mail, Phone, Linkedin, Settings, RefreshCw, AlertCircle, X, Shuffle, Gauge, Clock, Shield, Copy, Zap, MessageSquare } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { StepCard, type SequenceStep } from "./StepCard";
@@ -40,6 +40,32 @@ const DEFAULT_SETTINGS: Sequence["settings"] = {
   sendEnd:      "17:00",
 };
 
+// ── A/B Testing & Advanced Features ──────────────────────────────────────────
+
+interface ABVariant {
+  id: string;
+  label: string;
+  subject: string;
+  body: string;
+  weight: number; // percentage allocation
+}
+
+interface ThrottleConfig {
+  maxPerDay: number;
+  maxPerHour: number;
+  rampUp: boolean;
+  rampDays: number;
+  cooldownMinutes: number;
+}
+
+const DEFAULT_THROTTLE: ThrottleConfig = {
+  maxPerDay: 200,
+  maxPerHour: 50,
+  rampUp: true,
+  rampDays: 3,
+  cooldownMinutes: 2,
+};
+
 const DAY_LABELS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export function SequenceBuilder({ sequenceId, onSaved, onCancel }: SequenceBuilderProps) {
@@ -49,6 +75,13 @@ export function SequenceBuilder({ sequenceId, onSaved, onCancel }: SequenceBuild
   const [settings,    setSettings]    = useState(DEFAULT_SETTINGS);
   const [steps,       setSteps]       = useState<SequenceStep[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [showThrottle, setShowThrottle] = useState(false);
+  const [showABTest, setShowABTest]   = useState(false);
+  const [throttle, setThrottle]       = useState(DEFAULT_THROTTLE);
+  const [abVariants, setAbVariants]   = useState<Record<number, ABVariant[]>>({}); // step index -> variants
+  const [exitConditions, setExitConditions] = useState({
+    onReply: true, onMeetingBooked: true, onBounce: true, onOptOut: true, onDealCreated: false,
+  });
   const [saving,      setSaving]      = useState(false);
   const [loading,     setLoading]     = useState(!!sequenceId);
   const [error,       setError]       = useState<string | null>(null);
@@ -174,8 +207,11 @@ export function SequenceBuilder({ sequenceId, onSaved, onCancel }: SequenceBuild
           <p className="text-xs text-muted-foreground">{steps.length} step{steps.length !== 1 ? "s" : ""}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowSettings((v) => !v)} className={cn("rounded-md border border-border p-2 text-muted-foreground hover:bg-muted", showSettings && "bg-muted text-foreground")}>
+          <button onClick={() => setShowSettings((v) => !v)} className={cn("rounded-md border border-border p-2 text-muted-foreground hover:bg-muted", showSettings && "bg-muted text-foreground")} title="Schedule settings">
             <Settings className="h-4 w-4" />
+          </button>
+          <button onClick={() => setShowThrottle((v) => !v)} className={cn("rounded-md border border-border p-2 text-muted-foreground hover:bg-muted", showThrottle && "bg-muted text-foreground")} title="Throttle settings">
+            <Gauge className="h-4 w-4" />
           </button>
           <button onClick={onCancel} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted">
             Cancel
@@ -294,6 +330,59 @@ export function SequenceBuilder({ sequenceId, onSaved, onCancel }: SequenceBuild
           </div>
         )}
 
+        {/* Throttle Settings */}
+        {showThrottle && (
+          <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium flex items-center gap-2"><Gauge className="h-4 w-4" /> Sending Throttle</h3>
+              <button onClick={() => setShowThrottle(false)} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Max emails per day</label>
+                <input type="number" value={throttle.maxPerDay} onChange={(e) => setThrottle({ ...throttle, maxPerDay: parseInt(e.target.value) || 0 })} className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Max emails per hour</label>
+                <input type="number" value={throttle.maxPerHour} onChange={(e) => setThrottle({ ...throttle, maxPerHour: parseInt(e.target.value) || 0 })} className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Cooldown between sends (min)</label>
+                <input type="number" value={throttle.cooldownMinutes} onChange={(e) => setThrottle({ ...throttle, cooldownMinutes: parseInt(e.target.value) || 0 })} className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div className="flex flex-col justify-center">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={throttle.rampUp} onChange={(e) => setThrottle({ ...throttle, rampUp: e.target.checked })} className="rounded border-border" />
+                  <span>Ramp up sending over</span>
+                  <input type="number" value={throttle.rampDays} onChange={(e) => setThrottle({ ...throttle, rampDays: parseInt(e.target.value) || 1 })} className="w-12 rounded border border-border bg-background px-2 py-0.5 text-sm text-center" disabled={!throttle.rampUp} />
+                  <span className="text-xs text-muted-foreground">days</span>
+                </label>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Throttling protects your email deliverability by gradually sending emails throughout the day.</p>
+          </div>
+        )}
+
+        {/* Exit Conditions */}
+        <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+          <h3 className="text-sm font-medium flex items-center gap-2"><Shield className="h-4 w-4" /> Exit Conditions</h3>
+          <p className="text-xs text-muted-foreground">Contacts will automatically exit the sequence when any of these conditions are met.</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {[
+              { key: "onReply" as const, label: "Replied to email" },
+              { key: "onMeetingBooked" as const, label: "Meeting booked" },
+              { key: "onBounce" as const, label: "Email bounced" },
+              { key: "onOptOut" as const, label: "Opted out / Unsubscribed" },
+              { key: "onDealCreated" as const, label: "Deal created" },
+            ].map(({ key, label }) => (
+              <label key={key} className="flex items-center gap-2 text-xs cursor-pointer rounded-md border border-border px-3 py-2 hover:bg-muted/50">
+                <input type="checkbox" checked={exitConditions[key]} onChange={(e) => setExitConditions({ ...exitConditions, [key]: e.target.checked })} className="rounded border-border" />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
+
         {/* Steps */}
         <div className="space-y-3">
           {steps.map((step, i) => (
@@ -314,9 +403,11 @@ export function SequenceBuilder({ sequenceId, onSaved, onCancel }: SequenceBuild
         <div className="mt-4 flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Add step:</span>
           {([
-            { type: "email",         icon: Mail,     label: "Email" },
-            { type: "call",          icon: Phone,    label: "Call" },
-            { type: "linkedin_task", icon: Linkedin, label: "LinkedIn" },
+            { type: "email",         icon: Mail,          label: "Email" },
+            { type: "call",          icon: Phone,         label: "Call" },
+            { type: "linkedin_task", icon: Linkedin,      label: "LinkedIn" },
+            { type: "sms",           icon: MessageSquare, label: "SMS" },
+            { type: "task",          icon: Clock,         label: "Manual Task" },
           ] as const).map(({ type, icon: Icon, label }) => (
             <button
               key={type}
