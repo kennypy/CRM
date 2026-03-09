@@ -16,8 +16,11 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
   List<Map<String, dynamic>> _forecasts = [];
   Map<String, dynamic> _summary = {};
   bool _loading = true;
+  bool _computing = false;
   String? _error;
   String? _expandedId;
+  String? _modelVersion;
+  String? _calculatedAt;
 
   @override
   void initState() {
@@ -46,10 +49,27 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
 
       final sData = summaryRes.data['data'];
 
+      // Extract model version and calculatedAt from response metadata or first forecast
+      String? modelVer;
+      String? calcAt;
+      if (forecastRes.data is Map) {
+        modelVer = forecastRes.data['modelVersion'] ?? forecastRes.data['model_version'];
+        calcAt = forecastRes.data['calculatedAt'] ?? forecastRes.data['calculated_at'];
+      }
+      if (modelVer == null && items is List && items.isNotEmpty) {
+        final first = items.first;
+        if (first is Map) {
+          modelVer = first['modelVersion'] ?? first['model_version'];
+          calcAt = calcAt ?? first['calculatedAt'] ?? first['calculated_at'];
+        }
+      }
+
       if (mounted) {
         setState(() {
           _forecasts = List<Map<String, dynamic>>.from(items);
           _summary = sData is Map ? Map<String, dynamic>.from(sData) : {};
+          _modelVersion = modelVer;
+          _calculatedAt = calcAt;
         });
       }
     } catch (_) {
@@ -59,12 +79,56 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
     }
   }
 
+  Future<void> _computeForecasts() async {
+    setState(() => _computing = true);
+    try {
+      await ApiClient.instance.dio.post(Endpoints.forecastingCompute);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Forecast computation started')),
+        );
+        await _loadData();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to trigger computation')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _computing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasForecasts = _forecasts.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Forecasting')),
+      appBar: AppBar(
+        title: const Text('Forecasting'),
+        actions: [
+          // Compute / Recompute button
+          IconButton(
+            onPressed: _computing ? null : _computeForecasts,
+            tooltip: hasForecasts ? 'Recompute' : 'Compute',
+            icon: _computing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.electric_bolt),
+          ),
+          // Refresh button
+          IconButton(
+            onPressed: _loading ? null : _loadData,
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: _error != null
           ? ErrorView(message: _error!, onRetry: _loadData)
           : _loading
@@ -74,6 +138,16 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(12),
                     children: [
+                      // Model version & calculated at bar
+                      if (_modelVersion != null || _calculatedAt != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _MetadataBar(
+                            modelVersion: _modelVersion,
+                            calculatedAt: _calculatedAt,
+                          ),
+                        ),
+
                       // Summary cards
                       if (_summary.isNotEmpty) ...[
                         _buildSummarySection(theme),
@@ -139,7 +213,7 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
           ],
         ),
         const SizedBox(height: 8),
-        // Bottom row: revenue tiers
+        // Bottom row: revenue tiers with colored backgrounds
         Row(
           children: [
             Expanded(
@@ -148,6 +222,7 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
                 label: 'Likely',
                 value: _formatCurrency(likelyRev),
                 color: Colors.green,
+                filled: true,
               ),
             ),
             const SizedBox(width: 8),
@@ -157,6 +232,7 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
                 label: 'Possible',
                 value: _formatCurrency(possibleRev),
                 color: Colors.amber.shade700,
+                filled: true,
               ),
             ),
             const SizedBox(width: 8),
@@ -166,6 +242,7 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
                 label: 'Unlikely',
                 value: _formatCurrency(unlikelyRev),
                 color: Colors.red,
+                filled: true,
               ),
             ),
           ],
@@ -181,38 +258,120 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
   }
 }
 
+// ── Metadata bar (model version + calculated at) ────────────────────────────
+
+class _MetadataBar extends StatelessWidget {
+  final String? modelVersion;
+  final String? calculatedAt;
+
+  const _MetadataBar({this.modelVersion, this.calculatedAt});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          if (modelVersion != null) ...[
+            Icon(Icons.model_training, size: 14, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text(
+              'Model $modelVersion',
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          if (modelVersion != null && calculatedAt != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '\u2022',
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
+          if (calculatedAt != null) ...[
+            Icon(Icons.access_time, size: 14, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                'Calculated ${_formatTimestamp(calculatedAt!)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatTimestamp(String ts) {
+    try {
+      final dt = DateTime.parse(ts);
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      if (diff.inMinutes < 1) return 'just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+      return '${dt.month}/${dt.day}/${dt.year}';
+    } catch (_) {
+      return ts;
+    }
+  }
+}
+
+// ── Summary tile ────────────────────────────────────────────────────────────
+
 class _SummaryTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
   final Color color;
+  final bool filled;
 
   const _SummaryTile({
     required this.icon,
     required this.label,
     required this.value,
     required this.color,
+    this.filled = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bgOpacity = filled ? 0.15 : 0.06;
+    final borderOpacity = filled ? 0.3 : 0.15;
+    final textColor = filled ? color : color;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.06),
+        color: color.withOpacity(bgOpacity),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.15)),
+        border: Border.all(color: color.withOpacity(borderOpacity)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 14, color: color),
+              Icon(icon, size: 14, color: textColor),
               const SizedBox(width: 4),
               Text(
                 label,
-                style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500),
+                style: TextStyle(fontSize: 11, color: textColor, fontWeight: FontWeight.w500),
               ),
             ],
           ),
@@ -222,7 +381,7 @@ class _SummaryTile extends StatelessWidget {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: color,
+              color: textColor,
             ),
           ),
         ],
@@ -230,6 +389,39 @@ class _SummaryTile extends StatelessWidget {
     );
   }
 }
+
+// ── Stage badge colors ──────────────────────────────────────────────────────
+
+Color _stageColor(String? stage) {
+  switch (stage?.toLowerCase()) {
+    case 'lead':
+      return Colors.grey;
+    case 'qualified':
+      return Colors.blue;
+    case 'discovery':
+      return Colors.indigo;
+    case 'proposal':
+      return Colors.purple;
+    case 'negotiation':
+      return Colors.orange;
+    case 'closed_won':
+      return Colors.green;
+    case 'closed_lost':
+      return Colors.red;
+    default:
+      return Colors.grey;
+  }
+}
+
+String _stageName(String? stage) {
+  if (stage == null) return 'Unknown';
+  return stage.replaceAll('_', ' ').split(' ').map((w) {
+    if (w.isEmpty) return w;
+    return '${w[0].toUpperCase()}${w.substring(1)}';
+  }).join(' ');
+}
+
+// ── Forecast card ───────────────────────────────────────────────────────────
 
 class _ForecastCard extends StatelessWidget {
   final Map<String, dynamic> forecast;
@@ -252,7 +444,10 @@ class _ForecastCard extends StatelessWidget {
     final ciHigh = forecast['confidenceIntervalHigh'] ?? forecast['confidence_interval_high'];
     final predictedDate = forecast['predictedCloseDate'] ?? forecast['predicted_close_date'];
     final predictedValue = forecast['predictedValue'] ?? forecast['predicted_value'];
-    final dealStage = forecast['dealStage'] ?? forecast['deal_stage'];
+    final dealValue = forecast['dealValue'] ?? forecast['deal_value'] ?? forecast['value'] ?? forecast['amount'];
+    final dealStage = (forecast['dealStage'] ?? forecast['deal_stage'])?.toString();
+    final modelVersion = forecast['modelVersion'] ?? forecast['model_version'];
+    final calculatedAt = forecast['calculatedAt'] ?? forecast['calculated_at'];
     final factors = forecast['factors'] is List
         ? List<Map<String, dynamic>>.from(forecast['factors'])
         : <Map<String, dynamic>>[];
@@ -262,6 +457,8 @@ class _ForecastCard extends StatelessWidget {
         : probability >= 30
             ? Colors.amber.shade700
             : Colors.red;
+
+    final stageCol = _stageColor(dealStage);
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -275,7 +472,7 @@ class _ForecastCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Deal name + company
+                  // Deal name + probability badge
                   Row(
                     children: [
                       Expanded(
@@ -284,7 +481,7 @@ class _ForecastCard extends StatelessWidget {
                           children: [
                             Text(
                               dealName,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -317,25 +514,45 @@ class _ForecastCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
 
-                  // Probability bar
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: probability / 100,
-                      backgroundColor: probColor.withOpacity(0.1),
-                      valueColor: AlwaysStoppedAnimation(probColor),
-                      minHeight: 6,
+                  // Deal value (prominent)
+                  if (dealValue != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _formatValue(dealValue),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onSurface,
+                      ),
                     ),
-                  ),
+                  ],
+
                   const SizedBox(height: 10),
 
-                  // Info row
+                  // Stage badge + info chips
                   Wrap(
-                    spacing: 12,
+                    spacing: 8,
                     runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      if (dealStage != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: stageCol.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: stageCol.withOpacity(0.3)),
+                          ),
+                          child: Text(
+                            _stageName(dealStage),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: stageCol,
+                            ),
+                          ),
+                        ),
                       if (ciLow != null && ciHigh != null)
                         _InfoChip(
                           icon: Icons.swap_vert,
@@ -354,19 +571,59 @@ class _ForecastCard extends StatelessWidget {
                           label: _formatValue(predictedValue),
                           tooltip: 'Predicted value',
                         ),
-                      if (dealStage != null)
-                        _InfoChip(
-                          icon: Icons.flag_outlined,
-                          label: dealStage.toString().replaceAll('_', ' '),
-                          tooltip: 'Stage',
-                        ),
                     ],
                   ),
+
+                  const SizedBox(height: 10),
+
+                  // Probability bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: probability / 100,
+                      backgroundColor: probColor.withOpacity(0.1),
+                      valueColor: AlwaysStoppedAnimation(probColor),
+                      minHeight: 6,
+                    ),
+                  ),
+
+                  // Per-card model version / calculated-at
+                  if (modelVersion != null || calculatedAt != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        if (modelVersion != null)
+                          Text(
+                            'v$modelVersion',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                            ),
+                          ),
+                        if (modelVersion != null && calculatedAt != null)
+                          Text(
+                            '  \u2022  ',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
+                            ),
+                          ),
+                        if (calculatedAt != null)
+                          Text(
+                            _formatTimestamp(calculatedAt),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
 
-            // Expandable factors section
+            // Expandable factors section — 2-column grid
             if (isExpanded && factors.isNotEmpty)
               Container(
                 width: double.infinity,
@@ -385,7 +642,7 @@ class _ForecastCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    ...factors.map((f) => _FactorTile(factor: f)),
+                    _FactorsGrid(factors: factors),
                   ],
                 ),
               ),
@@ -422,7 +679,24 @@ class _ForecastCard extends StatelessWidget {
     if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(0)}K';
     return '\$${v.toStringAsFixed(0)}';
   }
+
+  String _formatTimestamp(dynamic ts) {
+    try {
+      final dt = DateTime.parse(ts.toString());
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      if (diff.inMinutes < 1) return 'just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+      return '${dt.month}/${dt.day}/${dt.year}';
+    } catch (_) {
+      return ts.toString();
+    }
+  }
 }
+
+// ── Info chip ───────────────────────────────────────────────────────────────
 
 class _InfoChip extends StatelessWidget {
   final IconData icon;
@@ -455,6 +729,40 @@ class _InfoChip extends StatelessWidget {
   }
 }
 
+// ── Factors grid (2-column layout) ──────────────────────────────────────────
+
+class _FactorsGrid extends StatelessWidget {
+  final List<Map<String, dynamic>> factors;
+
+  const _FactorsGrid({required this.factors});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < factors.length; i += 2) {
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _FactorTile(factor: factors[i])),
+            const SizedBox(width: 8),
+            if (i + 1 < factors.length)
+              Expanded(child: _FactorTile(factor: factors[i + 1]))
+            else
+              const Expanded(child: SizedBox.shrink()),
+          ],
+        ),
+      );
+      if (i + 2 < factors.length) {
+        rows.add(const SizedBox(height: 8));
+      }
+    }
+    return Column(children: rows);
+  }
+}
+
+// ── Factor tile ─────────────────────────────────────────────────────────────
+
 class _FactorTile extends StatelessWidget {
   final Map<String, dynamic> factor;
 
@@ -470,7 +778,6 @@ class _FactorTile extends StatelessWidget {
     final impactColor = isPositive ? Colors.green : Colors.red;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
@@ -486,7 +793,9 @@ class _FactorTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   name,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               Container(
@@ -498,7 +807,7 @@ class _FactorTile extends StatelessWidget {
                 child: Text(
                   '${isPositive ? '+' : ''}$impact',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: impactColor,
                   ),
@@ -511,9 +820,11 @@ class _FactorTile extends StatelessWidget {
             Text(
               evidence,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 10,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ],
