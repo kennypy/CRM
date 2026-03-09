@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
@@ -17,14 +18,40 @@ class _QuotingSettingsScreenState extends ConsumerState<QuotingSettingsScreen> {
   bool _saving = false;
   bool _dirty = false;
 
-  double _discountThreshold = 20;
   int _quoteValidDays = 30;
   String _sendMethod = 'email';
+
+  /// TCV tier-based approval configuration.
+  /// Each tier has: label, min, max, maxDiscount (%), approverRole.
+  late List<_ApprovalTier> _approvalTiers;
+
+  static const _defaultTiers = [
+    _TierDef(label: '< \$10k', min: 0, max: 10000),
+    _TierDef(label: '\$10k - \$50k', min: 10000, max: 50000),
+    _TierDef(label: '\$50k - \$100k', min: 50000, max: 100000),
+    _TierDef(label: '\$100k - \$250k', min: 100000, max: 250000),
+    _TierDef(label: '\$250k+', min: 250000, max: -1),
+  ];
 
   @override
   void initState() {
     super.initState();
+    _approvalTiers = _defaultTiers
+        .map((t) => _ApprovalTier(
+              def: t,
+              maxDiscountCtl: TextEditingController(text: '20'),
+              approverRole: 'manager',
+            ))
+        .toList();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    for (final tier in _approvalTiers) {
+      tier.maxDiscountCtl.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -35,12 +62,25 @@ class _QuotingSettingsScreenState extends ConsumerState<QuotingSettingsScreen> {
       ]);
       if (mounted) {
         _tenant = results[0].data['data'];
-        _discountThreshold = (_tenant?['settings']?['discountApprovalThreshold'] ?? 20).toDouble();
         _quoteValidDays = _tenant?['settings']?['quoteValidDays'] ?? 30;
         _sendMethod = _tenant?['settings']?['quoteSendMethod'] ?? 'email';
 
+        // Load saved approval tiers if available
+        final savedTiers = _tenant?['settings']?['approvalTiers'];
+        if (savedTiers is List && savedTiers.length == _approvalTiers.length) {
+          for (var i = 0; i < savedTiers.length; i++) {
+            final t = savedTiers[i];
+            _approvalTiers[i].maxDiscountCtl.text =
+                (t['maxDiscount'] ?? 20).toString();
+            _approvalTiers[i].approverRole =
+                t['approverRole'] ?? t['approver_role'] ?? 'manager';
+          }
+        }
+
         final userData = results[1].data['data'];
-        final items = userData is List ? userData : (userData is Map ? (userData['items'] ?? userData['users'] ?? []) : []);
+        final items = userData is List
+            ? userData
+            : (userData is Map ? (userData['items'] ?? userData['users'] ?? []) : []);
         _users = List<Map<String, dynamic>>.from(items);
         setState(() {});
       }
@@ -51,9 +91,20 @@ class _QuotingSettingsScreenState extends ConsumerState<QuotingSettingsScreen> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
+      final tiersPayload = List.generate(_approvalTiers.length, (i) {
+        final tier = _approvalTiers[i];
+        return {
+          'label': tier.def.label,
+          'min': tier.def.min,
+          'max': tier.def.max,
+          'maxDiscount': int.tryParse(tier.maxDiscountCtl.text) ?? 20,
+          'approverRole': tier.approverRole,
+        };
+      });
+
       await ApiClient.instance.dio.patch(Endpoints.tenant, data: {
         'settings': {
-          'discountApprovalThreshold': _discountThreshold,
+          'approvalTiers': tiersPayload,
           'quoteValidDays': _quoteValidDays,
           'quoteSendMethod': _sendMethod,
         },
@@ -132,41 +183,131 @@ class _QuotingSettingsScreenState extends ConsumerState<QuotingSettingsScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                Text('Approval Rules',
+                // ── TCV Tier-Based Approval Table ──
+                Text('TCV Approval Tiers',
                     style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text('Configure max discount and required approver per deal size tier.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant)),
                 const SizedBox(height: 12),
+
                 Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Discount approval threshold',
-                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                        const SizedBox(height: 8),
-                        Row(
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      // Table header
+                      Container(
+                        color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(
                           children: [
                             Expanded(
-                              child: Slider(
-                                value: _discountThreshold,
-                                min: 0,
-                                max: 100,
-                                divisions: 100,
-                                label: '${_discountThreshold.round()}%',
-                                onChanged: (v) => setState(() { _discountThreshold = v; _dirty = true; }),
-                              ),
+                              flex: 3,
+                              child: Text('TCV Range',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: theme.colorScheme.onSurfaceVariant)),
                             ),
-                            SizedBox(width: 50, child: Text('${_discountThreshold.round()}%',
-                                textAlign: TextAlign.right,
-                                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold))),
+                            Expanded(
+                              flex: 2,
+                              child: Text('Max Discount',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: theme.colorScheme.onSurfaceVariant)),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Text('Approver',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: theme.colorScheme.onSurfaceVariant)),
+                            ),
                           ],
                         ),
-                        Text('Quotes with discounts above this threshold require manager approval.',
-                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                      ],
-                    ),
+                      ),
+                      const Divider(height: 1),
+                      // Tier rows
+                      ...List.generate(_approvalTiers.length, (i) {
+                        final tier = _approvalTiers[i];
+                        final isLast = i == _approvalTiers.length - 1;
+
+                        return Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: Text(tier.def.label,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                            fontWeight: FontWeight.w500)),
+                                  ),
+                                  Expanded(
+                                    flex: 2,
+                                    child: SizedBox(
+                                      height: 40,
+                                      child: TextFormField(
+                                        controller: tier.maxDiscountCtl,
+                                        decoration: const InputDecoration(
+                                          suffixText: '%',
+                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                          isDense: true,
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly,
+                                          _MaxValueFormatter(100),
+                                        ],
+                                        onChanged: (_) {
+                                          if (!_dirty) setState(() => _dirty = true);
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    flex: 3,
+                                    child: SizedBox(
+                                      height: 40,
+                                      child: DropdownButtonFormField<String>(
+                                        value: tier.approverRole,
+                                        decoration: const InputDecoration(
+                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                          isDense: true,
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        items: const [
+                                          DropdownMenuItem(value: 'manager', child: Text('Manager')),
+                                          DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                                        ],
+                                        onChanged: (v) {
+                                          setState(() {
+                                            tier.approverRole = v ?? 'manager';
+                                            _dirty = true;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (!isLast) const Divider(height: 1),
+                          ],
+                        );
+                      }),
+                    ],
                   ),
                 ),
+
+                const SizedBox(height: 20),
+
+                // ── Quote Validity ──
+                Text('Quote Defaults',
+                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 12),
                 Card(
                   child: Padding(
@@ -231,5 +372,48 @@ class _QuotingSettingsScreenState extends ConsumerState<QuotingSettingsScreen> {
               ],
             ),
     );
+  }
+}
+
+/// Immutable definition for a TCV tier range.
+class _TierDef {
+  final String label;
+  final int min;
+  final int max; // -1 means unlimited
+
+  const _TierDef({required this.label, required this.min, required this.max});
+}
+
+/// Mutable state for a single approval tier row.
+class _ApprovalTier {
+  final _TierDef def;
+  final TextEditingController maxDiscountCtl;
+  String approverRole;
+
+  _ApprovalTier({
+    required this.def,
+    required this.maxDiscountCtl,
+    required this.approverRole,
+  });
+}
+
+/// Input formatter that caps numeric input to a max value.
+class _MaxValueFormatter extends TextInputFormatter {
+  final int maxValue;
+  _MaxValueFormatter(this.maxValue);
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.text.isEmpty) return newValue;
+    final parsed = int.tryParse(newValue.text);
+    if (parsed == null) return oldValue;
+    if (parsed > maxValue) {
+      return TextEditingValue(
+        text: maxValue.toString(),
+        selection: TextSelection.collapsed(offset: maxValue.toString().length),
+      );
+    }
+    return newValue;
   }
 }

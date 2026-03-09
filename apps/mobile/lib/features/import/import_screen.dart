@@ -520,7 +520,6 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   Widget _buildRecentImportTile(Map<String, dynamic> j, ThemeData theme) {
     final status = j['status'] ?? 'unknown';
-    final isCompleted = status == 'completed';
     final created = j['createdRows'] ?? 0;
     final updated = j['updatedRows'] ?? 0;
     final skipped = j['skippedRows'] ?? 0;
@@ -616,9 +615,6 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   Widget _buildMappingStep(ThemeData theme) {
     final crmList = _crmFields[_entityType] ?? [];
-    // Collect already-mapped fields so we can prevent duplicates
-    final usedFields =
-        _columnMapping.values.where((v) => v != null).toSet();
 
     return Column(
       key: const ValueKey('mapping'),

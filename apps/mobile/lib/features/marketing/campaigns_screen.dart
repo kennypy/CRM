@@ -24,21 +24,76 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
   String _statusFilter = 'all';
   String _search = '';
 
+  // Pagination
+  int _currentPage = 1;
+  int _totalPages = 1;
+  int _totalCount = 0;
+  static const int _pageSize = 20;
+
   // Dashboard tab state
   Map<String, dynamic>? _dashboardData;
   bool _dashLoading = false;
   String? _dashError;
   String _dashPeriod = 'all';
 
-  static const _statusFilters = ['all', 'draft', 'active', 'paused', 'completed'];
+  static const _statusFilters = [
+    'all',
+    'draft',
+    'scheduled',
+    'active',
+    'paused',
+    'completed',
+    'archived',
+  ];
 
   static const _statusColors = {
     'draft': Colors.grey,
+    'scheduled': Colors.indigo,
     'active': Colors.green,
     'paused': Colors.orange,
     'completed': Colors.blue,
+    'archived': Colors.brown,
     'cancelled': Colors.red,
   };
+
+  static const _campaignTypeIcons = {
+    'email': Icons.mail_outline,
+    'web': Icons.language,
+    'event': Icons.calendar_today,
+    'social': Icons.share,
+    'sms': Icons.sms_outlined,
+    'webinar': Icons.videocam_outlined,
+    'ads': Icons.ads_click,
+    'content': Icons.article_outlined,
+    'referral': Icons.group_add_outlined,
+    'direct_mail': Icons.local_post_office_outlined,
+  };
+
+  static const _campaignTypes = [
+    'email',
+    'web',
+    'event',
+    'social',
+    'sms',
+    'webinar',
+    'ads',
+    'content',
+    'referral',
+    'direct_mail',
+  ];
+
+  static const _campaignChannels = [
+    'email',
+    'social_media',
+    'search',
+    'display',
+    'sms',
+    'direct_mail',
+    'webinar',
+    'event',
+    'content',
+    'referral',
+  ];
 
   static const _periodOptions = [
     {'value': 'all', 'label': 'All'},
@@ -68,13 +123,28 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
   Future<void> _loadCampaigns() async {
     setState(() { _loading = true; _error = null; });
     try {
+      final queryParams = <String, String>{
+        'limit': '$_pageSize',
+        'offset': '${(_currentPage - 1) * _pageSize}',
+      };
+      if (_statusFilter != 'all') {
+        queryParams['status'] = _statusFilter;
+      }
+      if (_search.isNotEmpty) {
+        queryParams['search'] = _search;
+      }
       final res = await ApiClient.instance.dio.get(
-        '${Endpoints.apiUrl}/api/v1/campaigns',
-        queryParameters: {'limit': '100'},
+        Endpoints.campaigns,
+        queryParameters: queryParams,
       );
       final data = res.data['data'] ?? res.data['campaigns'] ?? [];
+      final total = res.data['total'] ?? res.data['totalCount'] ?? (data as List).length;
       if (mounted) {
-        setState(() => _campaigns = List<Map<String, dynamic>>.from(data));
+        setState(() {
+          _campaigns = List<Map<String, dynamic>>.from(data);
+          _totalCount = total is int ? total : int.tryParse('$total') ?? _campaigns.length;
+          _totalPages = (_totalCount / _pageSize).ceil().clamp(1, 9999);
+        });
       }
     } catch (e) {
       if (mounted) setState(() => _error = 'Failed to load campaigns');
@@ -91,7 +161,7 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
         queryParams['period'] = _dashPeriod;
       }
       final res = await ApiClient.instance.dio.get(
-        '${Endpoints.apiUrl}/api/v1/campaigns/dashboard',
+        '${Endpoints.campaigns}/dashboard',
         queryParameters: queryParams,
       );
       final data = res.data['data'] ?? res.data;
@@ -113,6 +183,30 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
       }
       return true;
     }).toList();
+  }
+
+  // ── Formatting helpers ──────────────────────────────────────────────
+
+  String _fmtNum(num n) => n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
+
+  String _fmtCurrency(num n) =>
+      '\$${n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : n.toStringAsFixed(0)}';
+
+  String _fmtPct(num a, num b) =>
+      b > 0 ? '${((a / b) * 100).toStringAsFixed(1)}%' : '0%';
+
+  String _fmtDate(String? iso) {
+    if (iso == null || iso.isEmpty) return '--';
+    try {
+      final d = DateTime.parse(iso);
+      return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return iso;
+    }
+  }
+
+  IconData _typeIcon(String? type) {
+    return _campaignTypeIcons[type ?? ''] ?? Icons.campaign_outlined;
   }
 
   // ── Dashboard helpers ───────────────────────────────────────────────
@@ -156,6 +250,599 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
     return sorted.take(5).toList();
   }
 
+  // ── API Actions ─────────────────────────────────────────────────────
+
+  Future<void> _createCampaign(Map<String, dynamic> data) async {
+    try {
+      await ApiClient.instance.dio.post(Endpoints.campaigns, data: data);
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Campaign created')),
+        );
+        _loadCampaigns();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create campaign: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateCampaignStatus(String id, String status) async {
+    try {
+      await ApiClient.instance.dio.patch(
+        '${Endpoints.campaigns}/$id',
+        data: {'status': status},
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Campaign ${status == 'active' ? 'activated' : status}')),
+        );
+        _loadCampaigns();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update campaign: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteCampaign(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Campaign'),
+        content: const Text(
+          'Are you sure you want to delete this campaign? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ApiClient.instance.dio.delete('${Endpoints.campaigns}/$id');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Campaign deleted')),
+        );
+        _loadCampaigns();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete campaign: $e')),
+        );
+      }
+    }
+  }
+
+  // ── Create Campaign Bottom Sheet ────────────────────────────────────
+
+  void _showCreateCampaign() {
+    final nameCtrl = TextEditingController();
+    final budgetCtrl = TextEditingController();
+    final audienceCtrl = TextEditingController();
+    final goalsCtrl = TextEditingController();
+    String selectedType = _campaignTypes.first;
+    String selectedChannel = _campaignChannels.first;
+    DateTime? startDate;
+    DateTime? endDate;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Create Campaign',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.of(ctx).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Name
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Campaign Name *',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Type dropdown
+                    DropdownButtonFormField<String>(
+                      value: selectedType,
+                      decoration: const InputDecoration(
+                        labelText: 'Type',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: _campaignTypes
+                          .map((t) => DropdownMenuItem(
+                                value: t,
+                                child: Row(
+                                  children: [
+                                    Icon(_campaignTypeIcons[t] ?? Icons.campaign, size: 18),
+                                    const SizedBox(width: 8),
+                                    Text(t.replaceAll('_', ' ')),
+                                  ],
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) setSheetState(() => selectedType = v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Channel dropdown
+                    DropdownButtonFormField<String>(
+                      value: selectedChannel,
+                      decoration: const InputDecoration(
+                        labelText: 'Channel',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: _campaignChannels
+                          .map((c) => DropdownMenuItem(
+                                value: c,
+                                child: Text(c.replaceAll('_', ' ')),
+                              ))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) setSheetState(() => selectedChannel = v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Budget
+                    TextField(
+                      controller: budgetCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Budget',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        prefixText: '\$ ',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Start / End dates
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate: startDate ?? DateTime.now(),
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime(2030),
+                              );
+                              if (picked != null) setSheetState(() => startDate = picked);
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Start Date',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                suffixIcon: Icon(Icons.calendar_today, size: 18),
+                              ),
+                              child: Text(
+                                startDate != null ? _fmtDate(startDate!.toIso8601String()) : 'Select',
+                                style: TextStyle(
+                                  color: startDate != null ? null : Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate: endDate ?? (startDate ?? DateTime.now()),
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime(2030),
+                              );
+                              if (picked != null) setSheetState(() => endDate = picked);
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'End Date',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                suffixIcon: Icon(Icons.calendar_today, size: 18),
+                              ),
+                              child: Text(
+                                endDate != null ? _fmtDate(endDate!.toIso8601String()) : 'Select',
+                                style: TextStyle(
+                                  color: endDate != null ? null : Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Target audience
+                    TextField(
+                      controller: audienceCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Target Audience',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Goals
+                    TextField(
+                      controller: goalsCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Goals',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 16),
+
+                    FilledButton.icon(
+                      onPressed: () {
+                        if (nameCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Campaign name is required')),
+                          );
+                          return;
+                        }
+                        final payload = <String, dynamic>{
+                          'name': nameCtrl.text.trim(),
+                          'type': selectedType,
+                          'channel': selectedChannel,
+                          'status': 'draft',
+                        };
+                        if (budgetCtrl.text.isNotEmpty) {
+                          payload['budget'] = double.tryParse(budgetCtrl.text) ?? 0;
+                        }
+                        if (startDate != null) {
+                          payload['start_date'] = startDate!.toIso8601String();
+                        }
+                        if (endDate != null) {
+                          payload['end_date'] = endDate!.toIso8601String();
+                        }
+                        if (audienceCtrl.text.trim().isNotEmpty) {
+                          payload['target_audience'] = audienceCtrl.text.trim();
+                        }
+                        if (goalsCtrl.text.trim().isNotEmpty) {
+                          payload['goals'] = goalsCtrl.text.trim();
+                        }
+                        _createCampaign(payload);
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create Campaign'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ── Campaign Detail Bottom Sheet ────────────────────────────────────
+
+  void _showCampaignDetail(Map<String, dynamic> campaign) {
+    final theme = Theme.of(context);
+    final status = (campaign['status'] ?? 'draft').toString();
+    final statusColor = _statusColors[status] ?? Colors.grey;
+    final id = '${campaign['id'] ?? campaign['_id'] ?? ''}';
+
+    final sent = num.tryParse('${campaign['sent_count'] ?? campaign['sentCount'] ?? 0}') ?? 0;
+    final opened = num.tryParse('${campaign['opened_count'] ?? campaign['openedCount'] ?? 0}') ?? 0;
+    final clicked = num.tryParse('${campaign['clicked_count'] ?? campaign['clickedCount'] ?? 0}') ?? 0;
+    final converted = num.tryParse('${campaign['converted_count'] ?? campaign['convertedCount'] ?? 0}') ?? 0;
+    final leads = num.tryParse('${campaign['leads_generated'] ?? campaign['leadsGenerated'] ?? 0}') ?? 0;
+    final mqls = num.tryParse('${campaign['mqls'] ?? 0}') ?? 0;
+    final sqls = num.tryParse('${campaign['sqls'] ?? 0}') ?? 0;
+    final revenue = num.tryParse('${campaign['revenue'] ?? 0}') ?? 0;
+    final budget = num.tryParse('${campaign['budget'] ?? 0}') ?? 0;
+    final actualSpend = num.tryParse('${campaign['actual_spend'] ?? campaign['actualSpend'] ?? 0}') ?? 0;
+    final contactCount = num.tryParse('${campaign['contact_count'] ?? campaign['contactCount'] ?? 0}') ?? 0;
+    final unsubscribed = num.tryParse('${campaign['unsubscribed_count'] ?? campaign['unsubscribedCount'] ?? 0}') ?? 0;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (ctx, scrollCtrl) {
+            return SingleChildScrollView(
+              controller: scrollCtrl,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Icon(_typeIcon(campaign['type']?.toString()), size: 28),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          campaign['name'] ?? 'Untitled',
+                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      status.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: statusColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Action buttons
+                  Row(
+                    children: [
+                      if (status == 'draft' || status == 'scheduled' || status == 'paused')
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () {
+                              Navigator.of(ctx).pop();
+                              _updateCampaignStatus(id, 'active');
+                            },
+                            icon: const Icon(Icons.play_arrow, size: 18),
+                            label: Text(status == 'paused' ? 'Resume' : 'Activate'),
+                          ),
+                        ),
+                      if (status == 'active') ...[
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () {
+                              Navigator.of(ctx).pop();
+                              _updateCampaignStatus(id, 'paused');
+                            },
+                            icon: const Icon(Icons.pause, size: 18),
+                            label: const Text('Pause'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.orange,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _deleteCampaign(id);
+                        },
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        tooltip: 'Delete',
+                        style: IconButton.styleFrom(
+                          side: const BorderSide(color: Colors.red, width: 1),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Metrics grid (8 metrics)
+                  Text(
+                    'METRICS',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 2.2,
+                    children: [
+                      _buildDetailMetricCard(theme, 'Sent', _fmtNum(sent), Icons.send_outlined, Colors.blue),
+                      _buildDetailMetricCard(theme, 'Opened', '${_fmtNum(opened)} (${_fmtPct(opened, sent)})', Icons.visibility_outlined, Colors.teal),
+                      _buildDetailMetricCard(theme, 'Clicked', '${_fmtNum(clicked)} (${_fmtPct(clicked, sent)})', Icons.touch_app_outlined, Colors.indigo),
+                      _buildDetailMetricCard(theme, 'Converted', _fmtNum(converted), Icons.check_circle_outline, Colors.green),
+                      _buildDetailMetricCard(theme, 'Leads Generated', _fmtNum(leads), Icons.person_add_outlined, Colors.purple),
+                      _buildDetailMetricCard(theme, 'MQLs', _fmtNum(mqls), Icons.star_outline, Colors.amber.shade700),
+                      _buildDetailMetricCard(theme, 'SQLs', _fmtNum(sqls), Icons.verified_outlined, Colors.deepOrange),
+                      _buildDetailMetricCard(theme, 'Revenue', _fmtCurrency(revenue), Icons.attach_money, Colors.green.shade700),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Details section
+                  Text(
+                    'DETAILS',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        children: [
+                          _detailRow(theme, 'Type', (campaign['type'] ?? '--').toString().replaceAll('_', ' ')),
+                          _detailRow(theme, 'Channel', (campaign['channel'] ?? '--').toString().replaceAll('_', ' ')),
+                          _detailRow(theme, 'Budget', budget > 0 ? _fmtCurrency(budget) : '--'),
+                          _detailRow(theme, 'Actual Spend', actualSpend > 0 ? _fmtCurrency(actualSpend) : '--'),
+                          _detailRow(theme, 'Start Date', _fmtDate(campaign['start_date']?.toString() ?? campaign['startDate']?.toString())),
+                          _detailRow(theme, 'End Date', _fmtDate(campaign['end_date']?.toString() ?? campaign['endDate']?.toString())),
+                          _detailRow(theme, 'Target Audience', (campaign['target_audience'] ?? campaign['targetAudience'] ?? '--').toString()),
+                          _detailRow(theme, 'Goals', (campaign['goals'] ?? '--').toString()),
+                          _detailRow(theme, 'Contact Count', '$contactCount'),
+                          _detailRow(theme, 'Unsubscribed', '$unsubscribed'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailMetricCard(ThemeData theme, String label, String value, IconData icon, Color color) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 14, color: color),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 11,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Build ───────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -188,11 +875,7 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Campaign creation coming soon')),
-          );
-        },
+        onPressed: _showCreateCampaign,
         child: const Icon(Icons.add),
       ),
     );
@@ -222,7 +905,11 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
               filled: true,
               fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
             ),
-            onChanged: (v) => setState(() => _search = v),
+            onChanged: (v) {
+              _search = v;
+              _currentPage = 1;
+              _loadCampaigns();
+            },
           ),
         ),
 
@@ -240,7 +927,13 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
               return FilterChip(
                 label: Text(s[0].toUpperCase() + s.substring(1)),
                 selected: selected,
-                onSelected: (_) => setState(() => _statusFilter = s),
+                onSelected: (_) {
+                  setState(() {
+                    _statusFilter = s;
+                    _currentPage = 1;
+                  });
+                  _loadCampaigns();
+                },
               );
             },
           ),
@@ -256,74 +949,252 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
               : RefreshIndicator(
                   onRefresh: _loadCampaigns,
                   child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     itemCount: _filtered.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final c = _filtered[i];
-                      final status = c['status'] ?? 'draft';
-                      final color = _statusColors[status] ?? Colors.grey;
-                      final sent = c['sentCount'] ?? c['sent_count'] ?? 0;
-                      final opened = c['openedCount'] ?? c['opened_count'] ?? 0;
-
-                      return Card(
-                        child: ListTile(
-                          title: Text(
-                            c['name'] ?? 'Untitled',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: color.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      status.toString().toUpperCase(),
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: color,
-                                      ),
-                                    ),
-                                  ),
-                                  if (c['type'] != null) ...[
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      c['type'].toString(),
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: theme.colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              if (sent > 0) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Sent: $sent  |  Opened: $opened',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          trailing: const Icon(Icons.chevron_right, size: 20),
-                          onTap: () {
-                            // Navigate to campaign detail (future)
-                          },
-                        ),
-                      );
-                    },
+                    itemBuilder: (_, i) => _buildCampaignCard(theme, _filtered[i]),
                   ),
                 ),
+        ),
+
+        // Pagination controls
+        if (_totalPages > 1)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(
+                top: BorderSide(color: theme.dividerColor),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: _currentPage > 1
+                      ? () {
+                          setState(() => _currentPage = 1);
+                          _loadCampaigns();
+                        }
+                      : null,
+                  icon: const Icon(Icons.first_page, size: 20),
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  onPressed: _currentPage > 1
+                      ? () {
+                          setState(() => _currentPage--);
+                          _loadCampaigns();
+                        }
+                      : null,
+                  icon: const Icon(Icons.chevron_left, size: 20),
+                  visualDensity: VisualDensity.compact,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Page $_currentPage of $_totalPages',
+                  style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                if (_totalCount > 0)
+                  Text(
+                    ' ($_totalCount total)',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _currentPage < _totalPages
+                      ? () {
+                          setState(() => _currentPage++);
+                          _loadCampaigns();
+                        }
+                      : null,
+                  icon: const Icon(Icons.chevron_right, size: 20),
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  onPressed: _currentPage < _totalPages
+                      ? () {
+                          setState(() => _currentPage = _totalPages);
+                          _loadCampaigns();
+                        }
+                      : null,
+                  icon: const Icon(Icons.last_page, size: 20),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCampaignCard(ThemeData theme, Map<String, dynamic> c) {
+    final status = c['status'] ?? 'draft';
+    final color = _statusColors[status] ?? Colors.grey;
+    final type = (c['type'] ?? '').toString();
+    final channel = (c['channel'] ?? '').toString();
+    final sent = num.tryParse('${c['sent_count'] ?? c['sentCount'] ?? 0}') ?? 0;
+    final opened = num.tryParse('${c['opened_count'] ?? c['openedCount'] ?? 0}') ?? 0;
+    final clicked = num.tryParse('${c['clicked_count'] ?? c['clickedCount'] ?? 0}') ?? 0;
+    final revenue = num.tryParse('${c['revenue'] ?? 0}') ?? 0;
+    final budget = num.tryParse('${c['budget'] ?? 0}') ?? 0;
+    final startDate = c['start_date']?.toString() ?? c['startDate']?.toString();
+    final endDate = c['end_date']?.toString() ?? c['endDate']?.toString();
+    final openRate = _fmtPct(opened, sent);
+    final clickRate = _fmtPct(clicked, sent);
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showCampaignDetail(c),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title row with type icon
+              Row(
+                children: [
+                  Icon(_typeIcon(type), size: 20, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      c['name'] ?? 'Untitled',
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 20),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Status + type + channel row
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      status.toString().toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                  if (type.isNotEmpty)
+                    Text(
+                      type.replaceAll('_', ' '),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  if (channel.isNotEmpty)
+                    Text(
+                      '| ${channel.replaceAll('_', ' ')}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+
+              // Dates row
+              if (startDate != null || endDate != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.date_range, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_fmtDate(startDate)} - ${_fmtDate(endDate)}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (budget > 0) ...[
+                      const Spacer(),
+                      Icon(Icons.account_balance_wallet_outlined, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 4),
+                      Text(
+                        _fmtCurrency(budget),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+
+              // Stats row
+              if (sent > 0 || revenue > 0) ...[
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    if (sent > 0) ...[
+                      _buildMiniStat(theme, 'Sent', _fmtNum(sent)),
+                      const SizedBox(width: 12),
+                      _buildMiniStat(theme, 'Open', openRate),
+                      const SizedBox(width: 12),
+                      _buildMiniStat(theme, 'Click', clickRate),
+                    ],
+                    if (clicked > 0) ...[
+                      const SizedBox(width: 12),
+                      _buildMiniStat(theme, 'Clicks', _fmtNum(clicked)),
+                    ],
+                    const Spacer(),
+                    if (revenue > 0)
+                      Text(
+                        _fmtCurrency(revenue),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniStat(ThemeData theme, String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontSize: 10,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        Text(
+          value,
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+          ),
         ),
       ],
     );
@@ -471,10 +1342,6 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
     final totalRevenue = summary?['total_revenue'] ?? 0;
     final totalBudget = summary?['total_budget'] ?? 0;
 
-    String pct(num a, num b) => b > 0 ? '${((a / b) * 100).toStringAsFixed(1)}%' : '0%';
-    String fmtNum(num n) => n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
-    String fmtCurrency(num n) => '\$${n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : n.toStringAsFixed(0)}';
-
     // Calculate from campaigns list if API summary not available
     num calcTotalSent = totalSent;
     num calcTotalOpened = totalOpened;
@@ -497,20 +1364,20 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
     final items = <_MetricItem>[
       _MetricItem(
         label: 'Total Reach',
-        value: fmtNum(summary != null ? totalSent : calcTotalSent),
+        value: _fmtNum(summary != null ? totalSent : calcTotalSent),
         icon: Icons.people_outline,
         color: Colors.indigo,
       ),
       _MetricItem(
         label: 'Engagement',
-        value: pct(summary != null ? totalOpened : calcTotalOpened,
+        value: _fmtPct(summary != null ? totalOpened : calcTotalOpened,
             summary != null ? totalSent : calcTotalSent),
         icon: Icons.visibility_outlined,
         color: Colors.teal,
       ),
       _MetricItem(
         label: 'Conversion',
-        value: pct(summary != null ? totalConverted : calcTotalConverted,
+        value: _fmtPct(summary != null ? totalConverted : calcTotalConverted,
             summary != null ? totalSent : calcTotalSent),
         icon: Icons.trending_up,
         color: Colors.green,
