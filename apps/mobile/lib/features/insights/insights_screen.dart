@@ -416,7 +416,7 @@ class _InsightsScreenState extends ConsumerState<InsightsScreen>
                 children: [
                   _BenchmarkRow(
                     label: 'Activities / Week',
-                    target: _teamBenchmarks['activitiesPerWeek']!,
+                    target: _teamBenchmarks['activitiesPerWeek']!.toDouble(),
                     teamAvg: _team.isNotEmpty
                         ? (_team.fold<int>(
                                 0,
