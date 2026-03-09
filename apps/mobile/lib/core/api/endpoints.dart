@@ -108,6 +108,29 @@ class Endpoints {
   static String get coachingRecommendations => '$apiUrl/api/v1/coaching/recommendations';
   static String get coachingMetrics => '$apiUrl/api/v1/coaching/metrics';
 
+  // Forecasting
+  static String get forecasting => '$apiUrl/api/v1/forecasting';
+  static String get forecastingSummary => '$apiUrl/api/v1/forecasting/summary';
+  static String get forecastingCompute => '$apiUrl/api/v1/forecasting/compute';
+
+  // Territories
+  static String get territories => '$apiUrl/api/v1/territories';
+  static String get territoriesRules => '$apiUrl/api/v1/territories/rules';
+
+  // Lead Scoring
+  static String get leadScoring => '$apiUrl/api/v1/lead-scoring';
+  static String get leadScoringComputeAll => '$apiUrl/api/v1/lead-scoring/compute-all';
+
+  // Anomalies
+  static String get anomalies => '$apiUrl/api/v1/anomalies';
+  static String get anomaliesSummary => '$apiUrl/api/v1/anomalies/summary';
+  static String get anomaliesScan => '$apiUrl/api/v1/anomalies/scan';
+
+  // Marketplace
+  static String get marketplace => '$apiUrl/api/v1/marketplace';
+  static String get marketplaceInstalls => '$apiUrl/api/v1/marketplace/installs';
+  static String get marketplaceInstall => '$apiUrl/api/v1/marketplace/install';
+
   // Admin
   static String get adminTenants => '$apiUrl/api/admin/tenants';
   static String get adminStats => '$apiUrl/api/admin/stats/platform';

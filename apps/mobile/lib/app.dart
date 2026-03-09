@@ -53,6 +53,14 @@ import 'features/import/import_screen.dart';
 import 'features/marketing/campaigns_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'features/custom_objects/custom_objects_browser_screen.dart';
+import 'features/insights/insights_screen.dart';
+import 'features/forecasting/forecasting_screen.dart';
+import 'features/territories/territories_screen.dart';
+import 'features/coaching/coaching_screen.dart';
+import 'features/compliance/compliance_screen.dart';
+import 'features/lead_scoring/lead_scoring_screen.dart';
+import 'features/anomalies/anomalies_screen.dart';
+import 'features/marketplace/marketplace_screen.dart';
 
 class NexCRMApp extends ConsumerWidget {
   const NexCRMApp({super.key});
@@ -206,6 +214,14 @@ class NexCRMApp extends ConsumerWidget {
         GoRoute(path: '/review', builder: (_, __) => const ReviewQueueScreen()),
         GoRoute(path: '/import', builder: (_, __) => const ImportScreen()),
         GoRoute(path: '/marketing', builder: (_, __) => const CampaignsScreen()),
+        GoRoute(path: '/insights', builder: (_, __) => const InsightsScreen()),
+        GoRoute(path: '/forecasting', builder: (_, __) => const ForecastingScreen()),
+        GoRoute(path: '/territories', builder: (_, __) => const TerritoriesScreen()),
+        GoRoute(path: '/coaching', builder: (_, __) => const CoachingScreen()),
+        GoRoute(path: '/compliance', builder: (_, __) => const ComplianceScreen()),
+        GoRoute(path: '/lead-scoring', builder: (_, __) => const LeadScoringScreen()),
+        GoRoute(path: '/anomalies', builder: (_, __) => const AnomaliesScreen()),
+        GoRoute(path: '/marketplace', builder: (_, __) => const MarketplaceScreen()),
         GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
         GoRoute(
           path: '/custom/:objectKey',
@@ -301,11 +317,20 @@ class _MoreScreen extends ConsumerWidget {
           _MoreTile(icon: Icons.account_tree, label: 'Workflows', route: '/workflows'),
           const Divider(),
           _MoreTile(icon: Icons.bar_chart, label: 'Reports', route: '/reports'),
+          _MoreTile(icon: Icons.insights, label: 'Insights', route: '/insights'),
+          _MoreTile(icon: Icons.show_chart, label: 'Forecasting', route: '/forecasting'),
           _MoreTile(icon: Icons.rate_review, label: 'Review Queue', route: '/review'),
           _MoreTile(icon: Icons.upload_file, label: 'Import', route: '/import'),
           _MoreTile(icon: Icons.campaign, label: 'Marketing', route: '/marketing'),
-          _MoreTile(icon: Icons.auto_awesome, label: 'AI Assistant', route: '/ai'),
           const Divider(),
+          _MoreTile(icon: Icons.public, label: 'Territories', route: '/territories'),
+          _MoreTile(icon: Icons.school, label: 'Coaching', route: '/coaching'),
+          _MoreTile(icon: Icons.verified_user, label: 'Compliance', route: '/compliance'),
+          _MoreTile(icon: Icons.gps_fixed, label: 'Lead Scoring', route: '/lead-scoring'),
+          _MoreTile(icon: Icons.warning_amber, label: 'Anomalies', route: '/anomalies'),
+          _MoreTile(icon: Icons.store, label: 'Marketplace', route: '/marketplace'),
+          const Divider(),
+          _MoreTile(icon: Icons.auto_awesome, label: 'AI Assistant', route: '/ai'),
           _MoreTile(icon: Icons.notifications_outlined, label: 'Notifications', route: '/notifications'),
           _MoreTile(icon: Icons.settings, label: 'Settings', route: '/settings'),
           if (user != null && user.isAdmin)
