@@ -8,9 +8,11 @@ import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
 import { slackNotificationQueue } from "./slack-notification";
 import { redisConnection } from "../lib/redis";
+import { attachWorkerErrorHandler } from "./worker-utils";
+
+import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 
 const QUEUE_NAME = "nexcrm-close-date-checker";
-const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
 
 export const closeDateCheckerQueue = new Queue(QUEUE_NAME, {
   connection: redisConnection(),
@@ -218,9 +220,7 @@ export function startCloseDateCheckerWorker(): void {
     }
   );
 
-  worker.on("error", (err) => {
-    console.error("[close-date-checker] Worker error:", err.message);
-  });
+  attachWorkerErrorHandler(worker, "close-date-checker");
 
   console.log("[close-date-checker] Worker started");
 }

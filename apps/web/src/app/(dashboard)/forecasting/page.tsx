@@ -129,7 +129,7 @@ export default function ForecastingPage() {
 
   const handleCompute = async () => {
     setComputing(true);
-    try { await api.post("/api/v1/forecasting/compute", {}); setTimeout(fetchData, 2000); } catch {}
+    try { await api.post("/api/v1/forecasting/compute", {}); setTimeout(fetchData, 2000); } catch (err) { console.error("Forecast compute failed:", err); }
     finally { setComputing(false); }
   };
 

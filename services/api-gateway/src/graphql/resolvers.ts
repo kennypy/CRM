@@ -20,7 +20,7 @@ declare module "mercurius" {
   }
 }
 
-const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
+import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 
 type GQLContext = MercuriusContext;
 

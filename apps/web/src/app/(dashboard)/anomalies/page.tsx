@@ -122,7 +122,7 @@ export default function AnomaliesPage() {
 
   const handleScan = async () => {
     setScanning(true);
-    try { await api.post("/api/v1/anomalies/scan", {}); setTimeout(fetchAlerts, 3000); } catch {}
+    try { await api.post("/api/v1/anomalies/scan", {}); setTimeout(fetchAlerts, 3000); } catch (err) { console.error("Anomaly scan failed:", err); }
     finally { setScanning(false); }
   };
 

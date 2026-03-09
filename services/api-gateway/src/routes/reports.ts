@@ -31,7 +31,7 @@ type SourceId = "activities" | "deals" | "companies" | "contacts" | "quotes" | "
 const GRAPH_SOURCES: SourceId[] = ["deals", "companies", "contacts"];
 const SQL_SOURCES:   SourceId[] = ["activities", "quotes", "users"];
 
-const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
+import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 
 // Field definitions per source (used for validation + UI metadata)
 export const SOURCE_FIELDS: Record<SourceId, { key: string; label: string }[]> = {

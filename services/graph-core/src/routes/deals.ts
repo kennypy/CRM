@@ -168,14 +168,14 @@ export async function dealsRoutes(server: FastifyInstance) {
          MERGE (c)-[:INVOLVED_IN {type: 'buyer', created_at: $now}]->(d)
          RETURN {ok: true}`,
         { id, companyId, tenantId, now }
-      ).catch(() => {});
+      ).catch((err) => { console.error("[deals] non-fatal write failed:", err.message); });
     }
 
     await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, 'deal.created', 'user', 'deal', $2, $3)`,
       [tenantId, id, JSON.stringify(body.data)]
-    ).catch(() => {});
+    ).catch((err) => { console.error("[deals] non-fatal write failed:", err.message); });
 
     const created = await cypher(
       `MATCH (d:Deal {id: $id, tenant_id: $tenantId})
@@ -290,7 +290,7 @@ export async function dealsRoutes(server: FastifyInstance) {
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, $2, 'user', 'deal', $3, $4)`,
       [tenantId, evType, id, JSON.stringify(f)]
-    ).catch(() => {});
+    ).catch((err) => { console.error("[deals] non-fatal write failed:", err.message); });
 
     const updated = await cypher(
       `MATCH (d:Deal {id: $id, tenant_id: $tenantId})
@@ -322,7 +322,7 @@ export async function dealsRoutes(server: FastifyInstance) {
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, 'deal.deleted', 'user', 'deal', $2, '{}')`,
       [tenantId, id]
-    ).catch(() => {});
+    ).catch((err) => { console.error("[deals] non-fatal write failed:", err.message); });
 
     return reply.status(204).send();
   });

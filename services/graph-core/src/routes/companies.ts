@@ -135,7 +135,7 @@ export async function companiesRoutes(server: FastifyInstance) {
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, 'company.created', 'user', 'company', $2, $3)`,
       [tenantId, id, JSON.stringify(body.data)]
-    ).catch(() => {});
+    ).catch((err) => { console.error("[companies] non-fatal write failed:", err.message); });
 
     const created = await cypher(
       `MATCH (c:Company {id: $id, tenant_id: $tenantId})

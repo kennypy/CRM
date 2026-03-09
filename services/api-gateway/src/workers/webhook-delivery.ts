@@ -15,6 +15,7 @@ import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
 import { decrypt } from "../lib/oauth-exchange";
 import { redisConnection } from "../lib/redis";
+import { attachWorkerErrorHandler } from "./worker-utils";
 
 const QUEUE_NAME = "nexcrm-webhook-deliveries";
 
@@ -160,9 +161,7 @@ export function startWebhookDeliveryWorker(): void {
     ).catch(console.error);
   });
 
-  worker.on("error", (err) => {
-    console.error("[webhook-delivery] Worker error:", err.message);
-  });
+  attachWorkerErrorHandler(worker, "webhook-delivery");
 
   console.log("[webhook-delivery] Worker started");
 }

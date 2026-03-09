@@ -217,7 +217,7 @@ export async function activitiesRoutes(server: FastifyInstance) {
            VALUES ($1,$2,$3,$4,$5,$6,'participant')
            ON CONFLICT DO NOTHING`,
           [id, occurredAtTs, props.id ?? null, props.first_name ?? null, props.last_name ?? null, props.email ?? ""]
-        ).catch(() => {});
+        ).catch((err) => { console.error("[activities] non-fatal write failed:", err.message); });
       }
     }
 
@@ -247,7 +247,7 @@ export async function activitiesRoutes(server: FastifyInstance) {
         durationSeconds: durationSeconds ?? 0,
         occurredAt, externalId: externalId ?? "", source, now,
       }
-    ).catch(() => {}); // non-fatal: AGE is secondary store
+    ).catch((err) => { console.error("[activities] AGE graph write failed:", err.message); });
 
     // Link participants in graph
     for (const personId of (participantIds ?? [])) {
@@ -256,7 +256,7 @@ export async function activitiesRoutes(server: FastifyInstance) {
          MERGE (p)-[:PARTICIPATED_IN {role: 'participant', linked_at: $now}]->(a)
          RETURN {ok: true}`,
         { personId, id, now }
-      ).catch(() => {});
+      ).catch((err) => { console.error("[activities] non-fatal write failed:", err.message); });
     }
 
     // Link to deal in graph
@@ -266,7 +266,7 @@ export async function activitiesRoutes(server: FastifyInstance) {
          MERGE (a)-[:RELATED_TO]->(d)
          RETURN {ok: true}`,
         { id, dealId, tenantId }
-      ).catch(() => {});
+      ).catch((err) => { console.error("[activities] non-fatal write failed:", err.message); });
     }
 
     // ── Post-write bookkeeping ─────────────────────────────────────────────────
@@ -275,14 +275,14 @@ export async function activitiesRoutes(server: FastifyInstance) {
         `INSERT INTO ingested_messages (tenant_id, source, source_event_id)
          VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
         [tenantId, source, externalId]
-      ).catch(() => {});
+      ).catch((err) => { console.error("[activities] non-fatal write failed:", err.message); });
     }
 
     await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, 'activity.created', $2, 'activity', $3, $4)`,
       [tenantId, source, id, JSON.stringify({ type, direction, subject, dealId })]
-    ).catch(() => {});
+    ).catch((err) => { console.error("[activities] non-fatal write failed:", err.message); });
 
     // Return from PostgreSQL
     const { rows } = await pool.query(

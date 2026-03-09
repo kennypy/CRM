@@ -180,7 +180,7 @@ export async function contactsRoutes(server: FastifyInstance) {
          MERGE (p)-[:WORKS_AT {is_current: true, created_at: $now}]->(c)
          RETURN {ok: true}`,
         { id, companyId, tenantId, now }
-      ).catch(() => {});
+      ).catch((err) => { console.error("[contacts] non-fatal write failed:", err.message); });
     } else {
       // Domain auto-linking: derive domain from email and look up matching Company
       const emailDomain = email.split("@")[1]?.toLowerCase();
@@ -199,7 +199,7 @@ export async function contactsRoutes(server: FastifyInstance) {
              MERGE (p)-[:WORKS_AT {is_current: true, auto_linked: true, created_at: $now}]->(c)
              RETURN {ok: true}`,
             { id, matchedCompanyId, tenantId, now }
-          ).catch(() => {});
+          ).catch((err) => { console.error("[contacts] non-fatal write failed:", err.message); });
         }
       }
     }

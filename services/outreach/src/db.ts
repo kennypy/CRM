@@ -12,6 +12,13 @@ pool.on("error", (err) => {
   console.error("Unexpected PG pool error:", err);
 });
 
+// Graceful shutdown — drain connections on process termination
+const shutdown = async () => {
+  await pool.end().catch((err) => console.error("Pool shutdown error:", err));
+};
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+
 /**
  * Emit a CRM event into the shared crm_events table.
  * Non-fatal — failures are logged but do not propagate.

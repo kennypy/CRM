@@ -10,8 +10,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { createProxy } from "../lib/proxy";
-
-const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
+import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 
 const BulkUpdateSchema = z.object({
   entity_type: z.enum(["contact", "company", "deal", "activity", "task"]),
