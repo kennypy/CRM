@@ -7,6 +7,7 @@ import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
 import { sendDM } from "../lib/slack-client";
 import { redisConnection } from "../lib/redis";
+import { attachWorkerErrorHandler } from "./worker-utils";
 
 const QUEUE_NAME = "nexcrm-slack-notifications";
 
@@ -65,9 +66,7 @@ export function startSlackNotificationWorker(): void {
     console.error(`[slack-notification] Job ${job?.id} failed:`, err.message);
   });
 
-  worker.on("error", (err) => {
-    console.error("[slack-notification] Worker error:", err.message);
-  });
+  attachWorkerErrorHandler(worker, "slack-notification");
 
   console.log("[slack-notification] Worker started");
 }

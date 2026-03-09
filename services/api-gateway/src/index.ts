@@ -6,7 +6,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 import { initSentry } from "./lib/sentry";
 initSentry();
 
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
@@ -128,7 +128,7 @@ async function bootstrap() {
     // Key on verified JWT sub (user ID) — not a client-supplied header.
     // Falls back to IP for unauthenticated/pre-auth requests.
     keyGenerator: (req) => {
-      const user = (req as any).user as { sub?: string } | undefined;
+      const user = (req as FastifyRequest & { user?: { sub?: string } }).user;
       // Never fall back to a shared "unknown" bucket — each unidentifiable
       // request gets its own unique key so one bad actor can't exhaust the
       // bucket for all anonymous callers simultaneously.

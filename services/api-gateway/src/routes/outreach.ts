@@ -11,8 +11,7 @@
 import type { FastifyInstance } from "fastify";
 import { createProxy } from "../lib/proxy";
 import { requireRep, requireManager, requireAdmin } from "../middleware/rbac";
-
-const OUTREACH_URL = process.env.OUTREACH_URL ?? "http://localhost:4003";
+import { OUTREACH_URL } from "../lib/service-urls";
 
 export async function outreachRoutes(fastify: FastifyInstance) {
   const proxy = createProxy({ baseUrl: OUTREACH_URL, stripPrefix: "/api/v1/outreach" });

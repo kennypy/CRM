@@ -9,8 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
 import { requireManager } from "../middleware/auth";
-
-const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
+import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 
 interface DuplicatePair {
   id1: string;

@@ -26,6 +26,7 @@
  */
 
 import { pool } from "../db";
+import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls";
 
 interface WorkflowDef {
   id: string;
@@ -50,9 +51,6 @@ interface CrmEvent {
   entity_id: string;
   payload: Record<string, unknown>;
 }
-
-const OUTREACH_URL = process.env.OUTREACH_URL ?? "http://localhost:4003";
-const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? "http://localhost:5001";
 
 function matchesTrigger(workflow: WorkflowDef, event: CrmEvent): boolean {
   const trigger = workflow.trigger;
@@ -120,108 +118,120 @@ function evaluateConditions(conditions: Array<Record<string, unknown>>, event: C
   });
 }
 
+type ActionResult = { success: boolean; result?: string; error?: string };
+type ActionConfig = Record<string, unknown> | undefined;
+
+type ActionHandler = (
+  config: ActionConfig,
+  event: CrmEvent,
+  tenantId: string
+) => Promise<ActionResult>;
+
+const actionHandlers: Record<string, ActionHandler> = {
+  async create_task(config, event, tenantId) {
+    const res = await fetch(`${GRAPH_CORE_URL}/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+      body: JSON.stringify({
+        title: config?.title ?? `Follow up on ${event.entity_type} ${event.entity_id}`,
+        priority: config?.priority ?? "medium",
+        status: "open",
+        related_entity_type: event.entity_type,
+        related_entity_id: event.entity_id,
+      }),
+    });
+    return { success: res.ok, result: `Task created (${res.status})` };
+  },
+
+  async send_email(config, event, tenantId) {
+    const res = await fetch(`${OUTREACH_URL}/api/v1/email/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+      body: JSON.stringify({
+        to: config?.to ?? event.payload?.email,
+        subject: config?.subject ?? "Automated notification",
+        body: config?.body ?? "This is an automated message from NexCRM.",
+      }),
+    });
+    return { success: res.ok, result: `Email sent (${res.status})` };
+  },
+
+  async fire_webhook(config, _event, tenantId) {
+    const webhookUrl = String(config?.url ?? "");
+    if (!webhookUrl) return { success: false, error: "No webhook URL configured" };
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: _event, tenantId, timestamp: new Date().toISOString() }),
+    });
+    return { success: res.ok, result: `Webhook delivered (${res.status})` };
+  },
+
+  async update_field(config, event, tenantId) {
+    const field = String(config?.field ?? "");
+    const value = config?.value;
+    if (!field) return { success: false, error: "No field specified" };
+    await pool.query(
+      `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
+       VALUES ($1, $2, 'workflow', $3, $4, $5)`,
+      [tenantId, `${event.entity_type}.updated`, event.entity_type, event.entity_id,
+       JSON.stringify({ field, value, updatedBy: "workflow" })]
+    );
+    return { success: true, result: `Field ${field} updated` };
+  },
+
+  async add_tag(config) {
+    const tag = String(config?.tag ?? config?.value ?? "");
+    if (!tag) return { success: false, error: "No tag specified" };
+    return { success: true, result: `Tag '${tag}' added` };
+  },
+
+  async add_to_sequence(config, event, tenantId) {
+    const res = await fetch(`${OUTREACH_URL}/api/v1/sequences/enroll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+      body: JSON.stringify({
+        sequenceId: config?.sequenceId,
+        contactId: event.entity_id,
+      }),
+    });
+    return { success: res.ok, result: `Enrolled in sequence (${res.status})` };
+  },
+
+  async assign_owner(config) {
+    return { success: true, result: `Owner assigned to ${config?.ownerId ?? "default"}` };
+  },
+
+  async ai_score_lead(_config, event, tenantId) {
+    const res = await fetch(`${AI_ENGINE_URL}/lead-scoring/compute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+      body: JSON.stringify({ contactId: event.entity_id }),
+    });
+    return { success: res.ok, result: `Lead scoring triggered (${res.status})` };
+  },
+
+  async ai_summarize(_config, event, tenantId) {
+    const res = await fetch(`${AI_ENGINE_URL}/summarize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+      body: JSON.stringify({ entityType: event.entity_type, entityId: event.entity_id }),
+    });
+    return { success: res.ok, result: `AI summary triggered (${res.status})` };
+  },
+};
+
 async function executeAction(
   action: { type: string; config?: Record<string, unknown> },
   event: CrmEvent,
   tenantId: string
-): Promise<{ success: boolean; result?: string; error?: string }> {
+): Promise<ActionResult> {
   try {
-    switch (action.type) {
-      case "create_task": {
-        const res = await fetch(`${process.env.GRAPH_CORE_URL ?? "http://localhost:4002"}/tasks`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-          body: JSON.stringify({
-            title: action.config?.title ?? `Follow up on ${event.entity_type} ${event.entity_id}`,
-            priority: action.config?.priority ?? "medium",
-            status: "open",
-            related_entity_type: event.entity_type,
-            related_entity_id: event.entity_id,
-          }),
-        });
-        return { success: res.ok, result: `Task created (${res.status})` };
-      }
-
-      case "send_email": {
-        const res = await fetch(`${OUTREACH_URL}/api/v1/email/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-          body: JSON.stringify({
-            to: action.config?.to ?? event.payload?.email,
-            subject: action.config?.subject ?? "Automated notification",
-            body: action.config?.body ?? "This is an automated message from NexCRM.",
-          }),
-        });
-        return { success: res.ok, result: `Email sent (${res.status})` };
-      }
-
-      case "fire_webhook": {
-        const webhookUrl = String(action.config?.url ?? "");
-        if (!webhookUrl) return { success: false, error: "No webhook URL configured" };
-        const res = await fetch(webhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ event, tenantId, timestamp: new Date().toISOString() }),
-        });
-        return { success: res.ok, result: `Webhook delivered (${res.status})` };
-      }
-
-      case "update_field": {
-        const field = String(action.config?.field ?? "");
-        const value = action.config?.value;
-        if (!field) return { success: false, error: "No field specified" };
-        await pool.query(
-          `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
-           VALUES ($1, $2, 'workflow', $3, $4, $5)`,
-          [tenantId, `${event.entity_type}.updated`, event.entity_type, event.entity_id,
-           JSON.stringify({ field, value, updatedBy: "workflow" })]
-        );
-        return { success: true, result: `Field ${field} updated` };
-      }
-
-      case "add_tag": {
-        const tag = String(action.config?.tag ?? action.config?.value ?? "");
-        if (!tag) return { success: false, error: "No tag specified" };
-        return { success: true, result: `Tag '${tag}' added` };
-      }
-
-      case "add_to_sequence": {
-        const res = await fetch(`${OUTREACH_URL}/api/v1/sequences/enroll`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-          body: JSON.stringify({
-            sequenceId: action.config?.sequenceId,
-            contactId: event.entity_id,
-          }),
-        });
-        return { success: res.ok, result: `Enrolled in sequence (${res.status})` };
-      }
-
-      case "assign_owner": {
-        return { success: true, result: `Owner assigned to ${action.config?.ownerId ?? "default"}` };
-      }
-
-      case "ai_score_lead": {
-        const res = await fetch(`${AI_ENGINE_URL}/lead-scoring/compute`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-          body: JSON.stringify({ contactId: event.entity_id }),
-        });
-        return { success: res.ok, result: `Lead scoring triggered (${res.status})` };
-      }
-
-      case "ai_summarize": {
-        const res = await fetch(`${AI_ENGINE_URL}/summarize`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-          body: JSON.stringify({ entityType: event.entity_type, entityId: event.entity_id }),
-        });
-        return { success: res.ok, result: `AI summary triggered (${res.status})` };
-      }
-
-      default:
-        return { success: true, result: `Action '${action.type}' acknowledged (no-op)` };
+    const handler = actionHandlers[action.type];
+    if (!handler) {
+      return { success: true, result: `Action '${action.type}' acknowledged (no-op)` };
     }
+    return await handler(action.config, event, tenantId);
   } catch (err: any) {
     return { success: false, error: err.message };
   }

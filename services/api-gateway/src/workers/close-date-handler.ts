@@ -7,8 +7,7 @@
 
 import { pool } from "../db";
 import { updateMessage } from "../lib/slack-client";
-
-const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
+import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 
 interface SlackInteractionPayload {
   type: string;

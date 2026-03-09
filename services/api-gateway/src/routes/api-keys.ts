@@ -119,7 +119,7 @@ export async function lookupApiKey(rawKey: string): Promise<{
   if (key.expires_at && new Date(key.expires_at) < new Date()) return null;
 
   // Update last_used_at non-blocking.
-  pool.query(`UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = $1`, [keyHash]).catch(() => {});
+  pool.query(`UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = $1`, [keyHash]).catch((err) => { console.error("[api-keys] last_used_at update failed:", err.message); });
 
   return {
     tenantId: key.tenant_id,

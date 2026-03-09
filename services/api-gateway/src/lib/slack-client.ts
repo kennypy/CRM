@@ -46,7 +46,9 @@ async function getDMChannel(token: string, slackUserId: string): Promise<string 
   const resp = await slackApi(token, "conversations.open", {
     users: slackUserId,
   });
-  return resp.ok ? (resp.channel as any)?.id ?? resp.channel : null;
+  if (!resp.ok) return null;
+  const ch = resp.channel as string | { id: string } | undefined;
+  return typeof ch === "object" ? ch?.id ?? null : ch ?? null;
 }
 
 /**
@@ -84,7 +86,7 @@ export async function sendDM(
     return null;
   }
 
-  return { channelId, messageTs: resp.ts! };
+  return { channelId, messageTs: resp.ts ?? "" };
 }
 
 /**

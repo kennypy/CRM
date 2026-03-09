@@ -6,9 +6,11 @@
 import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
 import { redisConnection } from "../lib/redis";
+import { attachWorkerErrorHandler } from "./worker-utils";
+
+import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 
 const QUEUE_NAME = "nexcrm-import-processor";
-const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
 
 export const importProcessorQueue = new Queue(QUEUE_NAME, {
   connection: redisConnection(),
@@ -105,9 +107,7 @@ export function startImportProcessorWorker(): void {
     }).catch(console.error);
   });
 
-  worker.on("error", (err) => {
-    console.error("[import-processor] Worker error:", err.message);
-  });
+  attachWorkerErrorHandler(worker, "import-processor");
 
   console.log("[import-processor] Worker started");
 }

@@ -227,7 +227,7 @@ export async function oauthRoutes(server: FastifyInstance) {
        ON CONFLICT (tenant_id, user_id, provider) DO UPDATE
          SET status = 'active', last_synced_at = NOW(), error_message = NULL`,
       [tenantId, dbUser.id]
-    ).catch(() => {}); // integrations table may not have a unique constraint yet
+    ).catch((err) => { console.error("[oauth] integration status update failed:", err.message); });
 
     const scopes = scopesForRole(dbUser.role);
     const accessToken = await server.jwt.sign(

@@ -10,8 +10,7 @@ import { createProxy } from "../lib/proxy";
 import { pool } from "../db";
 import { requireRep } from "../middleware/rbac";
 
-const AI_ENGINE  = process.env.AI_ENGINE_URL  ?? "http://localhost:5001";
-const GRAPH_CORE = process.env.GRAPH_CORE_URL ?? "http://localhost:4002";
+import { GRAPH_CORE_URL as GRAPH_CORE, AI_ENGINE_URL as AI_ENGINE } from "../lib/service-urls";
 
 // Allowed entity types — prevents unexpected query patterns
 const ENTITY_TYPES = ["person", "company", "deal", "activity"] as const;

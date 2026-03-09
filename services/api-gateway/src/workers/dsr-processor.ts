@@ -15,6 +15,7 @@
 import { Queue, Worker } from "bullmq";
 import { pool } from "../db";
 import { redisConnection } from "../lib/redis";
+import { attachWorkerErrorHandler } from "./worker-utils";
 
 const QUEUE_NAME = "nexcrm-dsr-processor";
 
@@ -145,22 +146,25 @@ async function processErasureRequest(dsrId: string, tenantId: string, subjectEma
 
     await client.query("COMMIT");
 
-    // Update DSR status
-    await pool.query(
-      `UPDATE data_subject_requests
-       SET status = 'completed', completed_at = NOW(), processed_by_worker = TRUE,
-           resolution = 'All PII anonymized or deleted per GDPR Art. 17',
-           updated_at = NOW()
-       WHERE id = $1`,
-      [dsrId],
-    );
+    // Post-commit bookkeeping — non-fatal since erasure already committed.
+    try {
+      await pool.query(
+        `UPDATE data_subject_requests
+         SET status = 'completed', completed_at = NOW(), processed_by_worker = TRUE,
+             resolution = 'All PII anonymized or deleted per GDPR Art. 17',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [dsrId],
+      );
 
-    // Write audit log
-    await pool.query(
-      `INSERT INTO audit_log (tenant_id, action, entity_type, entity_id, metadata)
-       VALUES ($1, 'dsr.erasure.completed', 'data_subject_request', $2, $3::jsonb)`,
-      [tenantId, dsrId, JSON.stringify({ subjectEmail })],
-    );
+      await pool.query(
+        `INSERT INTO audit_log (tenant_id, action, entity_type, entity_id, metadata)
+         VALUES ($1, 'dsr.erasure.completed', 'data_subject_request', $2, $3::jsonb)`,
+        [tenantId, dsrId, JSON.stringify({ subjectEmail })],
+      );
+    } catch (postCommitErr) {
+      console.error(`[dsr-processor] Erasure committed but post-commit update failed for DSR ${dsrId}:`, postCommitErr);
+    }
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
@@ -282,9 +286,7 @@ export function startDsrProcessorWorker(): void {
     ).catch(console.error);
   });
 
-  worker.on("error", (err) => {
-    console.error("[dsr-processor] Worker error:", err.message);
-  });
+  attachWorkerErrorHandler(worker, "dsr-processor");
 
   console.log("[dsr-processor] Worker started");
 }

@@ -81,7 +81,8 @@ async function bootstrap() {
   server.decorate("authenticate", async (request: any, reply: any) => {
     try {
       await request.jwtVerify();
-    } catch {
+    } catch (err) {
+      request.log.warn({ err }, "JWT verification failed");
       reply.status(401).send({
         success: false,
         error: { code: "UNAUTHORIZED", message: "Valid authentication required" },

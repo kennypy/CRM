@@ -8,8 +8,7 @@
 
 import { pool } from "../db";
 import { executeQuery } from "../routes/reports";
-
-const OUTREACH_URL = process.env.OUTREACH_URL ?? "http://localhost:4003";
+import { OUTREACH_URL } from "../lib/service-urls";
 const CHECK_INTERVAL_MS = 60_000; // 1 minute
 
 interface Subscription {
