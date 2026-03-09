@@ -141,4 +141,22 @@ class Endpoints {
   static String get adminDuplicatesDismiss => '$apiUrl/api/v1/admin/duplicates/dismiss';
   static String get adminDuplicatesMerge => '$apiUrl/api/v1/admin/duplicates/merge';
   static String get adminDuplicatesStats => '$apiUrl/api/v1/admin/duplicates/stats';
+
+  // Admin - Audit Log
+  static String get adminAuditLog => '$apiUrl/api/v1/admin/audit-log';
+  static String get adminAuditLogExport => '$apiUrl/api/v1/admin/audit-log/export';
+
+  // Admin - Roles & Permissions
+  static String get adminRoles => '$apiUrl/api/v1/admin/roles';
+
+  // Admin - System Health
+  static String get adminSystemHealth => '$apiUrl/api/v1/admin/system-health';
+
+  // Admin - Data Management
+  static String get adminDataExport => '$apiUrl/api/v1/admin/data/export';
+  static String get adminDataRetention => '$apiUrl/api/v1/admin/data/retention';
+  static String get adminGdprRequests => '$apiUrl/api/v1/admin/gdpr/requests';
+
+  // Admin - Workspace Features
+  static String get adminFeatures => '$apiUrl/api/v1/admin/features';
 }
