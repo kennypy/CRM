@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
@@ -60,6 +62,39 @@ const _trendColors = {
   'flat': Colors.grey,
 };
 
+const _meetingStatusColors = {
+  'completed': Colors.green,
+  'upcoming': Colors.blue,
+  'overdue': Colors.red,
+};
+
+const _prioritySkillGaps = [
+  {
+    'skill': 'Negotiation',
+    'priority': 'high',
+    'affectedReps': ['Sarah Chen', 'Mike Ross', 'Jake Liu'],
+    'impact': 'Win rate drops 18% when deals enter negotiation phase. Reps concede on price too early.',
+  },
+  {
+    'skill': 'Closing',
+    'priority': 'high',
+    'affectedReps': ['Tom Brady', 'Lisa Park'],
+    'impact': 'Average deal cycle extends by 12 days due to weak closing techniques. Pipeline stalls at final stage.',
+  },
+  {
+    'skill': 'Discovery',
+    'priority': 'medium',
+    'affectedReps': ['Jake Liu', 'Anna Bell', 'Tom Brady'],
+    'impact': 'Deals sourced with poor discovery have 30% lower average contract value.',
+  },
+  {
+    'skill': 'Objection Handling',
+    'priority': 'medium',
+    'affectedReps': ['Mike Ross', 'Anna Bell'],
+    'impact': 'Competitor displacement rate is 40% below target when objections arise mid-cycle.',
+  },
+];
+
 /* ------------------------------------------------------------------ */
 /*  Screen                                                             */
 /* ------------------------------------------------------------------ */
@@ -88,11 +123,13 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
   String _severityFilter = 'all';
   String? _repFilter;
   int? _expandedAlertIndex;
+  String _meetingStatusFilter = 'all';
+  int? _expandedMeetingIndex;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadData();
   }
 
@@ -169,6 +206,22 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
     return _skills.where((s) => s['rep'] == _repFilter || s['repName'] == _repFilter).toList();
   }
 
+  List<Map<String, dynamic>> get _filteredMeetings {
+    var list = _meetingInsights;
+    if (_meetingStatusFilter != 'all') {
+      list = list.where((m) => m['status'] == _meetingStatusFilter).toList();
+    }
+    if (_repFilter != null) {
+      list = list.where((m) => m['rep'] == _repFilter).toList();
+    }
+    return list;
+  }
+
+  int get _highSeverityAlertCount {
+    return _alerts.where((a) =>
+        a['severity'] == 'critical' || a['severity'] == 'high').length;
+  }
+
   List<String> get _repNames {
     final names = <String>{};
     for (final r in _reps) {
@@ -195,6 +248,7 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final badgeCount = _highSeverityAlertCount;
 
     return Scaffold(
       appBar: AppBar(
@@ -219,10 +273,29 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Alerts'),
-            Tab(text: 'Performance'),
-            Tab(text: 'Skills'),
+          isScrollable: true,
+          tabs: [
+            Tab(
+              icon: badgeCount > 0
+                  ? Badge(
+                      label: Text('$badgeCount'),
+                      child: const Icon(Icons.warning_amber_rounded),
+                    )
+                  : const Icon(Icons.warning_amber_rounded),
+              text: 'Alerts',
+            ),
+            const Tab(
+              icon: Icon(Icons.people_outline),
+              text: 'Performance',
+            ),
+            const Tab(
+              icon: Icon(Icons.chat_outlined),
+              text: '1:1 Notes',
+            ),
+            const Tab(
+              icon: Icon(Icons.menu_book_outlined),
+              text: 'Skills',
+            ),
           ],
         ),
       ),
@@ -235,6 +308,7 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
                   children: [
                     _buildAlertsTab(theme),
                     _buildPerformanceTab(theme),
+                    _buildOneOnOneNotesTab(theme),
                     _buildSkillsTab(theme),
                   ],
                 ),
@@ -515,35 +589,57 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
     final avgCycleTime = _getNum(_teamMetrics['avgCycleTime'] ?? _teamMetrics['avg_cycle_time']);
     final totalPipeline = _getNum(_teamMetrics['totalPipeline'] ?? _teamMetrics['total_pipeline']);
 
-    return Row(
+    final winRateDelta = _getNum(_teamMetrics['avgWinRateDelta'] ?? _teamMetrics['avg_win_rate_delta']);
+    final dealSizeDelta = _getNum(_teamMetrics['avgDealSizeDelta'] ?? _teamMetrics['avg_deal_size_delta']);
+    final cycleTimeDelta = _getNum(_teamMetrics['avgCycleTimeDelta'] ?? _teamMetrics['avg_cycle_time_delta']);
+    final pipelineDelta = _getNum(_teamMetrics['totalPipelineDelta'] ?? _teamMetrics['total_pipeline_delta']);
+
+    return Column(
       children: [
-        Expanded(child: _MetricCard(
-          label: 'Avg Win Rate',
-          value: '${avgWinRate.toStringAsFixed(1)}%',
-          icon: Icons.track_changes,
-          color: Colors.green,
-        )),
-        const SizedBox(width: 8),
-        Expanded(child: _MetricCard(
-          label: 'Avg Deal',
-          value: _fmtCurrency(avgDealSize),
-          icon: Icons.attach_money,
-          color: Colors.blue,
-        )),
-        const SizedBox(width: 8),
-        Expanded(child: _MetricCard(
-          label: 'Cycle',
-          value: '${avgCycleTime.toInt()}d',
-          icon: Icons.schedule,
-          color: Colors.purple,
-        )),
-        const SizedBox(width: 8),
-        Expanded(child: _MetricCard(
-          label: 'Pipeline',
-          value: _fmtCurrency(totalPipeline),
-          icon: Icons.bar_chart,
-          color: Colors.orange,
-        )),
+        Row(
+          children: [
+            Expanded(child: _MetricCard(
+              label: 'Avg Win Rate',
+              value: '${avgWinRate.toStringAsFixed(1)}%',
+              icon: Icons.track_changes,
+              color: Colors.green,
+              delta: winRateDelta,
+              deltaLabel: '% vs last month',
+            )),
+            const SizedBox(width: 8),
+            Expanded(child: _MetricCard(
+              label: 'Avg Deal',
+              value: _fmtCurrency(avgDealSize),
+              icon: Icons.attach_money,
+              color: Colors.blue,
+              delta: dealSizeDelta,
+              deltaLabel: '% vs last month',
+            )),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: _MetricCard(
+              label: 'Cycle',
+              value: '${avgCycleTime.toInt()}d',
+              icon: Icons.schedule,
+              color: Colors.purple,
+              delta: cycleTimeDelta,
+              deltaLabel: 'd vs last month',
+              invertColor: true,
+            )),
+            const SizedBox(width: 8),
+            Expanded(child: _MetricCard(
+              label: 'Pipeline',
+              value: _fmtCurrency(totalPipeline),
+              icon: Icons.bar_chart,
+              color: Colors.orange,
+              delta: pipelineDelta,
+              deltaLabel: '% vs last month',
+            )),
+          ],
+        ),
       ],
     );
   }
@@ -554,20 +650,7 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
     final score = _getNum(meeting['score']);
     final status = meeting['status']?.toString() ?? '';
 
-    Color statusColor;
-    switch (status) {
-      case 'completed':
-        statusColor = Colors.green;
-        break;
-      case 'upcoming':
-        statusColor = Colors.blue;
-        break;
-      case 'overdue':
-        statusColor = Colors.red;
-        break;
-      default:
-        statusColor = Colors.grey;
-    }
+    final statusColor = _meetingStatusColors[status] ?? Colors.grey;
 
     return Container(
       width: 180,
@@ -627,6 +710,8 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
     final pipelineTarget = _getNum(rep['pipelineTarget'] ?? rep['pipeline_target']);
     final activities = _getNum(rep['activities']);
     final activitiesTarget = _getNum(rep['activitiesTarget'] ?? rep['activities_target']);
+    final dealsWon = _getNum(rep['dealsWon'] ?? rep['deals_won']);
+    final dealsWonTarget = _getNum(rep['dealsWonTarget'] ?? rep['deals_won_target']);
     final avgDealSize = _getNum(rep['avgDealSize'] ?? rep['avg_deal_size']);
     final trend = rep['trend']?.toString() ?? 'flat';
     final trendIcon = _trendIcons[trend] ?? Icons.trending_flat;
@@ -693,10 +778,18 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
             ],
 
             // Activity score
-            if (activitiesTarget > 0)
+            if (activitiesTarget > 0) ...[
               _buildProgressRow(theme, 'Activities',
                   '${activities.toInt()}', '${activitiesTarget.toInt()}',
                   activities / activitiesTarget, activities >= activitiesTarget),
+              const SizedBox(height: 8),
+            ],
+
+            // Deals Won
+            if (dealsWonTarget > 0)
+              _buildProgressRow(theme, 'Deals Won',
+                  '${dealsWon.toInt()}', '${dealsWonTarget.toInt()}',
+                  dealsWon / dealsWonTarget, dealsWon >= dealsWonTarget),
 
             // Avg deal size footer
             if (avgDealSize > 0) ...[
@@ -760,6 +853,219 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
   }
 
   /* ================================================================ */
+  /*  1:1 Notes Tab                                                    */
+  /* ================================================================ */
+
+  Widget _buildOneOnOneNotesTab(ThemeData theme) {
+    final meetings = _filteredMeetings;
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          // Status filter chips
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: ['all', 'upcoming', 'completed', 'overdue'].map((status) {
+                final selected = _meetingStatusFilter == status;
+                final count = status == 'all'
+                    ? _meetingInsights.length
+                    : _meetingInsights.where((m) => m['status'] == status).length;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    label: Text(
+                      '${status == 'all' ? 'All' : status[0].toUpperCase() + status.substring(1)} ($count)',
+                    ),
+                    selected: selected,
+                    onSelected: (_) => setState(() => _meetingStatusFilter = status),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Meeting note cards
+          if (meetings.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 48),
+              child: EmptyState(icon: Icons.chat_outlined, title: 'No 1:1 notes available'),
+            )
+          else
+            ...List.generate(meetings.length, (i) {
+              final meeting = meetings[i];
+              return _buildMeetingNoteCard(theme, meeting, i);
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMeetingNoteCard(ThemeData theme, Map<String, dynamic> meeting, int index) {
+    final rep = meeting['rep']?.toString() ?? '';
+    final date = meeting['date']?.toString() ?? '';
+    final status = meeting['status']?.toString() ?? '';
+    final statusColor = _meetingStatusColors[status] ?? Colors.grey;
+    final isExpanded = _expandedMeetingIndex == index;
+
+    final topics = meeting['topics'] is List
+        ? List<String>.from(meeting['topics'])
+        : <String>[];
+    final actionItems = meeting['actionItems'] is List
+        ? List<String>.from(meeting['actionItems'])
+        : meeting['action_items'] is List
+            ? List<String>.from(meeting['action_items'])
+            : <String>[];
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: statusColor.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => _expandedMeetingIndex = isExpanded ? null : index),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(rep,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                )),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: statusColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                status,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: statusColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(date,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            )),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              if (isExpanded) ...[
+                // Topics Discussed
+                if (topics.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.topic_outlined, size: 14, color: theme.colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Text('Topics Discussed',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          )),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  ...topics.map((topic) => Padding(
+                    padding: const EdgeInsets.only(left: 20, bottom: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('\u2022 ', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+                        Expanded(
+                          child: Text(topic.toString(),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.4,
+                              )),
+                        ),
+                      ],
+                    ),
+                  )),
+                ],
+
+                // Action Items
+                if (actionItems.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.checklist, size: 14, color: Colors.amber.shade700),
+                      const SizedBox(width: 6),
+                      Text('Action Items',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          )),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  ...actionItems.map((item) => Padding(
+                    padding: const EdgeInsets.only(left: 20, bottom: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.radio_button_unchecked, size: 12,
+                            color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(item.toString(),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.4,
+                              )),
+                        ),
+                      ],
+                    ),
+                  )),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /* ================================================================ */
   /*  Skills Tab                                                        */
   /* ================================================================ */
 
@@ -814,6 +1120,24 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
             )
           else
             ...skills.map((entry) => _buildSkillCard(theme, entry)),
+
+          // Priority Skill Gaps section
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Icon(Icons.priority_high, size: 20, color: Colors.deepOrange),
+              const SizedBox(width: 8),
+              Text('Priority Skill Gaps',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Key areas needing development across the team',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          ..._prioritySkillGaps.map((gap) => _buildSkillGapCard(theme, gap)),
         ],
       ),
     );
@@ -821,6 +1145,7 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
 
   Widget _buildSkillCard(ThemeData theme, Map<String, dynamic> entry) {
     final rep = entry['rep']?.toString() ?? entry['repName']?.toString() ?? '';
+    final overallScore = _overallScore(entry);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -882,7 +1207,7 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
               );
             }),
 
-            // Overall score
+            // Overall score with progress bar
             const Divider(height: 1),
             const SizedBox(height: 8),
             Row(
@@ -895,12 +1220,108 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
                       color: theme.colorScheme.onSurface,
                     )),
                 Text(
-                  '${(_overallScore(entry) * 100).toStringAsFixed(0)}%',
+                  '${(overallScore * 100).toStringAsFixed(0)}%',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: theme.colorScheme.primary,
                     fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: overallScore.clamp(0.0, 1.0),
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                color: theme.colorScheme.primary,
+                minHeight: 6,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkillGapCard(ThemeData theme, Map<String, dynamic> gap) {
+    final skill = gap['skill']?.toString() ?? '';
+    final priority = gap['priority']?.toString() ?? 'medium';
+    final affectedReps = gap['affectedReps'] is List
+        ? List<String>.from(gap['affectedReps'] as List)
+        : <String>[];
+    final impact = gap['impact']?.toString() ?? '';
+
+    final priorityColor = priority == 'high' ? Colors.red : Colors.amber;
+    final priorityLabel = priority == 'high' ? 'High' : 'Medium';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: priorityColor.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(skill,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: priorityColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    priorityLabel,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: priorityColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.people_outline, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    affectedReps.join(', '),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    impact,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
                   ),
                 ),
               ],
@@ -944,17 +1365,35 @@ class _MetricCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color color;
+  final double delta;
+  final String deltaLabel;
+  final bool invertColor;
 
   const _MetricCard({
     required this.label,
     required this.value,
     required this.icon,
     required this.color,
+    this.delta = 0,
+    this.deltaLabel = '',
+    this.invertColor = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    Color deltaColor;
+    if (delta == 0) {
+      deltaColor = Colors.grey;
+    } else if (invertColor) {
+      deltaColor = delta > 0 ? Colors.red : Colors.green;
+    } else {
+      deltaColor = delta > 0 ? Colors.green : Colors.red;
+    }
+
+    final deltaPrefix = delta > 0 ? '+' : '';
+
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -980,6 +1419,32 @@ class _MetricCard extends StatelessWidget {
                 fontSize: 10,
               ),
               overflow: TextOverflow.ellipsis),
+          if (delta != 0) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  delta > 0
+                      ? (invertColor ? Icons.trending_down : Icons.trending_up)
+                      : (invertColor ? Icons.trending_up : Icons.trending_down),
+                  size: 12,
+                  color: deltaColor,
+                ),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Text(
+                    '$deltaPrefix${delta.toStringAsFixed(1)}$deltaLabel',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: deltaColor,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

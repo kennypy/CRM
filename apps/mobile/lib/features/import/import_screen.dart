@@ -21,8 +21,7 @@ class ImportScreen extends ConsumerStatefulWidget {
   ConsumerState<ImportScreen> createState() => _ImportScreenState();
 }
 
-class _ImportScreenState extends ConsumerState<ImportScreen>
-    with SingleTickerProviderStateMixin {
+class _ImportScreenState extends ConsumerState<ImportScreen> {
   // ---- wizard state ----
   _ImportStep _step = _ImportStep.upload;
 
@@ -51,9 +50,6 @@ class _ImportScreenState extends ConsumerState<ImportScreen>
   // Recent imports
   List<Map<String, dynamic>> _jobs = [];
   bool _loadingJobs = true;
-
-  // Animation
-  late AnimationController _progressAnimCtrl;
 
   // ---- constants ----
   static const _entityTypes = {
@@ -142,17 +138,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen>
   @override
   void initState() {
     super.initState();
-    _progressAnimCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
     _loadJobs();
   }
 
   @override
   void dispose() {
     _processingTimer?.cancel();
-    _progressAnimCtrl.dispose();
     super.dispose();
   }
 
@@ -333,80 +324,63 @@ class _ImportScreenState extends ConsumerState<ImportScreen>
     final currentIndex = _ImportStep.values.indexOf(_step);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       child: Row(
-        children: List.generate(labels.length, (i) {
+        children: List.generate(labels.length * 2 - 1, (raw) {
+          // Even indices = dot/label, odd indices = connector line
+          if (raw.isOdd) {
+            final beforeIndex = raw ~/ 2;
+            return Expanded(
+              child: Container(
+                height: 2,
+                margin: const EdgeInsets.only(bottom: 16),
+                color: currentIndex > beforeIndex
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outlineVariant,
+              ),
+            );
+          }
+
+          final i = raw ~/ 2;
           final isCompleted = i < currentIndex;
           final isCurrent = i == currentIndex;
           final color = isCompleted || isCurrent
               ? theme.colorScheme.primary
               : theme.colorScheme.outlineVariant;
 
-          return Expanded(
-            child: Row(
-              children: [
-                if (i > 0)
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: isCompleted
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.outlineVariant,
-                    ),
-                  ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: isCurrent ? 28 : 22,
-                      height: isCurrent ? 28 : 22,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isCurrent
-                            ? color
-                            : isCompleted
-                                ? color
-                                : Colors.transparent,
-                        border: Border.all(color: color, width: 2),
-                      ),
-                      child: Center(
-                        child: isCompleted
-                            ? const Icon(Icons.check,
-                                size: 14, color: Colors.white)
-                            : Text(
-                                '${i + 1}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: isCurrent
-                                      ? Colors.white
-                                      : color,
-                                ),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      labels[i],
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: color,
-                        fontWeight:
-                            isCurrent ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  ],
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: isCurrent ? 28 : 22,
+                height: isCurrent ? 28 : 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isCurrent || isCompleted ? color : Colors.transparent,
+                  border: Border.all(color: color, width: 2),
                 ),
-                if (i < labels.length - 1 && i == 0)
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: currentIndex > i
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.outlineVariant,
-                    ),
-                  ),
-              ],
-            ),
+                child: Center(
+                  child: isCompleted
+                      ? const Icon(Icons.check, size: 14, color: Colors.white)
+                      : Text(
+                          '${i + 1}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isCurrent ? Colors.white : color,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                labels[i],
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ],
           );
         }),
       ),
