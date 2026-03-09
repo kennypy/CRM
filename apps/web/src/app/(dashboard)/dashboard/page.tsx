@@ -418,6 +418,24 @@ export default function DashboardPage() {
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const fetchedRef = useRef(false);
+  const perms = usePermissions();
+
+  // Auto-detect persona from role
+  const defaultPersona: Persona = perms.isSuperAdmin || perms.isAdmin ? "admin" : perms.isManager ? "manager" : "rep";
+  const [persona, setPersona] = useState<Persona>(defaultPersona);
+
+  // Available personas based on role
+  const availablePersonas: Persona[] = perms.isSuperAdmin || perms.isAdmin
+    ? ["rep", "manager", "exec", "admin"]
+    : perms.isManager
+    ? ["rep", "manager", "exec"]
+    : ["rep"];
+
+  const [userName, setUserName] = useState("");
+  useEffect(() => {
+    const u = getStoredUser();
+    if (u) setUserName(u.firstName ?? "");
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -1034,25 +1052,6 @@ function AdminDashboard() {
 }
 
   // ── Main render (persona switcher + greeting) ─────────────────────────────
-
-  const perms = usePermissions();
-
-  // Auto-detect persona from role
-  const defaultPersona: Persona = perms.isSuperAdmin || perms.isAdmin ? "admin" : perms.isManager ? "manager" : "rep";
-  const [persona, setPersona] = useState<Persona>(defaultPersona);
-
-  // Available personas based on role
-  const availablePersonas: Persona[] = perms.isSuperAdmin || perms.isAdmin
-    ? ["rep", "manager", "exec", "admin"]
-    : perms.isManager
-    ? ["rep", "manager", "exec"]
-    : ["rep"];
-
-  const [userName, setUserName] = useState("");
-  useEffect(() => {
-    const u = getStoredUser();
-    if (u) setUserName(u.firstName ?? "");
-  }, []);
 
   const greetingHour = new Date().getHours();
   const greeting = greetingHour < 12 ? t("goodMorning", { name: userName }) : greetingHour < 17 ? t("goodAfternoon", { name: userName }) : t("goodEvening", { name: userName });

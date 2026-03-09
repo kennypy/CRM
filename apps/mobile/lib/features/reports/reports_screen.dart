@@ -15,6 +15,107 @@ const _sourceLabels = <String, String>{
   'users': 'Users',
 };
 
+const _sourceFields = <String, List<Map<String, String>>>{
+  'activities': [
+    {'key': 'id', 'label': 'Activity ID'},
+    {'key': 'type', 'label': 'Type'},
+    {'key': 'direction', 'label': 'Direction'},
+    {'key': 'subject', 'label': 'Subject'},
+    {'key': 'summary', 'label': 'Summary'},
+    {'key': 'sentiment', 'label': 'Sentiment'},
+    {'key': 'duration_seconds', 'label': 'Duration seconds'},
+    {'key': 'occurred_at', 'label': 'Occurred at'},
+    {'key': 'deal_id', 'label': 'Deal ID'},
+    {'key': 'company_id', 'label': 'Company ID'},
+    {'key': 'source', 'label': 'Source'},
+    {'key': 'created_at', 'label': 'Created date'},
+    {'key': 'created_by', 'label': 'Created By'},
+  ],
+  'deals': [
+    {'key': 'id', 'label': 'Deal ID'},
+    {'key': 'name', 'label': 'Name'},
+    {'key': 'stage', 'label': 'Stage'},
+    {'key': 'value', 'label': 'Value'},
+    {'key': 'currency', 'label': 'Currency'},
+    {'key': 'close_date', 'label': 'Close Date'},
+    {'key': 'company_id', 'label': 'Company ID'},
+    {'key': 'owner_id', 'label': 'Owner ID'},
+    {'key': 'reality_score', 'label': 'Reality Score'},
+    {'key': 'created_at', 'label': 'Created date'},
+    {'key': 'updated_at', 'label': 'Last update date'},
+  ],
+  'companies': [
+    {'key': 'id', 'label': 'Company ID'},
+    {'key': 'name', 'label': 'Name'},
+    {'key': 'domain', 'label': 'Domain'},
+    {'key': 'city', 'label': 'City'},
+    {'key': 'country', 'label': 'Country'},
+    {'key': 'industry', 'label': 'Industry'},
+    {'key': 'revenue', 'label': 'Revenue'},
+    {'key': 'employees', 'label': 'Employees'},
+    {'key': 'segment', 'label': 'Segment'},
+    {'key': 'created_at', 'label': 'Created Date'},
+    {'key': 'updated_at', 'label': 'Last update date'},
+  ],
+  'contacts': [
+    {'key': 'id', 'label': 'Contact ID'},
+    {'key': 'firstName', 'label': 'First Name'},
+    {'key': 'lastName', 'label': 'Last Name'},
+    {'key': 'fullName', 'label': 'Full Name'},
+    {'key': 'email', 'label': 'Email'},
+    {'key': 'title', 'label': 'Title'},
+    {'key': 'seniority', 'label': 'Seniority'},
+    {'key': 'isLead', 'label': 'Previous Lead'},
+    {'key': 'created_at', 'label': 'Created date'},
+    {'key': 'updated_at', 'label': 'Last update date'},
+  ],
+  'quotes': [
+    {'key': 'id', 'label': 'Quote ID'},
+    {'key': 'quote_number', 'label': 'Quote Number'},
+    {'key': 'title', 'label': 'Title'},
+    {'key': 'status', 'label': 'Status'},
+    {'key': 'company_name', 'label': 'Company Name'},
+    {'key': 'contact_name', 'label': 'Contact Name'},
+    {'key': 'total', 'label': 'Total'},
+    {'key': 'subtotal', 'label': 'Subtotal'},
+    {'key': 'currency', 'label': 'Currency'},
+    {'key': 'valid_until', 'label': 'Valid Until'},
+    {'key': 'created_at', 'label': 'Created At'},
+  ],
+  'users': [
+    {'key': 'id', 'label': 'User ID'},
+    {'key': 'first_name', 'label': 'First Name'},
+    {'key': 'last_name', 'label': 'Last Name'},
+    {'key': 'email', 'label': 'Email'},
+    {'key': 'role', 'label': 'Role'},
+    {'key': 'can_quote', 'label': 'Can Quote'},
+    {'key': 'country', 'label': 'Country'},
+    {'key': 'timezone', 'label': 'Timezone'},
+  ],
+};
+
+const _filterOps = <Map<String, String>>[
+  {'value': 'eq', 'label': 'equals'},
+  {'value': 'neq', 'label': 'not equals'},
+  {'value': 'contains', 'label': 'contains'},
+  {'value': 'not_contains', 'label': 'not contains'},
+  {'value': 'gt', 'label': 'greater than'},
+  {'value': 'gte', 'label': '>='},
+  {'value': 'lt', 'label': 'less than'},
+  {'value': 'lte', 'label': '<='},
+  {'value': 'is_null', 'label': 'is empty'},
+  {'value': 'not_null', 'label': 'is not empty'},
+];
+
+const _chartTypes = ['table', 'bar', 'line', 'pie'];
+
+const _chartTypeIcons = <String, IconData>{
+  'table': Icons.table_chart_outlined,
+  'bar': Icons.bar_chart,
+  'line': Icons.show_chart,
+  'pie': Icons.pie_chart_outline,
+};
+
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
 
@@ -38,10 +139,25 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
   String _qrPeriod = '';
   int _qrLimit = 1000;
 
+  // Builder state
+  final Set<String> _bSources = {};
+  final Set<String> _bSelectedFields = {};
+  final List<Map<String, String>> _bFilters = [];
+  String _bFilterLogic = 'AND';
+  String _bGroupBy = '';
+  String _bSortBy = '';
+  String _bSortDir = 'asc';
+  String _bChartType = 'table';
+  bool _bPreviewing = false;
+  bool _bSaving = false;
+  Map<String, dynamic>? _bPreviewResult;
+  final _bNameCtl = TextEditingController();
+  final _bDescCtl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadReports();
   }
 
@@ -49,6 +165,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _bNameCtl.dispose();
+    _bDescCtl.dispose();
     super.dispose();
   }
 
@@ -177,6 +295,118 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     }
   }
 
+  // ── Builder helpers ─────────────────────────────────────────────────
+
+  List<Map<String, String>> get _bAvailableFields {
+    final fields = <Map<String, String>>[];
+    for (final source in _bSources) {
+      final sf = _sourceFields[source] ?? [];
+      for (final f in sf) {
+        fields.add({'key': '$source.${f['key']}', 'label': '${_sourceLabels[source]}.${f['label']}'});
+      }
+    }
+    return fields;
+  }
+
+  Map<String, dynamic> get _bSpec {
+    final fields = _bSelectedFields.isNotEmpty
+        ? _bSelectedFields.map((key) {
+            final parts = key.split('.');
+            return {'source': parts[0], 'field': parts.sublist(1).join('.'), 'alias': key};
+          }).toList()
+        : _bSources.expand((s) {
+            final sf = _sourceFields[s] ?? [];
+            return sf.take(5).map((f) => {'source': s, 'field': f['key'], 'alias': '$s.${f['key']}'});
+          }).toList();
+
+    final conditions = _bFilters
+        .where((f) => (f['field'] ?? '').isNotEmpty && ((f['value'] ?? '').isNotEmpty || ['is_null', 'not_null'].contains(f['op'])))
+        .map((f) {
+      final parts = (f['field'] ?? '').split('.');
+      return {
+        'source': parts.isNotEmpty ? parts[0] : '',
+        'field': parts.length > 1 ? parts.sublist(1).join('.') : '',
+        'op': f['op'] ?? 'eq',
+        if (!['is_null', 'not_null'].contains(f['op'])) 'value': f['value'],
+      };
+    }).toList();
+
+    return {
+      'sources': _bSources.toList(),
+      'fields': fields,
+      'filters': {'logic': _bFilterLogic, 'conditions': conditions},
+      if (_bGroupBy.isNotEmpty) 'groupBy': _bGroupBy,
+      if (_bSortBy.isNotEmpty) 'orderBy': {'field': _bSortBy, 'direction': _bSortDir},
+      'limit': 5000,
+    };
+  }
+
+  Future<void> _bRunPreview() async {
+    if (_bSources.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least one data source')),
+      );
+      return;
+    }
+    setState(() { _bPreviewing = true; _bPreviewResult = null; });
+    try {
+      final res = await ApiClient.instance.dio.post(
+        '${Endpoints.reports}/run',
+        data: {'spec': {..._bSpec, 'limit': 20}},
+      );
+      if (mounted) setState(() => _bPreviewResult = res.data['data']);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to run preview')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _bPreviewing = false);
+    }
+  }
+
+  Future<void> _bSaveReport() async {
+    if (_bNameCtl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Report name is required')),
+      );
+      return;
+    }
+    if (_bSources.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least one data source')),
+      );
+      return;
+    }
+    setState(() => _bSaving = true);
+    try {
+      await ApiClient.instance.dio.post(Endpoints.reports, data: {
+        'name': _bNameCtl.text.trim(),
+        'description': _bDescCtl.text.trim(),
+        'spec': _bSpec,
+        'chartType': _bChartType,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Report saved')),
+        );
+        _bNameCtl.clear();
+        _bDescCtl.clear();
+        _loadReports();
+        _tabController.animateTo(0);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save report')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _bSaving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -198,6 +428,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           tabs: const [
             Tab(icon: Icon(Icons.folder_outlined, size: 18), text: 'Saved Reports'),
             Tab(icon: Icon(Icons.play_arrow_outlined, size: 18), text: 'Quick Run'),
+            Tab(icon: Icon(Icons.build_outlined, size: 18), text: 'Builder'),
           ],
         ),
       ),
@@ -213,6 +444,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
         children: [
           _buildSavedTab(theme),
           _buildQuickRunTab(theme),
+          _buildBuilderTab(theme),
         ],
       ),
     );
@@ -274,7 +506,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
                           ),
                           const SizedBox(width: 8),
                           FilledButton(
-                            onPressed: () => context.push('/reports/new'),
+                            onPressed: () => _tabController.animateTo(2),
                             child: const Text('Report Builder'),
                           ),
                         ],
@@ -458,6 +690,392 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           ),
         ],
       ],
+    );
+  }
+
+  // ── Builder Tab ─────────────────────────────────────────────────────
+
+  Widget _buildBuilderTab(ThemeData theme) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Data source picker
+        Text('DATA SOURCE', style: theme.textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w600, letterSpacing: 1, color: theme.colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: _sourceLabels.entries.map((e) {
+            final selected = _bSources.contains(e.key);
+            return FilterChip(
+              label: Text(e.value, style: const TextStyle(fontSize: 12)),
+              selected: selected,
+              showCheckmark: true,
+              onSelected: (v) {
+                setState(() {
+                  if (v) {
+                    _bSources.add(e.key);
+                  } else {
+                    _bSources.remove(e.key);
+                    _bSelectedFields.removeWhere((f) => f.startsWith('${e.key}.'));
+                  }
+                });
+              },
+            );
+          }).toList(),
+        ),
+
+        if (_bSources.isNotEmpty) ...[
+          const SizedBox(height: 20),
+
+          // Field multi-select per source
+          Text('FIELDS', style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w600, letterSpacing: 1, color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 4),
+          Text('Select fields to include. Leave empty for defaults.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 8),
+
+          ..._bSources.map((source) {
+            final fields = _sourceFields[source] ?? [];
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_sourceLabels[source] ?? source,
+                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextButton(
+                              onPressed: () => setState(() {
+                                for (final f in fields) _bSelectedFields.add('$source.${f['key']}');
+                              }),
+                              child: const Text('All', style: TextStyle(fontSize: 12)),
+                            ),
+                            TextButton(
+                              onPressed: () => setState(() {
+                                for (final f in fields) _bSelectedFields.remove('$source.${f['key']}');
+                              }),
+                              child: const Text('None', style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 0,
+                      children: fields.map((f) {
+                        final key = '$source.${f['key']}';
+                        return FilterChip(
+                          label: Text(f['label'] ?? f['key']!, style: const TextStyle(fontSize: 11)),
+                          selected: _bSelectedFields.contains(key),
+                          onSelected: (v) => setState(() {
+                            if (v) { _bSelectedFields.add(key); } else { _bSelectedFields.remove(key); }
+                          }),
+                          visualDensity: VisualDensity.compact,
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+
+          const SizedBox(height: 16),
+
+          // Filter builder
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('FILTERS', style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w600, letterSpacing: 1, color: theme.colorScheme.onSurfaceVariant)),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'AND', label: Text('AND')),
+                  ButtonSegment(value: 'OR', label: Text('OR')),
+                ],
+                selected: {_bFilterLogic},
+                onSelectionChanged: (v) => setState(() => _bFilterLogic = v.first),
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          ..._bFilters.asMap().entries.map((entry) {
+            final i = entry.key;
+            final filter = entry.value;
+            final availFields = _bAvailableFields;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  children: [
+                    if (i > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(_bFilterLogic, style: TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.primary,
+                        )),
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: availFields.any((f) => f['key'] == filter['field']) ? filter['field'] : null,
+                            decoration: const InputDecoration(labelText: 'Field', isDense: true),
+                            items: availFields.map((f) => DropdownMenuItem(
+                              value: f['key'],
+                              child: Text(f['label']!, style: const TextStyle(fontSize: 11)),
+                            )).toList(),
+                            onChanged: (v) => setState(() => filter['field'] = v ?? ''),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: 80,
+                          child: DropdownButtonFormField<String>(
+                            value: filter['op'],
+                            decoration: const InputDecoration(labelText: 'Op', isDense: true),
+                            items: _filterOps.map((o) => DropdownMenuItem(
+                              value: o['value'],
+                              child: Text(o['label']!, style: const TextStyle(fontSize: 11)),
+                            )).toList(),
+                            onChanged: (v) => setState(() => filter['op'] = v ?? 'eq'),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        if (!['is_null', 'not_null'].contains(filter['op']))
+                          Expanded(
+                            child: TextField(
+                              decoration: const InputDecoration(labelText: 'Value', isDense: true),
+                              controller: TextEditingController(text: filter['value']),
+                              onChanged: (v) => filter['value'] = v,
+                            ),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => setState(() => _bFilters.removeAt(i)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+
+          TextButton.icon(
+            onPressed: () => setState(() => _bFilters.add({'field': '', 'op': 'eq', 'value': ''})),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add filter'),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Group by selector
+          Text('GROUP BY', style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w600, letterSpacing: 1, color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: _bAvailableFields.any((f) => f['key'] == _bGroupBy) ? _bGroupBy : null,
+            decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, hintText: 'None'),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('None')),
+              ..._bAvailableFields.map((f) => DropdownMenuItem(value: f['key'], child: Text(f['label']!, style: const TextStyle(fontSize: 12)))),
+            ],
+            onChanged: (v) => setState(() => _bGroupBy = v ?? ''),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Sort by selector
+          Text('SORT BY', style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w600, letterSpacing: 1, color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _bAvailableFields.any((f) => f['key'] == _bSortBy) ? _bSortBy : null,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, hintText: 'None'),
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('None')),
+                    ..._bAvailableFields.map((f) => DropdownMenuItem(value: f['key'], child: Text(f['label']!, style: const TextStyle(fontSize: 12)))),
+                  ],
+                  onChanged: (v) => setState(() => _bSortBy = v ?? ''),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 100,
+                child: DropdownButtonFormField<String>(
+                  value: _bSortDir,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                  items: const [
+                    DropdownMenuItem(value: 'asc', child: Text('Asc')),
+                    DropdownMenuItem(value: 'desc', child: Text('Desc')),
+                  ],
+                  onChanged: (v) => setState(() => _bSortDir = v ?? 'asc'),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Chart type selector
+          Text('CHART TYPE', style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w600, letterSpacing: 1, color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _chartTypes.map((t) {
+              final selected = _bChartType == t;
+              return ChoiceChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_chartTypeIcons[t] ?? Icons.table_chart, size: 16),
+                    const SizedBox(width: 4),
+                    Text(t[0].toUpperCase() + t.substring(1), style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+                selected: selected,
+                onSelected: (_) => setState(() => _bChartType = t),
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Preview button
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _bPreviewing ? null : _bRunPreview,
+                  icon: _bPreviewing
+                      ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.play_arrow, size: 18),
+                  label: const Text('Preview (20 rows)'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _bSaving ? null : () => _showSaveDialog(theme),
+                  icon: _bSaving
+                      ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.save, size: 18),
+                  label: const Text('Save Report'),
+                ),
+              ),
+            ],
+          ),
+
+          // Preview results
+          if (_bPreviewResult != null) ...[
+            const SizedBox(height: 16),
+            _buildBuilderPreview(theme),
+          ],
+        ],
+
+        const SizedBox(height: 80), // Space for FAB
+      ],
+    );
+  }
+
+  void _showSaveDialog(ThemeData theme) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Save Report'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _bNameCtl,
+              decoration: const InputDecoration(
+                labelText: 'Report name *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _bDescCtl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _bSaveReport();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBuilderPreview(ThemeData theme) {
+    final columns = List<String>.from(_bPreviewResult!['columns'] ?? []);
+    final rows = List<Map<String, dynamic>>.from(_bPreviewResult!['rows'] ?? []);
+    final rowCount = _bPreviewResult!['rowCount'] ?? rows.length;
+
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text('$rowCount rows total (showing ${rows.length})',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          ),
+          if (rows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(child: Text('No data', style: theme.textTheme.bodySmall)),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columnSpacing: 20,
+                columns: columns.map((c) => DataColumn(
+                  label: Text(c.split('.').last, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                )).toList(),
+                rows: rows.map((row) => DataRow(
+                  cells: columns.map((c) => DataCell(
+                    Text('${row[c] ?? ''}', style: const TextStyle(fontSize: 12)),
+                  )).toList(),
+                )).toList(),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

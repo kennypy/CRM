@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Mail, Phone, Linkedin, Trash2, ChevronDown, ChevronUp, GripVertical, Wand2 } from "lucide-react";
+import { Mail, Phone, Linkedin, MessageSquare, Clock, Trash2, ChevronDown, ChevronUp, GripVertical, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface SequenceStep {
   id?:             string;
   stepNumber:      number;
-  type:            "email" | "call" | "linkedin_task";
+  type:            "email" | "call" | "linkedin_task" | "sms" | "task";
   dayOffset:       number;
   timeOfDay:       string;
   subjectTemplate?: string;
@@ -28,10 +28,12 @@ interface StepCardProps {
 }
 
 const TYPE_CONFIG = {
-  email:         { icon: Mail,     label: "Email",         color: "text-blue-600",   bg: "bg-blue-50",   border: "border-blue-200" },
-  call:          { icon: Phone,    label: "Call Task",     color: "text-green-600",  bg: "bg-green-50",  border: "border-green-200" },
-  linkedin_task: { icon: Linkedin, label: "LinkedIn Task", color: "text-sky-600",    bg: "bg-sky-50",    border: "border-sky-200" },
-};
+  email:         { icon: Mail,          label: "Email",         color: "text-blue-600",   bg: "bg-blue-50",   border: "border-blue-200" },
+  call:          { icon: Phone,         label: "Call Task",     color: "text-green-600",  bg: "bg-green-50",  border: "border-green-200" },
+  linkedin_task: { icon: Linkedin,      label: "LinkedIn Task", color: "text-sky-600",    bg: "bg-sky-50",    border: "border-sky-200" },
+  sms:           { icon: MessageSquare, label: "SMS",           color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-200" },
+  task:          { icon: Clock,         label: "Manual Task",   color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200" },
+} as const;
 
 export function StepCard({ step, index, total, onChange, onDelete, onMoveUp, onMoveDown }: StepCardProps) {
   const [expanded, setExpanded] = useState(true);

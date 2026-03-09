@@ -36,12 +36,19 @@ class Endpoints {
   static String get tenant => '$apiUrl/api/v1/tenant';
   static String get integrations => '$apiUrl/api/v1/integrations';
 
+  // Notifications
+  static String get notifications => '$apiUrl/api/v1/notifications';
+
   // Outreach
   static String get sequences => '$apiUrl/api/v1/outreach/sequences';
 
   // AI
   static String get aiNl => '$apiUrl/api/v1/ai/nl';
   static String get aiReviewQueue => '$apiUrl/api/v1/ai/review-queue';
+  static String get aiForecast => '$apiUrl/api/v1/ai/forecast';
+
+  // Reports
+  static String get reportsRun => '$apiUrl/api/v1/reports/run';
 
   // Import / Export
   static String get import_ => '$apiUrl/api/v1/import';
@@ -74,10 +81,82 @@ class Endpoints {
   static String get tags => '$apiUrl/api/v1/tags';
   static String get notes => '$apiUrl/api/v1/notes';
 
+  // Compliance & Data Governance
+  static String get compliance => '$apiUrl/api/v1/compliance';
+  static String get complianceControls => '$apiUrl/api/v1/compliance/controls';
+  static String get complianceEscrow => '$apiUrl/api/v1/compliance/escrow';
+  static String get complianceMirroring => '$apiUrl/api/v1/compliance/mirroring';
+  static String get complianceRetention => '$apiUrl/api/v1/compliance/retention';
+
+  // Sales Insights
+  static String get insights => '$apiUrl/api/v1/insights';
+  static String get insightsActivity => '$apiUrl/api/v1/insights/activity';
+  static String get insightsEngagement => '$apiUrl/api/v1/insights/engagement';
+  static String get insightsPipeline => '$apiUrl/api/v1/insights/pipeline';
+  static String get insightsTeam => '$apiUrl/api/v1/insights/team';
+
+  // Calling / Power Dialer
+  static String get callingQueue => '$apiUrl/api/calling/queue';
+  static String get callingHistory => '$apiUrl/api/calling/history';
+  static String get callingDisposition => '$apiUrl/api/calling/disposition';
+
+  // Coaching
+  static String get coachingAlerts => '$apiUrl/api/v1/coaching/alerts';
+  static String get coachingReps => '$apiUrl/api/v1/coaching/reps';
+  static String get coachingSkills => '$apiUrl/api/v1/coaching/skills';
+  static String get coachingMeetings => '$apiUrl/api/v1/coaching/meetings';
+  static String get coachingRecommendations => '$apiUrl/api/v1/coaching/recommendations';
+  static String get coachingMetrics => '$apiUrl/api/v1/coaching/metrics';
+
+  // Forecasting
+  static String get forecasting => '$apiUrl/api/v1/forecasting';
+  static String get forecastingSummary => '$apiUrl/api/v1/forecasting/summary';
+  static String get forecastingCompute => '$apiUrl/api/v1/forecasting/compute';
+
+  // Territories
+  static String get territories => '$apiUrl/api/v1/territories';
+  static String get territoriesRules => '$apiUrl/api/v1/territories/rules';
+
+  // Lead Scoring
+  static String get leadScoring => '$apiUrl/api/v1/lead-scoring';
+  static String get leadScoringComputeAll => '$apiUrl/api/v1/lead-scoring/compute-all';
+
+  // Anomalies
+  static String get anomalies => '$apiUrl/api/v1/anomalies';
+  static String get anomaliesSummary => '$apiUrl/api/v1/anomalies/summary';
+  static String get anomaliesScan => '$apiUrl/api/v1/anomalies/scan';
+
+  // Marketplace
+  static String get marketplace => '$apiUrl/api/v1/marketplace';
+  static String get marketplaceInstalls => '$apiUrl/api/v1/marketplace/installs';
+  static String get marketplaceInstall => '$apiUrl/api/v1/marketplace/install';
+
   // Admin
   static String get adminTenants => '$apiUrl/api/admin/tenants';
   static String get adminStats => '$apiUrl/api/admin/stats/platform';
   static String get adminMerges => '$apiUrl/api/admin/merges';
   static String get adminReportTypes => '$apiUrl/api/v1/admin-reports/types';
   static String get adminReportRun => '$apiUrl/api/v1/admin-reports/run';
+  static String get adminDuplicates => '$apiUrl/api/v1/admin/duplicates';
+  static String get adminDuplicatesDismiss => '$apiUrl/api/v1/admin/duplicates/dismiss';
+  static String get adminDuplicatesMerge => '$apiUrl/api/v1/admin/duplicates/merge';
+  static String get adminDuplicatesStats => '$apiUrl/api/v1/admin/duplicates/stats';
+
+  // Admin - Audit Log
+  static String get adminAuditLog => '$apiUrl/api/v1/admin/audit-log';
+  static String get adminAuditLogExport => '$apiUrl/api/v1/admin/audit-log/export';
+
+  // Admin - Roles & Permissions
+  static String get adminRoles => '$apiUrl/api/v1/admin/roles';
+
+  // Admin - System Health
+  static String get adminSystemHealth => '$apiUrl/api/v1/admin/system-health';
+
+  // Admin - Data Management
+  static String get adminDataExport => '$apiUrl/api/v1/admin/data/export';
+  static String get adminDataRetention => '$apiUrl/api/v1/admin/data/retention';
+  static String get adminGdprRequests => '$apiUrl/api/v1/admin/gdpr/requests';
+
+  // Admin - Workspace Features
+  static String get adminFeatures => '$apiUrl/api/v1/admin/features';
 }

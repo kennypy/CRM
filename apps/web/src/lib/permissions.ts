@@ -8,7 +8,7 @@
  *   read_only < rep < manager < admin < super_admin
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { getStoredUser } from "./auth";
 
 export type UserRole = "super_admin" | "admin" | "manager" | "rep" | "read_only";
@@ -25,22 +25,33 @@ function rankOf(role: string): number {
   return ROLE_RANK[role as UserRole] ?? 0;
 }
 
-export function usePermissions() {
-  const user = typeof window !== "undefined" ? getStoredUser() : null;
-  const role = user?.role ?? "read_only";
-  const rank = rankOf(role);
+const DEFAULT_PERMS = {
+  role: "read_only" as string,
+  canWrite:       false,
+  canDelete:      false,
+  canManageUsers: false,
+  isSuperAdmin:   false,
+  isAdmin:        false,
+  isManager:      false,
+};
 
-  return useMemo(() => ({
-    role,
-    /** Can create/edit CRM records (rep+) */
-    canWrite:       rank >= ROLE_RANK.rep,
-    /** Can delete CRM records (manager+) */
-    canDelete:      rank >= ROLE_RANK.manager,
-    /** Can manage users and settings (admin+) */
-    canManageUsers: rank >= ROLE_RANK.admin,
-    /** Can access super-admin org management */
-    isSuperAdmin:   rank >= ROLE_RANK.super_admin,
-    isAdmin:        rank >= ROLE_RANK.admin,
-    isManager:      rank >= ROLE_RANK.manager,
-  }), [role, rank]);
+export function usePermissions() {
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => { setHydrated(true); }, []);
+
+  return useMemo(() => {
+    if (!hydrated) return DEFAULT_PERMS;
+    const user = getStoredUser();
+    const role = user?.role ?? "read_only";
+    const rank = rankOf(role);
+    return {
+      role,
+      canWrite:       rank >= ROLE_RANK.rep,
+      canDelete:      rank >= ROLE_RANK.manager,
+      canManageUsers: rank >= ROLE_RANK.admin,
+      isSuperAdmin:   rank >= ROLE_RANK.super_admin,
+      isAdmin:        rank >= ROLE_RANK.admin,
+      isManager:      rank >= ROLE_RANK.manager,
+    };
+  }, [hydrated]);
 }

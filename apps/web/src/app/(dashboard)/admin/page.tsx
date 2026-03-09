@@ -6,18 +6,18 @@ import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { getStoredUser } from "@/lib/auth";
 import {
-  Users, Shield, FileText, Database, Activity, Settings,
+  Users, Shield, FileText, Database, Activity,
   Plus, Trash2, Search, Download, Upload, RefreshCw,
-  CheckCircle2, AlertCircle, XCircle, Clock, Lock,
+  CheckCircle2, AlertCircle, XCircle, Clock,
   Eye, Edit, ChevronDown, ChevronRight, X, Filter,
-  Globe, Key, Monitor, ToggleLeft, ToggleRight,
+  ToggleLeft, ToggleRight,
   HardDrive, Cpu, Wifi, Zap, AlertTriangle, Info,
   UserPlus, UserMinus, Mail, Copy, MoreVertical,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type Tab = "users" | "roles" | "audit" | "security" | "data" | "health";
+type Tab = "users" | "roles" | "audit" | "data" | "health";
 
 interface AdminUser {
   id: string;
@@ -143,13 +143,12 @@ const WEBHOOKS = [
 
 // ── Tab Navigation ─────────────────────────────────────────────────────────────
 
-const TABS: { key: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { key: "users",    label: "Users",              icon: Users    },
-  { key: "roles",    label: "Roles & Permissions", icon: Shield   },
-  { key: "audit",    label: "Audit Log",           icon: FileText },
-  { key: "security", label: "Security",            icon: Lock     },
-  { key: "data",     label: "Data Management",     icon: Database },
-  { key: "health",   label: "System Health",        icon: Activity },
+const TABS: { key: Tab; label: string; icon: React.FC<{ className?: string }>; group: "people" | "operations" }[] = [
+  { key: "users",  label: "Users",              icon: Users,    group: "people" },
+  { key: "roles",  label: "Roles & Permissions", icon: Shield,   group: "people" },
+  { key: "audit",  label: "Audit Log",           icon: FileText, group: "operations" },
+  { key: "data",   label: "Data Management",     icon: Database, group: "operations" },
+  { key: "health", label: "System Health",        icon: Activity, group: "operations" },
 ];
 
 // ── Users Tab ──────────────────────────────────────────────────────────────────
@@ -586,206 +585,6 @@ function AuditTab() {
   );
 }
 
-// ── Security Tab ───────────────────────────────────────────────────────────────
-
-function SecurityTab() {
-  const [minPasswordLength, setMinPasswordLength] = useState(12);
-  const [requireUppercase, setRequireUppercase] = useState(true);
-  const [requireNumbers, setRequireNumbers] = useState(true);
-  const [requireSpecial, setRequireSpecial] = useState(true);
-  const [sessionTimeout, setSessionTimeout] = useState(480);
-  const [enforce2FA, setEnforce2FA] = useState(false);
-  const [ipAllowlist, setIpAllowlist] = useState("203.0.113.0/24\n198.51.100.0/24");
-  const [ipAllowlistEnabled, setIpAllowlistEnabled] = useState(false);
-  const [ssoEnabled, setSsoEnabled] = useState(false);
-  const [ssoProvider, setSsoProvider] = useState("okta");
-  const [ssoEntityId, setSsoEntityId] = useState("https://acme.okta.com/app/exk123abc");
-  const [ssoAcsUrl, setSsoAcsUrl] = useState("https://app.nexcrm.com/api/auth/saml/callback");
-  const [scimEnabled, setScimEnabled] = useState(false);
-  const [scimToken, setScimToken] = useState("scim_tok_••••••••••••••••");
-
-  return (
-    <div className="space-y-8">
-      {/* Password Policy */}
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center gap-2 mb-1">
-          <Key className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Password Policy</h2>
-        </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium">Minimum Length</label>
-            <input
-              type="number"
-              min={8}
-              max={128}
-              value={minPasswordLength}
-              onChange={(e) => setMinPasswordLength(Number(e.target.value))}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-          <div className="space-y-2 pt-1">
-            {[
-              { label: "Require uppercase letters", value: requireUppercase, set: setRequireUppercase },
-              { label: "Require numbers",           value: requireNumbers,   set: setRequireNumbers },
-              { label: "Require special characters", value: requireSpecial,  set: setRequireSpecial },
-            ].map(({ label, value, set }) => (
-              <label key={label} className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={value} onChange={() => set(!value)} className="rounded border-border" />
-                {label}
-              </label>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Session & 2FA */}
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center gap-2 mb-1">
-          <Monitor className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Sessions & Two-Factor Authentication</h2>
-        </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium">Session Timeout (minutes)</label>
-            <select
-              value={sessionTimeout}
-              onChange={(e) => setSessionTimeout(Number(e.target.value))}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value={30}>30 minutes</option>
-              <option value={60}>1 hour</option>
-              <option value={240}>4 hours</option>
-              <option value={480}>8 hours</option>
-              <option value={1440}>24 hours</option>
-            </select>
-          </div>
-          <div className="flex items-center justify-between rounded-lg border border-border p-3">
-            <div>
-              <p className="text-sm font-medium">Enforce 2FA for all users</p>
-              <p className="text-xs text-muted-foreground">Require two-factor authentication on next login</p>
-            </div>
-            <button onClick={() => setEnforce2FA(!enforce2FA)} className="text-muted-foreground hover:text-foreground transition-colors">
-              {enforce2FA ? <ToggleRight className="h-8 w-8 text-primary" /> : <ToggleLeft className="h-8 w-8" />}
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* IP Allowlist */}
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Globe className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">IP Allowlist</h2>
-          </div>
-          <button onClick={() => setIpAllowlistEnabled(!ipAllowlistEnabled)} className="text-muted-foreground hover:text-foreground transition-colors">
-            {ipAllowlistEnabled ? <ToggleRight className="h-8 w-8 text-primary" /> : <ToggleLeft className="h-8 w-8" />}
-          </button>
-        </div>
-        <p className="text-sm text-muted-foreground">Only allow access from these IP addresses / CIDR ranges (one per line).</p>
-        <textarea
-          value={ipAllowlist}
-          onChange={(e) => setIpAllowlist(e.target.value)}
-          rows={4}
-          disabled={!ipAllowlistEnabled}
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-        />
-      </section>
-
-      {/* SSO / SAML */}
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Lock className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">SSO / SAML Configuration</h2>
-          </div>
-          <button onClick={() => setSsoEnabled(!ssoEnabled)} className="text-muted-foreground hover:text-foreground transition-colors">
-            {ssoEnabled ? <ToggleRight className="h-8 w-8 text-primary" /> : <ToggleLeft className="h-8 w-8" />}
-          </button>
-        </div>
-        {ssoEnabled && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium">Identity Provider</label>
-              <select
-                value={ssoProvider}
-                onChange={(e) => setSsoProvider(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                <option value="okta">Okta</option>
-                <option value="azure">Azure AD</option>
-                <option value="google">Google Workspace</option>
-                <option value="onelogin">OneLogin</option>
-                <option value="custom">Custom SAML</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium">Entity ID / Issuer</label>
-              <input
-                value={ssoEntityId}
-                onChange={(e) => setSsoEntityId(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium">ACS URL (Assertion Consumer Service)</label>
-              <input
-                value={ssoAcsUrl}
-                onChange={(e) => setSsoAcsUrl(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* SCIM */}
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">SCIM Provisioning</h2>
-          </div>
-          <button onClick={() => setScimEnabled(!scimEnabled)} className="text-muted-foreground hover:text-foreground transition-colors">
-            {scimEnabled ? <ToggleRight className="h-8 w-8 text-primary" /> : <ToggleLeft className="h-8 w-8" />}
-          </button>
-        </div>
-        {scimEnabled && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-              <span className="text-sm">SCIM endpoint active &middot; Last sync: 4 hours ago</span>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium">SCIM Bearer Token</label>
-              <div className="flex gap-2">
-                <input
-                  value={scimToken}
-                  readOnly
-                  className="flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm font-mono outline-none"
-                />
-                <button className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted transition-colors">
-                  <Copy className="h-4 w-4" />
-                </button>
-                <button className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted transition-colors">
-                  <RefreshCw className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <div className="flex justify-end">
-        <button className="rounded-lg bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
-          Save Security Settings
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ── Data Management Tab ────────────────────────────────────────────────────────
 
 function DataTab() {
@@ -1156,7 +955,27 @@ export default function AdminPage() {
 
       {/* Tab Bar */}
       <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1">
-        {TABS.map(({ key, label, icon: Icon }) => (
+        {/* People section */}
+        <span className="flex items-center px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">People</span>
+        {TABS.filter((t) => t.group === "people").map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={cn(
+              "flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              activeTab === key
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+        <div className="mx-1 w-px bg-border" />
+        {/* Operations section */}
+        <span className="flex items-center px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Operations</span>
+        {TABS.filter((t) => t.group === "operations").map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -1178,7 +997,6 @@ export default function AdminPage() {
         {activeTab === "users"    && <UsersTab />}
         {activeTab === "roles"    && <RolesTab />}
         {activeTab === "audit"    && <AuditTab />}
-        {activeTab === "security" && <SecurityTab />}
         {activeTab === "data"     && <DataTab />}
         {activeTab === "health"   && <HealthTab />}
       </div>

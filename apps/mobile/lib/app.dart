@@ -17,7 +17,9 @@ import 'features/deals/deals_screen.dart';
 import 'features/deals/deal_detail_screen.dart';
 import 'features/deals/deal_form_screen.dart';
 import 'features/activities/activities_screen.dart';
+import 'features/activities/activity_form_screen.dart';
 import 'features/tasks/tasks_screen.dart';
+import 'features/tasks/task_form_screen.dart';
 import 'features/sequences/sequences_screen.dart';
 import 'features/sequences/sequence_form_screen.dart';
 import 'features/quotes/quotes_screen.dart';
@@ -42,10 +44,23 @@ import 'features/settings/custom_fields_settings_screen.dart';
 import 'features/settings/custom_objects_settings_screen.dart';
 import 'features/settings/permissions_settings_screen.dart';
 import 'features/admin/admin_screen.dart';
+import 'features/admin/dedup_screen.dart';
+import 'features/admin/merges_screen.dart';
+import 'features/admin/workspaces_screen.dart';
 import 'features/leads/leads_screen.dart';
 import 'features/review/review_queue_screen.dart';
 import 'features/import/import_screen.dart';
 import 'features/marketing/campaigns_screen.dart';
+import 'features/notifications/notifications_screen.dart';
+import 'features/custom_objects/custom_objects_browser_screen.dart';
+import 'features/insights/insights_screen.dart';
+import 'features/forecasting/forecasting_screen.dart';
+import 'features/territories/territories_screen.dart';
+import 'features/coaching/coaching_screen.dart';
+import 'features/compliance/compliance_screen.dart';
+import 'features/lead_scoring/lead_scoring_screen.dart';
+import 'features/anomalies/anomalies_screen.dart';
+import 'features/marketplace/marketplace_screen.dart';
 
 class NexCRMApp extends ConsumerWidget {
   const NexCRMApp({super.key});
@@ -124,8 +139,20 @@ class NexCRMApp extends ConsumerWidget {
             ),
           ],
         ),
-        GoRoute(path: '/activities', builder: (_, __) => const ActivitiesScreen()),
-        GoRoute(path: '/tasks', builder: (_, __) => const TasksScreen()),
+        GoRoute(
+          path: '/activities',
+          builder: (_, __) => const ActivitiesScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const ActivityFormScreen()),
+          ],
+        ),
+        GoRoute(
+          path: '/tasks',
+          builder: (_, __) => const TasksScreen(),
+          routes: [
+            GoRoute(path: 'new', builder: (_, __) => const TaskFormScreen()),
+          ],
+        ),
         GoRoute(
           path: '/sequences',
           builder: (_, __) => const SequencesScreen(),
@@ -174,11 +201,34 @@ class NexCRMApp extends ConsumerWidget {
             GoRoute(path: 'permissions', builder: (_, __) => const PermissionsSettingsScreen()),
           ],
         ),
-        GoRoute(path: '/admin', builder: (_, __) => const AdminScreen()),
+        GoRoute(
+          path: '/admin',
+          builder: (_, __) => const AdminScreen(),
+          routes: [
+            GoRoute(path: 'dedup', builder: (_, __) => const DedupScreen()),
+            GoRoute(path: 'merges', builder: (_, __) => const MergesScreen()),
+            GoRoute(path: 'workspaces', builder: (_, __) => const WorkspacesScreen()),
+          ],
+        ),
         GoRoute(path: '/leads', builder: (_, __) => const LeadsScreen()),
         GoRoute(path: '/review', builder: (_, __) => const ReviewQueueScreen()),
         GoRoute(path: '/import', builder: (_, __) => const ImportScreen()),
         GoRoute(path: '/marketing', builder: (_, __) => const CampaignsScreen()),
+        GoRoute(path: '/insights', builder: (_, __) => const InsightsScreen()),
+        GoRoute(path: '/forecasting', builder: (_, __) => const ForecastingScreen()),
+        GoRoute(path: '/territories', builder: (_, __) => const TerritoriesScreen()),
+        GoRoute(path: '/coaching', builder: (_, __) => const CoachingScreen()),
+        GoRoute(path: '/compliance', builder: (_, __) => const ComplianceScreen()),
+        GoRoute(path: '/lead-scoring', builder: (_, __) => const LeadScoringScreen()),
+        GoRoute(path: '/anomalies', builder: (_, __) => const AnomaliesScreen()),
+        GoRoute(path: '/marketplace', builder: (_, __) => const MarketplaceScreen()),
+        GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
+        GoRoute(
+          path: '/custom/:objectKey',
+          builder: (_, state) => CustomObjectsBrowserScreen(
+            objectKey: state.pathParameters['objectKey']!,
+          ),
+        ),
 
         // Deal routes (top-level since pipeline is a shell branch)
         GoRoute(path: '/deals/new', builder: (_, __) => const DealFormScreen()),
@@ -267,11 +317,21 @@ class _MoreScreen extends ConsumerWidget {
           _MoreTile(icon: Icons.account_tree, label: 'Workflows', route: '/workflows'),
           const Divider(),
           _MoreTile(icon: Icons.bar_chart, label: 'Reports', route: '/reports'),
+          _MoreTile(icon: Icons.insights, label: 'Insights', route: '/insights'),
+          _MoreTile(icon: Icons.show_chart, label: 'Forecasting', route: '/forecasting'),
           _MoreTile(icon: Icons.rate_review, label: 'Review Queue', route: '/review'),
           _MoreTile(icon: Icons.upload_file, label: 'Import', route: '/import'),
           _MoreTile(icon: Icons.campaign, label: 'Marketing', route: '/marketing'),
-          _MoreTile(icon: Icons.auto_awesome, label: 'AI Assistant', route: '/ai'),
           const Divider(),
+          _MoreTile(icon: Icons.public, label: 'Territories', route: '/territories'),
+          _MoreTile(icon: Icons.school, label: 'Coaching', route: '/coaching'),
+          _MoreTile(icon: Icons.verified_user, label: 'Compliance', route: '/compliance'),
+          _MoreTile(icon: Icons.gps_fixed, label: 'Lead Scoring', route: '/lead-scoring'),
+          _MoreTile(icon: Icons.warning_amber, label: 'Anomalies', route: '/anomalies'),
+          _MoreTile(icon: Icons.store, label: 'Marketplace', route: '/marketplace'),
+          const Divider(),
+          _MoreTile(icon: Icons.auto_awesome, label: 'AI Assistant', route: '/ai'),
+          _MoreTile(icon: Icons.notifications_outlined, label: 'Notifications', route: '/notifications'),
           _MoreTile(icon: Icons.settings, label: 'Settings', route: '/settings'),
           if (user != null && user.isAdmin)
             _MoreTile(

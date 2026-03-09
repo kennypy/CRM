@@ -6,15 +6,6 @@ import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'app.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Force highest refresh rate on capable devices (e.g. 120Hz on Galaxy S25)
-  try {
-    await FlutterDisplayMode.setHighRefreshRate();
-  } catch (_) {
-    // Not supported on all devices/platforms
-  }
-
   await SentryFlutter.init(
     (options) {
       options.dsn = const String.fromEnvironment(
@@ -26,11 +17,22 @@ Future<void> main() async {
       options.enableAutoPerformanceTracing = true;
       options.enableUserInteractionTracing = true;
     },
-    appRunner: () => runApp(
-      DefaultAssetBundle(
-        bundle: SentryAssetBundle(),
-        child: const ProviderScope(child: NexCRMApp()),
-      ),
-    ),
+    appRunner: () async {
+      WidgetsFlutterBinding.ensureInitialized();
+
+      // Force highest refresh rate on capable devices (e.g. 120Hz on Galaxy S25)
+      try {
+        await FlutterDisplayMode.setHighRefreshRate();
+      } catch (_) {
+        // Not supported on all devices/platforms
+      }
+
+      runApp(
+        DefaultAssetBundle(
+          bundle: SentryAssetBundle(),
+          child: const ProviderScope(child: NexCRMApp()),
+        ),
+      );
+    },
   );
 }
