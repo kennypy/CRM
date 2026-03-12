@@ -10,6 +10,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
+import { requireAiRead, requireAiWrite } from "../middleware/scope";
 import { createProxy } from "../lib/proxy";
 
 const AI_ENGINE = process.env.AI_ENGINE_URL ?? "http://localhost:5001";
@@ -36,7 +37,7 @@ function toForecast(row: Record<string, unknown>) {
 
 export async function forecastingRoutes(server: FastifyInstance) {
   // ── GET /api/v1/forecasting ─────────────────────────────────────────────
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const q = request.query as Record<string, string>;
     const limit = Math.min(parseInt(q.limit ?? "50", 10), 200);
@@ -67,7 +68,7 @@ export async function forecastingRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/forecasting/summary ─────────────────────────────────────
-  server.get("/summary", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/summary", { preHandler: [requireRep, requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
 
     const { rows } = await pool.query(
@@ -98,7 +99,7 @@ export async function forecastingRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/forecasting/:dealId ─────────────────────────────────────
-  server.get("/:dealId", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:dealId", { preHandler: [requireRep, requireAiRead] }, async (request, reply) => {
     const { dealId } = request.params as { dealId: string };
     const { tenantId } = request.user;
 
@@ -115,7 +116,7 @@ export async function forecastingRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/forecasting/compute ────────────────────────────────────
-  server.post("/compute", { preHandler: [requireManager] },
+  server.post("/compute", { preHandler: [requireManager, requireAiWrite] },
     createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/forecasting" })
   );
 }

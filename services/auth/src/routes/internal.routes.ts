@@ -9,6 +9,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { sendTeamInviteEmail } from "../lib/email";
+import { validateServiceToken } from "../middleware/service-token";
 
 const InviteEmailSchema = z.object({
   to: z.string().email(),
@@ -27,6 +28,9 @@ const QuoteSentEmailSchema = z.object({
 });
 
 export async function internalRoutes(server: FastifyInstance) {
+  // All internal routes require a valid service token
+  server.addHook("preHandler", validateServiceToken);
+
   // POST /internal/send-invite — send a team invite email
   server.post("/send-invite", async (request, reply) => {
     const parsed = InviteEmailSchema.safeParse(request.body);

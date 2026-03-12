@@ -5,10 +5,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
+import { requireAiRead, requireAiWrite } from "../middleware/scope";
 
 export async function coachingRoutes(server: FastifyInstance) {
   // ── GET /live-calls — active calls being monitored ──────────────────────
-  server.get("/live-calls", async (request, reply) => {
+  server.get("/live-calls", { preHandler: [requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     // In production, this would query real-time call state from Redis/Twilio
     return reply.send({
@@ -22,7 +23,7 @@ export async function coachingRoutes(server: FastifyInstance) {
   });
 
   // ── GET /call-reviews — calls awaiting manager review ───────────────────
-  server.get("/call-reviews", async (request, reply) => {
+  server.get("/call-reviews", { preHandler: [requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const q = request.query as { status?: string; repId?: string; limit?: string };
 
@@ -57,7 +58,7 @@ export async function coachingRoutes(server: FastifyInstance) {
   });
 
   // ── POST /call-reviews/:id/score — submit scorecard ─────────────────────
-  server.post("/call-reviews/:id/score", async (request, reply) => {
+  server.post("/call-reviews/:id/score", { preHandler: [requireAiWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
 
@@ -97,7 +98,7 @@ export async function coachingRoutes(server: FastifyInstance) {
   });
 
   // ── GET /scorecards/:repId — rep scorecard overview ─────────────────────
-  server.get("/scorecards/:repId", async (request, reply) => {
+  server.get("/scorecards/:repId", { preHandler: [requireAiRead] }, async (request, reply) => {
     const { repId } = request.params as { repId: string };
     const { tenantId } = request.user;
 
@@ -132,7 +133,7 @@ export async function coachingRoutes(server: FastifyInstance) {
   });
 
   // ── GET /coaching-plans — list coaching plans ───────────────────────────
-  server.get("/coaching-plans", async (request, reply) => {
+  server.get("/coaching-plans", { preHandler: [requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     return reply.send({
       success: true,
@@ -144,7 +145,7 @@ export async function coachingRoutes(server: FastifyInstance) {
   });
 
   // ── GET /best-practices — best practice library ─────────────────────────
-  server.get("/best-practices", async (request, reply) => {
+  server.get("/best-practices", { preHandler: [requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     return reply.send({
       success: true,
@@ -158,7 +159,7 @@ export async function coachingRoutes(server: FastifyInstance) {
   });
 
   // ── GET /ai-insights/:repId — AI coaching insights ──────────────────────
-  server.get("/ai-insights/:repId", async (request, reply) => {
+  server.get("/ai-insights/:repId", { preHandler: [requireAiRead] }, async (request, reply) => {
     const { repId } = request.params as { repId: string };
     return reply.send({
       success: true,

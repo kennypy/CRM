@@ -27,6 +27,7 @@
 
 import { pool } from "../db";
 import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 
 interface WorkflowDef {
   id: string;
@@ -129,7 +130,7 @@ type ActionHandler = (
 
 const actionHandlers: Record<string, ActionHandler> = {
   async create_task(config, event, tenantId) {
-    const res = await fetch(`${GRAPH_CORE_URL}/tasks`, {
+    const res = await internalFetch(`${GRAPH_CORE_URL}/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
       body: JSON.stringify({
@@ -144,7 +145,7 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
 
   async send_email(config, event, tenantId) {
-    const res = await fetch(`${OUTREACH_URL}/api/v1/email/send`, {
+    const res = await internalFetch(`${OUTREACH_URL}/api/v1/email/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
       body: JSON.stringify({
@@ -187,7 +188,7 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
 
   async add_to_sequence(config, event, tenantId) {
-    const res = await fetch(`${OUTREACH_URL}/api/v1/sequences/enroll`, {
+    const res = await internalFetch(`${OUTREACH_URL}/api/v1/sequences/enroll`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
       body: JSON.stringify({
@@ -203,7 +204,7 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
 
   async ai_score_lead(_config, event, tenantId) {
-    const res = await fetch(`${AI_ENGINE_URL}/lead-scoring/compute`, {
+    const res = await internalFetch(`${AI_ENGINE_URL}/lead-scoring/compute`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
       body: JSON.stringify({ contactId: event.entity_id }),
@@ -212,7 +213,7 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
 
   async ai_summarize(_config, event, tenantId) {
-    const res = await fetch(`${AI_ENGINE_URL}/summarize`, {
+    const res = await internalFetch(`${AI_ENGINE_URL}/summarize`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
       body: JSON.stringify({ entityType: event.entity_type, entityId: event.entity_id }),

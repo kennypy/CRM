@@ -10,6 +10,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/rbac";
+import { denyApiKeys } from "../middleware/scope";
 
 const UpdateMeSchema = z.object({
   firstName:    z.string().min(1).max(100).optional(),
@@ -70,7 +71,7 @@ function toUser(row: Record<string, unknown>) {
 
 export async function usersRoutes(server: FastifyInstance) {
   // ── GET /api/v1/users ─────────────────────────────────────────────────────
-  server.get("/", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.get("/", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
       `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id,
@@ -84,7 +85,7 @@ export async function usersRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/users/me ─────────────────────────────────────────────────
-  server.get("/me", async (request, reply) => {
+  server.get("/me", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const { sub: userId, tenantId } = request.user;
     const { rows } = await pool.query(
       `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
@@ -99,7 +100,7 @@ export async function usersRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/users/me ────────────────────────────────────────────────
-  server.patch("/me", async (request, reply) => {
+  server.patch("/me", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const parsed = UpdateMeSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -143,7 +144,7 @@ export async function usersRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /api/v1/users/:id ──────────────────────────────────────────────
-  server.delete("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { sub: callerId, tenantId } = request.user;
 
@@ -168,7 +169,7 @@ export async function usersRoutes(server: FastifyInstance) {
 
   // ── POST /api/v1/users ───────────────────────────────────────────────────
   // Admin creates a fully active user (with password). The user can log in immediately.
-  server.post("/", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const parsed = CreateUserSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -207,7 +208,7 @@ export async function usersRoutes(server: FastifyInstance) {
 
   // ── PATCH /api/v1/users/:id ───────────────────────────────────────────────
   // Admin edits another user's details (name, email, role, optionally password).
-  server.patch("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -254,7 +255,7 @@ export async function usersRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/users/invite ─────────────────────────────────────────────
-  server.post("/invite", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/invite", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const parsed = InviteSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({

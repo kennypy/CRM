@@ -19,6 +19,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
+import { denyApiKeys } from "../middleware/scope";
 
 const ROLES = ["super_admin", "admin", "manager", "rep", "read_only"] as const;
 const ACCESS_LEVELS = ["hidden", "read_only", "read_write"] as const;
@@ -50,7 +51,7 @@ const DefaultsSchema = z.object({
 export async function permissionsRoutes(server: FastifyInstance) {
   // ── Record-level ACLs ─────────────────────────────────────────────────────
 
-  server.get("/records/:entityType/:entityId", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/records/:entityType/:entityId", { preHandler: [denyApiKeys, requireRep] }, async (request, reply) => {
     const { entityType, entityId } = request.params as { entityType: string; entityId: string };
     const { tenantId } = request.user;
 
@@ -82,7 +83,7 @@ export async function permissionsRoutes(server: FastifyInstance) {
     });
   });
 
-  server.post("/records", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/records", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const parsed = GrantSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -108,7 +109,7 @@ export async function permissionsRoutes(server: FastifyInstance) {
     return reply.status(201).send({ success: true, data: rows[0] });
   });
 
-  server.delete("/records/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.delete("/records/:id", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -123,7 +124,7 @@ export async function permissionsRoutes(server: FastifyInstance) {
 
   // ── Field-level Permissions ───────────────────────────────────────────────
 
-  server.get("/fields", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/fields", { preHandler: [denyApiKeys, requireRep] }, async (request, reply) => {
     const { entityType } = request.query as { entityType?: string };
     const { tenantId } = request.user;
 
@@ -152,7 +153,7 @@ export async function permissionsRoutes(server: FastifyInstance) {
     });
   });
 
-  server.post("/fields", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/fields", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const parsed = FieldPermSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -178,7 +179,7 @@ export async function permissionsRoutes(server: FastifyInstance) {
   });
 
   // Batch update field permissions (for the matrix UI)
-  server.post("/fields/batch", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/fields/batch", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const schema = z.object({
       permissions: z.array(FieldPermSchema).min(1).max(500),
     });
@@ -217,7 +218,7 @@ export async function permissionsRoutes(server: FastifyInstance) {
 
   // ── Default Permission Rules ──────────────────────────────────────────────
 
-  server.get("/defaults", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/defaults", { preHandler: [denyApiKeys, requireRep] }, async (request, reply) => {
     const { tenantId } = request.user;
 
     const { rows } = await pool.query(
@@ -239,7 +240,7 @@ export async function permissionsRoutes(server: FastifyInstance) {
     });
   });
 
-  server.post("/defaults", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/defaults", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const parsed = DefaultsSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({

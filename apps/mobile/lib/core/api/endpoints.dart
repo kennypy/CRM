@@ -88,17 +88,17 @@ class Endpoints {
   static String get complianceMirroring => '$apiUrl/api/v1/compliance/mirroring';
   static String get complianceRetention => '$apiUrl/api/v1/compliance/retention';
 
-  // Sales Insights
-  static String get insights => '$apiUrl/api/v1/insights';
-  static String get insightsActivity => '$apiUrl/api/v1/insights/activity';
-  static String get insightsEngagement => '$apiUrl/api/v1/insights/engagement';
-  static String get insightsPipeline => '$apiUrl/api/v1/insights/pipeline';
-  static String get insightsTeam => '$apiUrl/api/v1/insights/team';
+  // Sales Insights — TODO: Insights API not yet implemented
+  // static String get insights => '$apiUrl/api/v1/insights';
+  // static String get insightsActivity => '$apiUrl/api/v1/insights/activity';
+  // static String get insightsEngagement => '$apiUrl/api/v1/insights/engagement';
+  // static String get insightsPipeline => '$apiUrl/api/v1/insights/pipeline';
+  // static String get insightsTeam => '$apiUrl/api/v1/insights/team';
 
-  // Calling / Power Dialer
-  static String get callingQueue => '$apiUrl/api/calling/queue';
-  static String get callingHistory => '$apiUrl/api/calling/history';
-  static String get callingDisposition => '$apiUrl/api/calling/disposition';
+  // Calling / Power Dialer — routed through outreach service
+  static String get callingQueue => '$apiUrl/api/v1/outreach/calls';
+  static String get callingHistory => '$apiUrl/api/v1/outreach/calls';
+  static String get callingDisposition => '$apiUrl/api/v1/outreach/calls';
 
   // Coaching
   static String get coachingAlerts => '$apiUrl/api/v1/coaching/alerts';
@@ -142,21 +142,21 @@ class Endpoints {
   static String get adminDuplicatesMerge => '$apiUrl/api/v1/admin/duplicates/merge';
   static String get adminDuplicatesStats => '$apiUrl/api/v1/admin/duplicates/stats';
 
-  // Admin - Audit Log
-  static String get adminAuditLog => '$apiUrl/api/v1/admin/audit-log';
-  static String get adminAuditLogExport => '$apiUrl/api/v1/admin/audit-log/export';
+  // Admin - Audit Log (via compliance routes)
+  static String get adminAuditLog => '$apiUrl/api/v1/compliance/audit-log';
+  static String get adminAuditLogExport => '$apiUrl/api/v1/compliance/audit-log/export';
 
-  // Admin - Roles & Permissions
-  static String get adminRoles => '$apiUrl/api/v1/admin/roles';
+  // Admin - Roles & Permissions — TODO: Not yet implemented
+  // static String get adminRoles => '$apiUrl/api/v1/admin/roles';
 
-  // Admin - System Health
-  static String get adminSystemHealth => '$apiUrl/api/v1/admin/system-health';
+  // Admin - System Health — TODO: Not yet implemented
+  // static String get adminSystemHealth => '$apiUrl/api/v1/admin/system-health';
 
-  // Admin - Data Management
-  static String get adminDataExport => '$apiUrl/api/v1/admin/data/export';
-  static String get adminDataRetention => '$apiUrl/api/v1/admin/data/retention';
-  static String get adminGdprRequests => '$apiUrl/api/v1/admin/gdpr/requests';
+  // Admin - Data Management — TODO: Not yet implemented
+  // static String get adminDataExport => '$apiUrl/api/v1/admin/data/export';
+  // static String get adminDataRetention => '$apiUrl/api/v1/admin/data/retention';
+  // static String get adminGdprRequests => '$apiUrl/api/v1/admin/gdpr/requests';
 
-  // Admin - Workspace Features
-  static String get adminFeatures => '$apiUrl/api/v1/admin/features';
+  // Admin - Workspace Features — TODO: Not yet implemented
+  // static String get adminFeatures => '$apiUrl/api/v1/admin/features';
 }

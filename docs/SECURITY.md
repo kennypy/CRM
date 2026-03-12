@@ -1,6 +1,6 @@
 # NexCRM Security Architecture
 
-> Version 2.0 | Updated 2026-03-08
+> Version 2.1 | Updated 2026-03-12
 
 ---
 
@@ -8,14 +8,15 @@
 
 1. [Authentication Flows](#1-authentication-flows)
 2. [Role-Based Access Control (RBAC)](#2-role-based-access-control-rbac)
-3. [Encryption and Secret Management](#3-encryption-and-secret-management)
-4. [Multi-Tenant Isolation](#4-multi-tenant-isolation)
-5. [Audit Logging](#5-audit-logging)
-6. [Rate Limiting](#6-rate-limiting)
-7. [Input Validation and Injection Prevention](#7-input-validation-and-injection-prevention)
-8. [Webhook Security](#8-webhook-security)
-9. [Data Privacy and Compliance (GDPR/CCPA)](#9-data-privacy-and-compliance-gdprccpa)
-10. [Known Gaps and Security Roadmap](#10-known-gaps-and-security-roadmap)
+3. [Service-to-Service Authentication](#3-service-to-service-authentication)
+4. [Encryption and Secret Management](#4-encryption-and-secret-management)
+5. [Multi-Tenant Isolation](#5-multi-tenant-isolation)
+6. [Audit Logging](#6-audit-logging)
+7. [Rate Limiting](#7-rate-limiting)
+8. [Input Validation and Injection Prevention](#8-input-validation-and-injection-prevention)
+9. [Webhook Security](#9-webhook-security)
+10. [Data Privacy and Compliance (GDPR/CCPA)](#10-data-privacy-and-compliance-gdprccpa)
+11. [Known Gaps and Security Roadmap](#11-known-gaps-and-security-roadmap)
 
 ---
 
@@ -256,7 +257,37 @@ middleware. The table below documents the actual enforcement as found in the cod
 
 Source: `services/api-gateway/src/routes/*.ts`, `services/auth/src/routes/admin.routes.ts`.
 
-### 2.4 Admin Service Protection
+### 2.4 API Key Scope Enforcement
+
+API keys carry scopes (`crm:read`, `crm:write`, `ai:read`, `ai:write`) that are checked
+by scope middleware at the gateway layer. JWT-authenticated users bypass scope checks
+entirely — scopes only apply to API key callers.
+
+**Scope middleware (`requireScopes`):**
+- If `request.user.role !== "api_key"`, returns immediately (no-op for JWT users)
+- Checks that all required scopes are present in `request.user.scopes`
+- Returns 403 `INSUFFICIENT_SCOPE` if any scope is missing
+
+**Route classification:**
+- CRM entity routes (contacts, companies, deals, etc.): `requireCrmRead` on GET,
+  `requireCrmWrite` on POST/PATCH/DELETE
+- AI routes (NL, review queue, enrichment, etc.): `requireAiRead` on GET,
+  `requireAiWrite` on POST
+- Admin/sensitive routes (users, tenant, billing, permissions, compliance, dedup,
+  api-keys, admin-reports): `denyApiKeys` — rejects any API key with 403
+
+**`denyApiKeys` guard:** Completely blocks API key access. Used for routes that should
+only be accessible to interactive (JWT-authenticated) users: user management, tenant
+settings, billing, permissions, compliance, deduplication, and admin reports.
+
+**RBAC for API keys:** API keys are assigned rank 1 in the role hierarchy (equivalent
+to `rep`), which is acceptable because fine-grained access is enforced by scope
+middleware on every route.
+
+Source: `services/api-gateway/src/middleware/scope.ts`,
+`services/api-gateway/src/middleware/rbac.ts`.
+
+### 2.5 Admin Service Protection
 
 All routes under `/admin/*` in the auth service require both a valid JWT **and** the
 `super_admin` role. This is enforced via a global `preHandler` hook that runs
@@ -267,7 +298,7 @@ listing, sub-workspace management, workspace merging, and platform-wide statisti
 
 Source: `services/auth/src/routes/admin.routes.ts`, lines 22-44.
 
-### 2.5 Field-Level and Record-Level Permissions
+### 2.6 Field-Level and Record-Level Permissions
 
 Beyond RBAC, NexCRM supports granular permission controls stored in the database:
 
@@ -283,9 +314,89 @@ Source: `infra/db/migrations/015_permissions.sql`,
 
 ---
 
-## 3. Encryption and Secret Management
+## 3. Service-to-Service Authentication
 
-### 3.1 Passwords: bcrypt (12 rounds)
+### 3.1 Internal Service Token
+
+All inter-service communication is authenticated using a shared secret
+(`INTERNAL_SERVICE_SECRET`) sent via the `x-service-token` HTTP header. This prevents
+any network-adjacent caller from forging gateway-injected identity headers
+(`x-user-id`, `x-tenant-id`, `x-user-role`).
+
+**Token injection:**
+- The API gateway's `createProxy()` function injects the token into all proxied
+  requests.
+- The `internalFetch()` helper injects the token for all direct `fetch()` calls from
+  the gateway to internal services (reports, bulk operations, AI review apply,
+  workflow engine actions, close-date handler, scheduled reports, etc.).
+
+**Token validation (Node.js services — graph-core, outreach, auth):**
+- Fastify `onRequest` hook using `crypto.timingSafeEqual()` for constant-time
+  comparison (prevents timing side-channel attacks).
+- Accepts either `INTERNAL_SERVICE_SECRET` or `INTERNAL_SERVICE_SECRET_NEXT` for
+  zero-downtime secret rotation.
+
+**Token validation (Python services — ai-engine, ingestion):**
+- FastAPI middleware using `hmac.compare_digest()` for constant-time comparison.
+- Same dual-token rotation support.
+
+**Public path allowlist:** The following paths are exempt from token validation:
+- `/health` — all services
+- `/email/unsubscribe` — outreach (public unsubscribe links)
+- `/calls/webhooks/twilio/status` — outreach (Twilio status callbacks)
+
+**Dev mode:** Token validation is skipped when `ALLOW_MISSING_SERVICE_TOKEN=true` is
+explicitly set **and** no secret is configured. This prevents accidental fail-open in
+staging or CI — the flag must be consciously set.
+
+**Production startup:** All services refuse to start in production if
+`INTERNAL_SERVICE_SECRET` is not set.
+
+Source: `services/api-gateway/src/lib/internal-fetch.ts`,
+`services/api-gateway/src/lib/proxy.ts`,
+`services/graph-core/src/middleware/service-token.ts`,
+`services/outreach/src/middleware/service-token.ts`,
+`services/auth/src/middleware/service-token.ts`,
+`services/ai-engine/src/middleware/service_token.py`,
+`services/ingestion/src/middleware/service_token.py`.
+
+### 3.2 Secret Rotation Procedure
+
+To rotate `INTERNAL_SERVICE_SECRET` with zero downtime:
+
+1. Generate a new secret: `openssl rand -hex 32`
+2. Set `INTERNAL_SERVICE_SECRET_NEXT=<new_secret>` on all services and restart
+3. Once all services accept the new secret, set
+   `INTERNAL_SERVICE_SECRET=<new_secret>` and clear `INTERNAL_SERVICE_SECRET_NEXT`
+4. Restart all services
+
+### 3.3 Docker Compose Network Isolation
+
+Internal services bind to `127.0.0.1` in Docker Compose, preventing direct access
+from outside the host:
+
+```yaml
+auth:        ports: ["127.0.0.1:4001:4001"]
+graph-core:  ports: ["127.0.0.1:4002:4002"]
+outreach:    ports: ["127.0.0.1:4003:4003"]
+ai-engine:   ports: ["127.0.0.1:5001:5001"]
+```
+
+Only the API gateway (port 4000) and web frontend (port 3000) are publicly exposed.
+
+### 3.4 Kubernetes/Cloud Deployment
+
+For production deployments beyond Docker Compose:
+- Use NetworkPolicy to restrict inter-pod traffic so only the gateway can reach
+  internal services
+- Consider a service mesh with mTLS (e.g., Istio, Linkerd) as defense-in-depth
+  beyond the service token
+
+---
+
+## 4. Encryption and Secret Management
+
+### 4.1 Passwords: bcrypt (12 rounds)
 
 All user passwords are hashed with bcrypt using a cost factor of 12 before storage.
 The `password_hash` column is `NULL` for OAuth-only users (no password set).
@@ -295,7 +406,7 @@ bcrypt against a dummy hash to prevent user enumeration via response-time analys
 
 Source: `services/auth/src/users.ts`, `BCRYPT_ROUNDS = 12`, `verifyPassword()`.
 
-### 3.2 OAuth Tokens: AES-256-GCM
+### 4.2 OAuth Tokens: AES-256-GCM
 
 Third-party OAuth tokens (Google, Microsoft, Slack, Zoom) are encrypted at the
 application layer before being written to the `oauth_tokens` table.
@@ -313,7 +424,7 @@ encryption scheme. Both validate the key format at startup.
 
 Source: `services/auth/src/routes/oauth.routes.ts`, `encryptToken()` / `decryptToken()`.
 
-### 3.3 Webhook Signing Secrets: AES-256-GCM (Encrypted at Rest)
+### 4.3 Webhook Signing Secrets: AES-256-GCM (Encrypted at Rest)
 
 Outbound webhook signing secrets are encrypted with the same AES-256-GCM scheme before
 storage in the `outbound_webhooks.secret` column. The delivery worker decrypts the
@@ -322,7 +433,7 @@ secret at delivery time to compute the HMAC-SHA256 signature.
 Source: `services/api-gateway/src/routes/outbound-webhooks.ts`,
 `services/api-gateway/src/workers/webhook-delivery.ts`.
 
-### 3.4 Refresh Tokens and Password Reset Tokens: SHA-256
+### 4.4 Refresh Tokens and Password Reset Tokens: SHA-256
 
 - **Refresh tokens:** 64 random bytes, stored as SHA-256 hash in `refresh_tokens.token_hash`.
 - **Password reset tokens:** 32 random bytes, stored as SHA-256 hash in
@@ -333,13 +444,13 @@ Source: `services/api-gateway/src/routes/outbound-webhooks.ts`,
 In all three cases the raw secret is returned to the client exactly once and is never
 retrievable from the database.
 
-### 3.5 Transport Encryption
+### 4.5 Transport Encryption
 
 - **TLS 1.3 minimum** in production (enforced at the load balancer / reverse proxy).
 - **HSTS headers** set via `@fastify/helmet`.
 - **Secure cookie flag** on HttpOnly auth cookies.
 
-### 3.6 Secret Management Roadmap
+### 4.6 Secret Management Roadmap
 
 | Current                              | Production Target                |
 |--------------------------------------|----------------------------------|
@@ -349,9 +460,9 @@ retrievable from the database.
 
 ---
 
-## 4. Multi-Tenant Isolation
+## 5. Multi-Tenant Isolation
 
-### 4.1 JWT-Claim-Based Tenant Scoping
+### 5.1 JWT-Claim-Based Tenant Scoping
 
 Every JWT contains a `tenantId` claim. The API gateway and downstream services extract
 the tenant ID exclusively from the verified JWT -- never from query parameters, request
@@ -362,7 +473,7 @@ both `tenant_id` and `email`. Listing endpoints filter by `WHERE tenant_id = $1`
 
 Source: `services/auth/src/users.ts` (all query functions accept/use tenant_id).
 
-### 4.2 Database Schema
+### 5.2 Database Schema
 
 Every data table includes a `tenant_id UUID NOT NULL` column with a foreign key to
 `tenants(id)`. Indexes are structured as `(tenant_id, ...)` for efficient tenant-scoped
@@ -371,15 +482,15 @@ queries.
 **Current enforcement:** Application-level `WHERE tenant_id = $1` clauses.
 
 **Not yet implemented:** PostgreSQL Row-Level Security (RLS) policies. See
-[Known Gaps](#10-known-gaps-and-security-roadmap).
+[Known Gaps](#11-known-gaps-and-security-roadmap).
 
-### 4.3 Sub-Workspaces (Hierarchical Tenancy)
+### 5.3 Sub-Workspaces (Hierarchical Tenancy)
 
 Tenants can have child tenants via the `parent_tenant_id` column (migration 022).
 Sub-workspace operations (create, list children, merge) are restricted to
 `super_admin` users.
 
-### 4.4 Workspace Merging
+### 5.4 Workspace Merging
 
 The merge system (`services/auth/src/merge.ts`) allows a `super_admin` to combine two
 workspaces:
@@ -399,9 +510,9 @@ Source: `services/auth/src/merge.ts`.
 
 ---
 
-## 5. Audit Logging
+## 6. Audit Logging
 
-### 5.1 Audit Log Table
+### 6.1 Audit Log Table
 
 The `audit_log` table records all significant actions with before/after state for
 compliance and forensic analysis.
@@ -425,7 +536,7 @@ audit_log (
 
 Source: `infra/db/migrations/001_core_schema.sql`, lines 194-216.
 
-### 5.2 Partitioning Strategy
+### 6.2 Partitioning Strategy
 
 The audit log is partitioned by quarter to support efficient time-range queries and
 enable partition-level archival/deletion for retention policies.
@@ -436,19 +547,19 @@ enable partition-level archival/deletion for retention policies.
 | `audit_log_2026_q2`   | 2026-04-01 to 2026-07-01     |
 | `audit_log_default`   | Catch-all for other dates    |
 
-### 5.3 Indexes
+### 6.3 Indexes
 
 - `idx_audit_log_tenant` on `(tenant_id, created_at DESC)` -- for tenant-scoped queries.
 - `idx_audit_log_entity` on `(entity_type, entity_id, created_at DESC)` -- for
   entity-specific audit trails.
 
-### 5.4 Event Stream (crm_events)
+### 6.4 Event Stream (crm_events)
 
 In addition to the audit log, all system events flow through the `crm_events` table,
 which is partitioned by month and published to Redis Streams. This covers both
 user-initiated and system-generated events (ingestion, AI extraction, webhooks).
 
-### 5.5 Structured Application Logs
+### 6.5 Structured Application Logs
 
 All services use Fastify's Pino logger emitting structured JSON logs. Each request is
 assigned a unique `requestId` via `crypto.randomUUID()`. Auth events are logged with
@@ -464,13 +575,13 @@ structured context:
 
 ---
 
-## 6. Rate Limiting
+## 7. Rate Limiting
 
 Rate limiting is enforced at three levels: the auth service, the API gateway, and
 per-endpoint custom limits. All rate limit counters are stored in Redis, ensuring
 they are shared across all service replicas in a multi-instance deployment.
 
-### 6.1 Auth Service
+### 7.1 Auth Service
 
 | Scope              | Limit           | Window    | Key              | Store |
 |--------------------|-----------------|-----------|------------------|-------|
@@ -484,7 +595,7 @@ SHA-256 hashed email addresses as Redis keys to avoid storing PII.
 
 Source: `services/auth/src/index.ts`, `services/auth/src/routes/auth.routes.ts`.
 
-### 6.2 API Gateway
+### 7.2 API Gateway
 
 | Scope              | Limit           | Window    | Key              | Store |
 |--------------------|-----------------|-----------|------------------|-------|
@@ -500,7 +611,7 @@ The gateway trusts exactly one hop of reverse proxy for accurate client IP resol
 
 Source: `services/api-gateway/src/index.ts`.
 
-### 6.3 Security Headers
+### 7.3 Security Headers
 
 Both services register `@fastify/helmet` which sets:
 - `X-Frame-Options: DENY`
@@ -515,9 +626,9 @@ Source: `services/auth/src/index.ts`, line 52.
 
 ---
 
-## 7. Input Validation and Injection Prevention
+## 8. Input Validation and Injection Prevention
 
-### 7.1 SQL Injection
+### 8.1 SQL Injection
 
 All SQL queries across all services use parameterized statements (`$1`, `$2`, etc.)
 via the `pg` driver. No string interpolation is used for user-supplied values.
@@ -525,7 +636,7 @@ via the `pg` driver. No string interpolation is used for user-supplied values.
 Dynamic column names (used in bulk update operations) are sanitized with
 `/^[a-z_][a-z0-9_]*$/` regex validation before inclusion in SQL strings.
 
-### 7.2 Request Validation
+### 8.2 Request Validation
 
 All request bodies are validated using Zod schemas before processing. Examples:
 
@@ -534,7 +645,7 @@ All request bodies are validated using Zod schemas before processing. Examples:
 - `CreateKeySchema` restricts scopes to the defined enum set
 - Admin route schemas validate UUID formats, enum values, and string lengths
 
-### 7.3 Information Disclosure Prevention
+### 8.3 Information Disclosure Prevention
 
 - Login errors use a generic message: `"Invalid email, password, or organisation"` --
   this does not reveal whether the email, password, or tenant was incorrect.
@@ -545,9 +656,9 @@ All request bodies are validated using Zod schemas before processing. Examples:
 
 ---
 
-## 8. Webhook Security
+## 9. Webhook Security
 
-### 8.1 Inbound Webhooks (Stripe, Slack, Zoom)
+### 9.1 Inbound Webhooks (Stripe, Slack, Zoom)
 
 Inbound webhook endpoints are publicly accessible (no JWT required) but authenticate
 via provider-specific signature verification:
@@ -560,7 +671,7 @@ via provider-specific signature verification:
 
 Source: `services/api-gateway/src/routes/webhooks.ts`.
 
-### 8.2 Outbound Webhooks
+### 9.2 Outbound Webhooks
 
 Tenant-defined webhook endpoints that receive CRM event notifications:
 
@@ -579,9 +690,9 @@ Source: `services/api-gateway/src/workers/webhook-delivery.ts`,
 
 ---
 
-## 9. Data Privacy and Compliance (GDPR/CCPA)
+## 10. Data Privacy and Compliance (GDPR/CCPA)
 
-### 9.1 Data Subject Request (DSR) Automation
+### 10.1 Data Subject Request (DSR) Automation
 
 NexCRM provides automated processing of data subject requests as required by GDPR
 (Articles 15-21) and CCPA. DSRs are submitted via `POST /api/v1/compliance/dsr` and
@@ -612,7 +723,7 @@ the erasure for compliance proof.
 Source: `services/api-gateway/src/workers/dsr-processor.ts`,
 `services/api-gateway/src/routes/compliance.ts`.
 
-### 9.2 CCPA Compliance
+### 10.2 CCPA Compliance
 
 CCPA-specific endpoints provide:
 
@@ -629,7 +740,7 @@ and `ccpa_opt_out_at TIMESTAMPTZ` columns.
 Source: `infra/db/migrations/029_ccpa.sql`,
 `services/api-gateway/src/routes/compliance.ts`.
 
-### 9.3 Data Retention
+### 10.3 Data Retention
 
 Retention policies are configurable per entity type per tenant via
 `POST /api/v1/compliance/retention`. Default retention periods:
@@ -648,15 +759,26 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 
 ---
 
-## 10. Known Gaps and Security Roadmap
+## 11. Known Gaps and Security Roadmap
 
-### 10.1 Current Known Gaps
+### 11.1 Current Known Gaps
 
 | Gap | Risk | Severity | Mitigation / Notes |
 |-----|------|----------|-------------------|
 | **No PostgreSQL Row-Level Security** | Tenant isolation relies solely on application-level `WHERE tenant_id = $1` clauses. A bug in a query could leak cross-tenant data. | HIGH | All queries are parameterized and tested, but RLS would provide defense-in-depth. Planned for Phase 3. |
 | **No SAML/SCIM** | Enterprise SSO and automated user provisioning are not yet available. | MEDIUM | Planned for Phase 3 (enterprise tier). |
 | **No distributed locking for plan quota enforcement** | Sequence enrollment plan limits (step/contact quotas) have no distributed lock, allowing a race condition on concurrent enrollments. | LOW | Unlikely in practice but could allow minor overages. |
+
+#### Resolved Gaps (Phase 2.1)
+
+| Gap | Resolution |
+|-----|-----------|
+| **No service-to-service auth** | Added `INTERNAL_SERVICE_SECRET` header validation on all internal services using timing-safe comparison. All gateway-to-service calls inject the token via `internalFetch()` and `createProxy()`. |
+| **Internal services publicly reachable** | Docker Compose now binds internal services to `127.0.0.1` only. |
+| **API key scopes not enforced** | Added `requireScopes()` middleware on all gateway routes. `denyApiKeys` blocks API keys from admin/compliance/billing routes. |
+| **Rate-limit shared "unknown" bucket** | Auth and outreach services now use `crypto.randomUUID()` fallback instead of shared `"unknown"` key. |
+| **trustProxy defaults to enabled** | Changed to opt-in: `TRUST_PROXY=true` required to trust X-Forwarded-For. |
+| **Mobile endpoint map references non-existent paths** | Fixed calling endpoints to use `/api/v1/outreach/calls`, audit log to `/api/v1/compliance/audit-log`. Admin routes proxied via gateway `/api/admin/*`. |
 
 #### Resolved Gaps (Phase 2)
 
@@ -668,7 +790,7 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 | **GraphQL introspection enabled** | Disabled in production via `NoSchemaIntrospectionCustomRule` from `graphql-js`. Introspection remains enabled in development. |
 | **Hardcoded Redis dev passwords** | All workers now use a shared Redis client module that enforces `REDIS_URL` in production (fatal error on startup if missing). Dev fallbacks only apply when `NODE_ENV !== "production"`. |
 
-### 10.2 Security Roadmap
+### 11.2 Security Roadmap
 
 #### Phase 2 (Months 7-12)
 
@@ -705,7 +827,10 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 | `GOOGLE_CLIENT_ID`      | Yes*     | Google OAuth client ID           | Google OAuth PKCE flow                     |
 | `GOOGLE_CLIENT_SECRET`  | Yes*     | Google OAuth client secret       | Google OAuth token exchange                |
 | `STRIPE_WEBHOOK_SECRET` | Yes*     | Stripe signing secret            | Inbound webhook signature verification     |
-| `TRUST_PROXY`           | No       | `"true"` / `"false"`             | Whether to trust X-Forwarded-For (default: true) |
+| `TRUST_PROXY`           | No       | `"true"` / `"false"`             | Whether to trust X-Forwarded-For (default: false) |
+| `INTERNAL_SERVICE_SECRET` | Yes†  | 32+ hex chars                    | Service-to-service authentication token |
+| `INTERNAL_SERVICE_SECRET_NEXT` | No | 32+ hex chars                | Secondary token for zero-downtime rotation |
+| `ALLOW_MISSING_SERVICE_TOKEN` | No | `"true"`                      | Dev only — skip token validation when no secret configured |
 
 \* Required for the respective feature to function. The auth service enforces
 `JWT_SECRET` and `OAUTH_ENCRYPTION_KEY` at startup.

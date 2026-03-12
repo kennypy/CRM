@@ -14,6 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 const CAMPAIGN_TYPES = ["email", "social", "event", "webinar", "content", "paid_search", "paid_social", "abm", "referral", "other"] as const;
 const CAMPAIGN_STATUSES = ["draft", "scheduled", "active", "paused", "completed", "archived"] as const;
@@ -108,7 +109,7 @@ function toCampaign(row: Record<string, unknown>) {
 
 export async function campaignsRoutes(server: FastifyInstance) {
   // ── GET /api/v1/campaigns ───────────────────────────────────────────────
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const tenantId = request.user.tenantId;
     const { search, status, type, page = "1", limit = "50" } = request.query as Record<string, string>;
     const offset = (Math.max(1, Number(page)) - 1) * Number(limit);
@@ -161,7 +162,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/campaigns/:id ───────────────────────────────────────────
-  server.get("/:id", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:id", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -182,7 +183,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/campaigns ──────────────────────────────────────────────
-  server.post("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const parsed = CreateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -211,7 +212,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/campaigns/:id ─────────────────────────────────────────
-  server.patch("/:id", { preHandler: [requireRep] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = UpdateSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -270,7 +271,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /api/v1/campaigns/:id ────────────────────────────────────────
-  server.delete("/:id", { preHandler: [requireManager] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [requireManager, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -287,7 +288,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/campaigns/:id/contacts ──────────────────────────────────
-  server.get("/:id/contacts", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:id/contacts", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -303,7 +304,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/campaigns/:id/clone ────────────────────────────────────
-  server.post("/:id/clone", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/:id/clone", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
 
@@ -330,7 +331,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/campaigns/:id/submit-for-approval ────────────────────
-  server.post("/:id/submit-for-approval", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/:id/submit-for-approval", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const { rows } = await pool.query(
@@ -344,7 +345,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/campaigns/:id/approve ────────────────────────────────
-  server.post("/:id/approve", { preHandler: [requireManager] }, async (request, reply) => {
+  server.post("/:id/approve", { preHandler: [requireManager, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
     const { rows } = await pool.query(
@@ -358,7 +359,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/campaigns/:id/reject ─────────────────────────────────
-  server.post("/:id/reject", { preHandler: [requireManager] }, async (request, reply) => {
+  server.post("/:id/reject", { preHandler: [requireManager, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const { rows } = await pool.query(
@@ -372,7 +373,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/campaigns/dashboard ───────────────────────────────────
-  server.get("/dashboard", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/dashboard", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
 
     const { rows: stats } = await pool.query(
@@ -418,7 +419,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/campaigns/:id/contacts ─────────────────────────────────
-  server.post("/:id/contacts", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/:id/contacts", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const { contactIds } = request.body as { contactIds: string[] };

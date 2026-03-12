@@ -21,6 +21,7 @@ declare module "mercurius" {
 }
 
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 
 type GQLContext = MercuriusContext;
 
@@ -35,7 +36,7 @@ async function gcFetch(
   const separator = path.includes("?") ? "&" : "?";
   const url = `${GRAPH_CORE}${path}${separator}tenantId=${encodeURIComponent(tenantId)}`;
 
-  const res = await fetch(url, {
+  const res = await internalFetch(url, {
     method,
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,

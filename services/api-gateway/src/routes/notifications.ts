@@ -5,10 +5,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 export async function notificationsRoutes(server: FastifyInstance) {
   // ── GET / — list notifications ──────────────────────────────────────────
-  server.get("/", async (request, reply) => {
+  server.get("/", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const q = request.query as { unreadOnly?: string; limit?: string; offset?: string };
     const limit = Math.min(parseInt(q.limit ?? "50", 10), 200);
@@ -60,7 +61,7 @@ export async function notificationsRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /:id/read — mark single notification as read ──────────────────
-  server.patch("/:id/read", async (request, reply) => {
+  server.patch("/:id/read", { preHandler: [requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
 
@@ -75,7 +76,7 @@ export async function notificationsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /mark-all-read — mark all as read ──────────────────────────────
-  server.post("/mark-all-read", async (request, reply) => {
+  server.post("/mark-all-read", { preHandler: [requireCrmWrite] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
 
     try {
@@ -89,7 +90,7 @@ export async function notificationsRoutes(server: FastifyInstance) {
   });
 
   // ── GET /preferences — notification preferences ─────────────────────────
-  server.get("/preferences", async (request, reply) => {
+  server.get("/preferences", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
 
     let prefs = null;
@@ -121,7 +122,7 @@ export async function notificationsRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /preferences — update notification preferences ────────────────
-  server.patch("/preferences", async (request, reply) => {
+  server.patch("/preferences", { preHandler: [requireCrmWrite] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const body = request.body as Record<string, unknown>;
 

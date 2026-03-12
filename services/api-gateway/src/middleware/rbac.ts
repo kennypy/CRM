@@ -11,8 +11,9 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { UserRole } from "@nexcrm/shared-types";
 
-const ROLE_RANK: Record<UserRole, number> = {
+const ROLE_RANK: Record<string, number> = {
   read_only:   0,
+  api_key:     1,  // API keys get rep-level rank; fine-grained control via scope middleware
   rep:         1,
   manager:     2,
   admin:       3,

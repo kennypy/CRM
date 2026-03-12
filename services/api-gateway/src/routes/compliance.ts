@@ -37,6 +37,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
 import { dsrQueue } from "../workers/dsr-processor";
+import { denyApiKeys } from "../middleware/scope";
 
 // ── SOC2 Control definitions ────────────────────────────────────────────────
 
@@ -101,6 +102,9 @@ async function gatherSubjectDataForDownload(tenantId: string, subjectEmail: stri
 }
 
 export async function complianceRoutes(server: FastifyInstance) {
+  // Block API key access to all compliance routes
+  server.addHook("preHandler", denyApiKeys);
+
   // ── GET /compliance/status ──────────────────────────────────────────────
   server.get("/compliance/status", async (request, reply) => {
     const { tenantId } = request.user;

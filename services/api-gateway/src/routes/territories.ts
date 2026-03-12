@@ -5,10 +5,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 export async function territoriesRoutes(server: FastifyInstance) {
   // ── GET / — list territories ────────────────────────────────────────────
-  server.get("/", async (request, reply) => {
+  server.get("/", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     let territories: any[] = [];
 
@@ -39,7 +40,7 @@ export async function territoriesRoutes(server: FastifyInstance) {
   });
 
   // ── POST / — create territory ────────────────────────────────────────────
-  server.post("/", async (request, reply) => {
+  server.post("/", { preHandler: [requireCrmWrite] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const parsed = z.object({
       name: z.string().min(1).max(200),
@@ -71,7 +72,7 @@ export async function territoriesRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /:id ────────────────────────────────────────────────────────
-  server.patch("/:id", async (request, reply) => {
+  server.patch("/:id", { preHandler: [requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const body = request.body as Record<string, unknown>;
@@ -94,7 +95,7 @@ export async function territoriesRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /:id ────────────────────────────────────────────────────────
-  server.delete("/:id", async (request, reply) => {
+  server.delete("/:id", { preHandler: [requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     try {
@@ -104,7 +105,7 @@ export async function territoriesRoutes(server: FastifyInstance) {
   });
 
   // ── POST /:id/assign — assign accounts to territory ─────────────────────
-  server.post("/:id/assign", async (request, reply) => {
+  server.post("/:id/assign", { preHandler: [requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const parsed = z.object({
@@ -128,7 +129,7 @@ export async function territoriesRoutes(server: FastifyInstance) {
   });
 
   // ── GET /:id/performance — territory performance metrics ────────────────
-  server.get("/:id/performance", async (request, reply) => {
+  server.get("/:id/performance", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     return reply.send({
       success: true,
@@ -147,7 +148,7 @@ export async function territoriesRoutes(server: FastifyInstance) {
   });
 
   // ── GET /rules — auto-assignment rules ──────────────────────────────────
-  server.get("/rules", async (request, reply) => {
+  server.get("/rules", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     return reply.send({
       success: true,

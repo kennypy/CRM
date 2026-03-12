@@ -9,8 +9,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
+import { requireCrmWrite } from "../middleware/scope";
 import { createProxy } from "../lib/proxy";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 
 const BulkUpdateSchema = z.object({
   entity_type: z.enum(["contact", "company", "deal", "activity", "task"]),
@@ -34,7 +36,7 @@ const RELATIONAL_TABLES: Record<string, string> = {
 
 export async function bulkRoutes(server: FastifyInstance) {
   // POST /update — bulk update records
-  server.post("/update", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/update", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const parsed = BulkUpdateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -56,7 +58,7 @@ export async function bulkRoutes(server: FastifyInstance) {
         const batch = ids.slice(i, i + concurrency);
         const results = await Promise.allSettled(
           batch.map(async (id) => {
-            const resp = await fetch(
+            const resp = await internalFetch(
               `${GRAPH_CORE}/${path}/${id}?tenantId=${tenantId}`,
               {
                 method: "PATCH",
@@ -125,7 +127,7 @@ export async function bulkRoutes(server: FastifyInstance) {
   });
 
   // POST /delete — bulk delete records
-  server.post("/delete", { preHandler: [requireManager] }, async (request, reply) => {
+  server.post("/delete", { preHandler: [requireManager, requireCrmWrite] }, async (request, reply) => {
     const parsed = BulkDeleteSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -146,7 +148,7 @@ export async function bulkRoutes(server: FastifyInstance) {
         const batch = ids.slice(i, i + concurrency);
         const results = await Promise.allSettled(
           batch.map(async (id) => {
-            const resp = await fetch(
+            const resp = await internalFetch(
               `${GRAPH_CORE}/${path}/${id}?tenantId=${tenantId}`,
               {
                 method: "DELETE",

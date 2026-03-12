@@ -69,7 +69,15 @@ async function bootstrap() {
     max: 20,
     timeWindow: "1 minute",
     redis,
-    keyGenerator: (req) => req.ip ?? "unknown",
+    keyGenerator: (req) => {
+      const key = req.ip;
+      if (!key) {
+        const fallback = crypto.randomUUID();
+        req.log.warn({ fallback }, "rate_limit.no_ip_fallback");
+        return fallback;
+      }
+      return key;
+    },
   });
 
   await server.register(jwt, {

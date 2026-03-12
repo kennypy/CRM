@@ -11,6 +11,7 @@ import { redisConnection } from "../lib/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
 
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 
 const QUEUE_NAME = "nexcrm-close-date-checker";
 
@@ -69,7 +70,7 @@ async function getOverdueDeals(tenantId: string): Promise<Array<{
   companyName?: string;
 }>> {
   try {
-    const resp = await fetch(
+    const resp = await internalFetch(
       `${GRAPH_CORE}/deals?tenantId=${tenantId}&filter=overdue`,
       { headers: { "x-tenant-id": tenantId } }
     );

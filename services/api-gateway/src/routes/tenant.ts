@@ -9,6 +9,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
+import { denyApiKeys } from "../middleware/scope";
 
 const UpdateSchema = z.object({
   defaultCurrency: z.string().regex(/^[A-Z]{3}$/, "Must be a 3-letter ISO 4217 code").optional(),
@@ -18,7 +19,7 @@ const UpdateSchema = z.object({
 
 export async function tenantRoutes(server: FastifyInstance) {
   // ── GET /api/v1/tenant ────────────────────────────────────────────────────
-  server.get("/", async (request, reply) => {
+  server.get("/", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const tenantId = request.user?.tenantId;
     if (!tenantId) {
       return reply.status(401).send({ success: false, error: { code: "UNAUTHORIZED" } });
@@ -51,7 +52,7 @@ export async function tenantRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/tenant ─────────────────────────────────────────────────
-  server.patch("/", async (request, reply) => {
+  server.patch("/", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const tenantId = request.user?.tenantId;
     const role     = request.user?.role;
 

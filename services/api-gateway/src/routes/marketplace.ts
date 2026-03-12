@@ -13,6 +13,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager, requireAdmin } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 const InstallSchema = z.object({
   appId:  z.string().uuid(),
@@ -64,7 +65,7 @@ function toInstall(row: Record<string, unknown>) {
 
 export async function marketplaceRoutes(server: FastifyInstance) {
   // ── GET /api/v1/marketplace ─────────────────────────────────────────────
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const q = request.query as Record<string, string>;
     const category = q.category;
@@ -94,7 +95,7 @@ export async function marketplaceRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/marketplace/installs ────────────────────────────────────
-  server.get("/installs", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/installs", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
 
     const { rows } = await pool.query(
@@ -114,7 +115,7 @@ export async function marketplaceRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/marketplace/:slug ───────────────────────────────────────
-  server.get("/:slug", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:slug", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { slug } = request.params as { slug: string };
     const { tenantId } = request.user;
 
@@ -138,7 +139,7 @@ export async function marketplaceRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/marketplace/install ────────────────────────────────────
-  server.post("/install", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/install", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const parsed = InstallSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -171,7 +172,7 @@ export async function marketplaceRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/marketplace/installs/:id ──────────────────────────────
-  server.patch("/installs/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.patch("/installs/:id", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = UpdateInstallSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -207,7 +208,7 @@ export async function marketplaceRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /api/v1/marketplace/installs/:id ─────────────────────────────
-  server.delete("/installs/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.delete("/installs/:id", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 

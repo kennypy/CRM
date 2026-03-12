@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 const ProductSchema = z.object({
   sku:          z.string().max(100).optional(),
@@ -39,7 +40,7 @@ function toProduct(r: Record<string, unknown>) {
 
 export async function productsRoutes(server: FastifyInstance) {
   // GET /api/v1/products
-  server.get("/", async (request, reply) => {
+  server.get("/", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
       `SELECT * FROM products WHERE tenant_id = $1 AND active = true ORDER BY name ASC`,
@@ -49,7 +50,7 @@ export async function productsRoutes(server: FastifyInstance) {
   });
 
   // GET /api/v1/products/all — includes inactive, admin only
-  server.get("/all", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.get("/all", { preHandler: [requireAdmin, requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
       `SELECT * FROM products WHERE tenant_id = $1 ORDER BY name ASC`,
@@ -59,7 +60,7 @@ export async function productsRoutes(server: FastifyInstance) {
   });
 
   // POST /api/v1/products
-  server.post("/", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const parsed = ProductSchema.safeParse(request.body);
     if (!parsed.success)
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
@@ -77,7 +78,7 @@ export async function productsRoutes(server: FastifyInstance) {
   });
 
   // PATCH /api/v1/products/:id
-  server.patch("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const parsed = UpdateProductSchema.safeParse(request.body);
@@ -107,7 +108,7 @@ export async function productsRoutes(server: FastifyInstance) {
   });
 
   // DELETE /api/v1/products/:id — soft-delete (set active=false)
-  server.delete("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const { rowCount } = await pool.query(

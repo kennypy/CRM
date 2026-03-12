@@ -59,6 +59,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from .middleware.service_token import ServiceTokenMiddleware  # noqa: E402
+app.add_middleware(ServiceTokenMiddleware)
+
 app.include_router(health.router)
 app.include_router(extraction.router, prefix="/extraction")
 app.include_router(scoring.router, prefix="/scoring")

@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 const ENTITY_TYPES = ["contact", "company", "deal", "lead"] as const;
 
@@ -39,7 +40,7 @@ function toNote(row: any) {
 
 export async function notesRoutes(app: FastifyInstance) {
   // List notes for an entity
-  app.get("/:entityType/:entityId", async (req) => {
+  app.get("/:entityType/:entityId", { preHandler: [requireCrmRead] }, async (req) => {
     const { tenantId } = req.user!;
     const { entityType, entityId } = req.params as any;
     if (!ENTITY_TYPES.includes(entityType)) {
@@ -64,7 +65,7 @@ export async function notesRoutes(app: FastifyInstance) {
   });
 
   // Create a note
-  app.post("/:entityType/:entityId", { preHandler: [requireRep] }, async (req, reply) => {
+  app.post("/:entityType/:entityId", { preHandler: [requireRep, requireCrmWrite] }, async (req, reply) => {
     const { tenantId, sub: userId } = req.user!;
     const { entityType, entityId } = req.params as any;
     if (!ENTITY_TYPES.includes(entityType)) {
@@ -81,7 +82,7 @@ export async function notesRoutes(app: FastifyInstance) {
   });
 
   // Update a note
-  app.patch("/:id", { preHandler: [requireRep] }, async (req, reply) => {
+  app.patch("/:id", { preHandler: [requireRep, requireCrmWrite] }, async (req, reply) => {
     const { tenantId } = req.user!;
     const { id } = req.params as any;
     const body = UpdateNoteSchema.parse(req.body);
@@ -107,7 +108,7 @@ export async function notesRoutes(app: FastifyInstance) {
   });
 
   // Delete a note
-  app.delete("/:id", { preHandler: [requireRep] }, async (req, reply) => {
+  app.delete("/:id", { preHandler: [requireRep, requireCrmWrite] }, async (req, reply) => {
     const { tenantId } = req.user!;
     const { id } = req.params as any;
     const { rowCount } = await pool.query(

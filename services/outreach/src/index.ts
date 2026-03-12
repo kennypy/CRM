@@ -14,6 +14,7 @@ import { sequencesRoutes } from "./routes/sequences";
 import { callsRoutes }     from "./routes/calls";
 import { dialersRoutes }   from "./routes/dialers";
 import { startSequenceRunner } from "./workers/sequence-runner";
+import { validateServiceToken } from "./middleware/service-token";
 
 const server = Fastify({
   logger: {
@@ -46,6 +47,11 @@ async function bootstrap() {
     process.exit(1);
   }
 
+  if (process.env.NODE_ENV === "production" && !process.env.INTERNAL_SERVICE_SECRET) {
+    console.error("FATAL: INTERNAL_SERVICE_SECRET must be set in production. Refusing to start.");
+    process.exit(1);
+  }
+
   // ── Security plugins ───────────────────────────────────────────────────────
   await server.register(helmet, { contentSecurityPolicy: false });
 
@@ -58,7 +64,13 @@ async function bootstrap() {
     max: 200,
     timeWindow: "1 minute",
     keyGenerator: (req) => {
-      return (req.headers["x-user-id"] as string) ?? req.ip ?? "unknown";
+      const userId = req.headers["x-user-id"] as string | undefined;
+      if (userId) return userId;
+      const ip = req.ip;
+      if (ip) return ip;
+      const fallback = crypto.randomUUID();
+      req.log.warn({ fallback }, "rate_limit.no_identity_fallback");
+      return fallback;
     },
   });
 
@@ -72,6 +84,9 @@ async function bootstrap() {
       : (err instanceof Error ? err.message : String(err));
     return reply.status(500).send({ success: false, error: { code: "INTERNAL_ERROR", message } });
   });
+
+  // ── Service-token validation ────────────────────────────────────────────
+  server.addHook("onRequest", validateServiceToken);
 
   // ── Health ─────────────────────────────────────────────────────────────────
   server.get("/health", async () => ({

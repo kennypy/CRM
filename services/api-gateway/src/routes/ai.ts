@@ -9,8 +9,10 @@ import { z } from "zod";
 import { createProxy } from "../lib/proxy";
 import { pool } from "../db";
 import { requireRep } from "../middleware/rbac";
+import { requireAiRead, requireAiWrite } from "../middleware/scope";
 
 import { GRAPH_CORE_URL as GRAPH_CORE, AI_ENGINE_URL as AI_ENGINE } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 
 // Allowed entity types — prevents unexpected query patterns
 const ENTITY_TYPES = ["person", "company", "deal", "activity"] as const;
@@ -28,10 +30,11 @@ export async function aiRoutes(server: FastifyInstance) {
   // Each call invokes the LLM, so this is both a cost and DDoS defence.
   server.post("/nl", {
     config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+    preHandler: [requireAiWrite],
   }, createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
 
   // Review queue — reads from Postgres directly (fast, no extra hop)
-  server.get("/review-queue", async (request, reply) => {
+  server.get("/review-queue", { preHandler: [requireAiRead] }, async (request, reply) => {
     const q = request.query as Record<string, string>;
     const jwt = request.user;
     const status = q.status ?? "pending";
@@ -56,7 +59,7 @@ export async function aiRoutes(server: FastifyInstance) {
   });
 
   // Approve a review item — apply the proposed changes to the graph
-  server.post("/review-queue/:id/approve", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/review-queue/:id/approve", { preHandler: [requireRep, requireAiWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const jwt = request.user;
 
@@ -88,7 +91,7 @@ export async function aiRoutes(server: FastifyInstance) {
 
       try {
         const downstream = `${GRAPH_CORE}/${endpoint}/${entityId}?tenantId=${jwt.tenantId}`;
-        await fetch(downstream, {
+        await internalFetch(downstream, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
@@ -110,7 +113,7 @@ export async function aiRoutes(server: FastifyInstance) {
   });
 
   // Reject a review item — feedback loop for extraction quality
-  server.post("/review-queue/:id/reject", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/review-queue/:id/reject", { preHandler: [requireRep, requireAiWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const jwt = request.user;
     const bodyParsed = ReviewRejectBody.safeParse(request.body);
@@ -134,18 +137,18 @@ export async function aiRoutes(server: FastifyInstance) {
   });
 
   // ── Enrichment endpoints ─────────────────────────────────────────────────
-  server.post("/enrich/:entityType/:entityId", { preHandler: [requireRep] },
+  server.post("/enrich/:entityType/:entityId", { preHandler: [requireRep, requireAiWrite] },
     createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
 
-  server.post("/enrich/batch", { preHandler: [requireRep] },
+  server.post("/enrich/batch", { preHandler: [requireRep, requireAiWrite] },
     createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
 
   // ── Forecasting endpoint ────────────────────────────────────────────────
-  server.get("/forecast", { preHandler: [requireRep] },
+  server.get("/forecast", { preHandler: [requireRep, requireAiRead] },
     createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
 
   // Provenance / explain endpoint — why did AI write this field?
-  server.get("/explain/:entityType/:entityId/:field", async (request, reply) => {
+  server.get("/explain/:entityType/:entityId/:field", { preHandler: [requireAiRead] }, async (request, reply) => {
     // Validate all route params before they reach the DB
     const parsed = ExplainParams.safeParse(request.params);
     if (!parsed.success) {
