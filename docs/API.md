@@ -38,6 +38,11 @@ Authorization: ApiKey nxc_<raw_key>
 
 API key secrets are SHA-256 hashed in storage. Keys carry scopes: `crm:read`, `crm:write`, `ai:read`, `ai:write`.
 
+**Scope enforcement:** API keys are checked against required scopes on every route:
+- CRM entity routes require `crm:read` (GET) or `crm:read` + `crm:write` (POST/PATCH/DELETE)
+- AI routes require `ai:read` (GET) or `ai:read` + `ai:write` (POST)
+- Admin, compliance, billing, permissions, dedup, and api-keys routes are **blocked** for API keys entirely (JWT only)
+
 ### RBAC Roles (Hierarchical)
 
 | Role | Level | Description |
@@ -88,7 +93,7 @@ Outbound webhooks fire for the following events:
 
 All auth routes are proxied from the gateway to the Auth Service.
 
-#### `POST /api/v1/auth/register`
+#### `POST /auth/register`
 
 Create a new workspace and admin user.
 
@@ -116,7 +121,7 @@ Create a new workspace and admin user.
   }
   ```
 
-#### `POST /api/v1/auth/login`
+#### `POST /auth/login`
 
 Authenticate and receive tokens.
 
@@ -140,7 +145,7 @@ Authenticate and receive tokens.
   }
   ```
 
-#### `POST /api/v1/auth/refresh`
+#### `POST /auth/refresh`
 
 Refresh an expired access token.
 
@@ -157,7 +162,7 @@ Refresh an expired access token.
   }
   ```
 
-#### `POST /api/v1/auth/logout`
+#### `POST /auth/logout`
 
 Invalidate the refresh token.
 
@@ -171,7 +176,7 @@ Invalidate the refresh token.
   { "success": true }
   ```
 
-#### `POST /api/v1/auth/forgot-password`
+#### `POST /auth/forgot-password`
 
 Send a password reset email.
 
@@ -185,7 +190,7 @@ Send a password reset email.
   { "success": true, "message": "If an account exists, a reset email has been sent." }
   ```
 
-#### `POST /api/v1/auth/reset-password`
+#### `POST /auth/reset-password`
 
 Reset password using the emailed token.
 
@@ -199,7 +204,7 @@ Reset password using the emailed token.
   { "success": true }
   ```
 
-#### `GET /api/v1/auth/me`
+#### `GET /auth/me`
 
 Get the current authenticated user profile.
 
@@ -213,7 +218,7 @@ Get the current authenticated user profile.
   }
   ```
 
-#### `GET /api/v1/auth/oauth/google`
+#### `GET /auth/oauth/google`
 
 Initiate Google OAuth flow (Gmail/Calendar integration).
 
@@ -222,14 +227,14 @@ Initiate Google OAuth flow (Gmail/Calendar integration).
 - **Rate Limit**: 20 requests per IP per 10 minutes
 - **Response**: Redirect to Google consent screen
 
-#### `GET /api/v1/auth/oauth/google/callback`
+#### `GET /auth/oauth/google/callback`
 
 Google OAuth callback (redirected by Google).
 
 - **Auth**: None (public, OAuth callback)
 - **Response**: Redirect to app with session token
 
-#### `GET /api/v1/auth/oauth-session/:id`
+#### `GET /auth/oauth-session/:id`
 
 Exchange an OAuth session ID for tokens (server-to-server only).
 
@@ -2346,3 +2351,43 @@ The following operations run asynchronously via BullMQ:
 - Sequence step execution
 - AI enrichment batch jobs
 - Report snapshot generation
+
+---
+
+## Admin Routes (Gateway)
+
+Admin operations are proxied through the API gateway at `/api/admin/*` to the auth service's internal admin endpoints. All routes require `super_admin` role and reject API keys.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/admin/tenants` | List all tenants |
+| POST | `/api/admin/tenants` | Create a tenant |
+| GET | `/api/admin/tenants/:id` | Get tenant details |
+| PATCH | `/api/admin/tenants/:id` | Update tenant |
+| PATCH | `/api/admin/tenants/:id/features` | Toggle tenant features |
+| PATCH | `/api/admin/tenants/:id/settings` | Update tenant settings |
+| GET | `/api/admin/tenants/:id/users` | List tenant users |
+| GET | `/api/admin/tenants/:id/children` | List sub-workspaces |
+| POST | `/api/admin/tenants/:id/sub-workspaces` | Create sub-workspace |
+| GET | `/api/admin/tenants/:id/stats` | Tenant statistics |
+| GET | `/api/admin/stats/platform` | Platform-wide stats |
+| POST | `/api/admin/merges` | Create workspace merge |
+| GET | `/api/admin/merges/:id` | Get merge details |
+| PATCH | `/api/admin/merges/:id` | Update merge resolutions |
+| POST | `/api/admin/merges/:id/execute` | Execute merge |
+| POST | `/api/admin/merges/:id/cancel` | Cancel merge |
+
+> **Note:** Web clients may continue using Next.js server-side `/api/admin/*` handlers that call auth:4001 directly. Mobile clients should use these gateway routes.
+
+---
+
+## Not Yet Implemented
+
+The following endpoints are referenced in the mobile app but do not yet have backend implementations:
+
+- `/api/v1/insights/*` — Sales insights (activity, engagement, pipeline, team)
+- `/api/v1/admin/roles` — Custom role management
+- `/api/v1/admin/system-health` — System health dashboard
+- `/api/v1/admin/data/export`, `/api/v1/admin/data/retention` — Data management
+- `/api/v1/admin/gdpr/requests` — GDPR requests (use `/api/v1/compliance/dsr` instead)
+- `/api/v1/admin/features` — Feature management (use `/api/admin/tenants/:id/features` instead)

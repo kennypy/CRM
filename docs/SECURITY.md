@@ -1,6 +1,6 @@
 # NexCRM Security Architecture
 
-> Version 2.0 | Updated 2026-03-08
+> Version 2.1 | Updated 2026-03-12
 
 ---
 
@@ -8,14 +8,15 @@
 
 1. [Authentication Flows](#1-authentication-flows)
 2. [Role-Based Access Control (RBAC)](#2-role-based-access-control-rbac)
-3. [Encryption and Secret Management](#3-encryption-and-secret-management)
-4. [Multi-Tenant Isolation](#4-multi-tenant-isolation)
-5. [Audit Logging](#5-audit-logging)
-6. [Rate Limiting](#6-rate-limiting)
-7. [Input Validation and Injection Prevention](#7-input-validation-and-injection-prevention)
-8. [Webhook Security](#8-webhook-security)
-9. [Data Privacy and Compliance (GDPR/CCPA)](#9-data-privacy-and-compliance-gdprccpa)
-10. [Known Gaps and Security Roadmap](#10-known-gaps-and-security-roadmap)
+3. [Service-to-Service Authentication](#3-service-to-service-authentication)
+4. [Encryption and Secret Management](#4-encryption-and-secret-management)
+5. [Multi-Tenant Isolation](#5-multi-tenant-isolation)
+6. [Audit Logging](#6-audit-logging)
+7. [Rate Limiting](#7-rate-limiting)
+8. [Input Validation and Injection Prevention](#8-input-validation-and-injection-prevention)
+9. [Webhook Security](#9-webhook-security)
+10. [Data Privacy and Compliance (GDPR/CCPA)](#10-data-privacy-and-compliance-gdprccpa)
+11. [Known Gaps and Security Roadmap](#11-known-gaps-and-security-roadmap)
 
 ---
 
@@ -256,7 +257,37 @@ middleware. The table below documents the actual enforcement as found in the cod
 
 Source: `services/api-gateway/src/routes/*.ts`, `services/auth/src/routes/admin.routes.ts`.
 
-### 2.4 Admin Service Protection
+### 2.4 API Key Scope Enforcement
+
+API keys carry scopes (`crm:read`, `crm:write`, `ai:read`, `ai:write`) that are checked
+by scope middleware at the gateway layer. JWT-authenticated users bypass scope checks
+entirely — scopes only apply to API key callers.
+
+**Scope middleware (`requireScopes`):**
+- If `request.user.role !== "api_key"`, returns immediately (no-op for JWT users)
+- Checks that all required scopes are present in `request.user.scopes`
+- Returns 403 `INSUFFICIENT_SCOPE` if any scope is missing
+
+**Route classification:**
+- CRM entity routes (contacts, companies, deals, etc.): `requireCrmRead` on GET,
+  `requireCrmWrite` on POST/PATCH/DELETE
+- AI routes (NL, review queue, enrichment, etc.): `requireAiRead` on GET,
+  `requireAiWrite` on POST
+- Admin/sensitive routes (users, tenant, billing, permissions, compliance, dedup,
+  api-keys, admin-reports): `denyApiKeys` — rejects any API key with 403
+
+**`denyApiKeys` guard:** Completely blocks API key access. Used for routes that should
+only be accessible to interactive (JWT-authenticated) users: user management, tenant
+settings, billing, permissions, compliance, deduplication, and admin reports.
+
+**RBAC for API keys:** API keys are assigned rank 1 in the role hierarchy (equivalent
+to `rep`), which is acceptable because fine-grained access is enforced by scope
+middleware on every route.
+
+Source: `services/api-gateway/src/middleware/scope.ts`,
+`services/api-gateway/src/middleware/rbac.ts`.
+
+### 2.5 Admin Service Protection
 
 All routes under `/admin/*` in the auth service require both a valid JWT **and** the
 `super_admin` role. This is enforced via a global `preHandler` hook that runs
@@ -283,7 +314,87 @@ Source: `infra/db/migrations/015_permissions.sql`,
 
 ---
 
-## 3. Encryption and Secret Management
+## 3. Service-to-Service Authentication
+
+### 3.1 Internal Service Token
+
+All inter-service communication is authenticated using a shared secret
+(`INTERNAL_SERVICE_SECRET`) sent via the `x-service-token` HTTP header. This prevents
+any network-adjacent caller from forging gateway-injected identity headers
+(`x-user-id`, `x-tenant-id`, `x-user-role`).
+
+**Token injection:**
+- The API gateway's `createProxy()` function injects the token into all proxied
+  requests.
+- The `internalFetch()` helper injects the token for all direct `fetch()` calls from
+  the gateway to internal services (reports, bulk operations, AI review apply,
+  workflow engine actions, close-date handler, scheduled reports, etc.).
+
+**Token validation (Node.js services — graph-core, outreach, auth):**
+- Fastify `onRequest` hook using `crypto.timingSafeEqual()` for constant-time
+  comparison (prevents timing side-channel attacks).
+- Accepts either `INTERNAL_SERVICE_SECRET` or `INTERNAL_SERVICE_SECRET_NEXT` for
+  zero-downtime secret rotation.
+
+**Token validation (Python services — ai-engine, ingestion):**
+- FastAPI middleware using `hmac.compare_digest()` for constant-time comparison.
+- Same dual-token rotation support.
+
+**Public path allowlist:** The following paths are exempt from token validation:
+- `/health` — all services
+- `/email/unsubscribe` — outreach (public unsubscribe links)
+- `/calls/webhooks/twilio/status` — outreach (Twilio status callbacks)
+
+**Dev mode:** Token validation is skipped when `ALLOW_MISSING_SERVICE_TOKEN=true` is
+explicitly set **and** no secret is configured. This prevents accidental fail-open in
+staging or CI — the flag must be consciously set.
+
+**Production startup:** All services refuse to start in production if
+`INTERNAL_SERVICE_SECRET` is not set.
+
+Source: `services/api-gateway/src/lib/internal-fetch.ts`,
+`services/api-gateway/src/lib/proxy.ts`,
+`services/graph-core/src/middleware/service-token.ts`,
+`services/outreach/src/middleware/service-token.ts`,
+`services/auth/src/middleware/service-token.ts`,
+`services/ai-engine/src/middleware/service_token.py`,
+`services/ingestion/src/middleware/service_token.py`.
+
+### 3.2 Secret Rotation Procedure
+
+To rotate `INTERNAL_SERVICE_SECRET` with zero downtime:
+
+1. Generate a new secret: `openssl rand -hex 32`
+2. Set `INTERNAL_SERVICE_SECRET_NEXT=<new_secret>` on all services and restart
+3. Once all services accept the new secret, set
+   `INTERNAL_SERVICE_SECRET=<new_secret>` and clear `INTERNAL_SERVICE_SECRET_NEXT`
+4. Restart all services
+
+### 3.3 Docker Compose Network Isolation
+
+Internal services bind to `127.0.0.1` in Docker Compose, preventing direct access
+from outside the host:
+
+```yaml
+auth:        ports: ["127.0.0.1:4001:4001"]
+graph-core:  ports: ["127.0.0.1:4002:4002"]
+outreach:    ports: ["127.0.0.1:4003:4003"]
+ai-engine:   ports: ["127.0.0.1:5001:5001"]
+```
+
+Only the API gateway (port 4000) and web frontend (port 3000) are publicly exposed.
+
+### 3.4 Kubernetes/Cloud Deployment
+
+For production deployments beyond Docker Compose:
+- Use NetworkPolicy to restrict inter-pod traffic so only the gateway can reach
+  internal services
+- Consider a service mesh with mTLS (e.g., Istio, Linkerd) as defense-in-depth
+  beyond the service token
+
+---
+
+## 4. Encryption and Secret Management
 
 ### 3.1 Passwords: bcrypt (12 rounds)
 
@@ -658,6 +769,17 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 | **No SAML/SCIM** | Enterprise SSO and automated user provisioning are not yet available. | MEDIUM | Planned for Phase 3 (enterprise tier). |
 | **No distributed locking for plan quota enforcement** | Sequence enrollment plan limits (step/contact quotas) have no distributed lock, allowing a race condition on concurrent enrollments. | LOW | Unlikely in practice but could allow minor overages. |
 
+#### Resolved Gaps (Phase 2.1)
+
+| Gap | Resolution |
+|-----|-----------|
+| **No service-to-service auth** | Added `INTERNAL_SERVICE_SECRET` header validation on all internal services using timing-safe comparison. All gateway-to-service calls inject the token via `internalFetch()` and `createProxy()`. |
+| **Internal services publicly reachable** | Docker Compose now binds internal services to `127.0.0.1` only. |
+| **API key scopes not enforced** | Added `requireScopes()` middleware on all gateway routes. `denyApiKeys` blocks API keys from admin/compliance/billing routes. |
+| **Rate-limit shared "unknown" bucket** | Auth and outreach services now use `crypto.randomUUID()` fallback instead of shared `"unknown"` key. |
+| **trustProxy defaults to enabled** | Changed to opt-in: `TRUST_PROXY=true` required to trust X-Forwarded-For. |
+| **Mobile endpoint map references non-existent paths** | Fixed calling endpoints to use `/api/v1/outreach/calls`, audit log to `/api/v1/compliance/audit-log`. Admin routes proxied via gateway `/api/admin/*`. |
+
 #### Resolved Gaps (Phase 2)
 
 | Gap | Resolution |
@@ -705,7 +827,10 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 | `GOOGLE_CLIENT_ID`      | Yes*     | Google OAuth client ID           | Google OAuth PKCE flow                     |
 | `GOOGLE_CLIENT_SECRET`  | Yes*     | Google OAuth client secret       | Google OAuth token exchange                |
 | `STRIPE_WEBHOOK_SECRET` | Yes*     | Stripe signing secret            | Inbound webhook signature verification     |
-| `TRUST_PROXY`           | No       | `"true"` / `"false"`             | Whether to trust X-Forwarded-For (default: true) |
+| `TRUST_PROXY`           | No       | `"true"` / `"false"`             | Whether to trust X-Forwarded-For (default: false) |
+| `INTERNAL_SERVICE_SECRET` | Yes†  | 32+ hex chars                    | Service-to-service authentication token |
+| `INTERNAL_SERVICE_SECRET_NEXT` | No | 32+ hex chars                | Secondary token for zero-downtime rotation |
+| `ALLOW_MISSING_SERVICE_TOKEN` | No | `"true"`                      | Dev only — skip token validation when no secret configured |
 
 \* Required for the respective feature to function. The auth service enforces
 `JWT_SECRET` and `OAUTH_ENCRYPTION_KEY` at startup.
