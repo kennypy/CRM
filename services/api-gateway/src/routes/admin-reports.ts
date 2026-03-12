@@ -20,6 +20,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
 import { requireMinRole } from "../middleware/rbac";
+import { denyApiKeys } from "../middleware/scope";
 
 const SUPER_ADMIN_REPORTS = [
   { key: "users_paid_vs_used",   label: "Users: Paid vs Used",            description: "Seats paid for vs active users per workspace" },
@@ -42,8 +43,9 @@ const KNOWN_FEATURES = [
 ];
 
 export async function adminReportsRoutes(server: FastifyInstance) {
-  // All routes require admin or above
+  // All routes require admin or above; block API keys
   server.addHook("preHandler", requireMinRole("admin"));
+  server.addHook("preHandler", denyApiKeys);
 
   /** GET /admin-reports/types — list available report types based on role */
   server.get("/types", async (request, reply) => {

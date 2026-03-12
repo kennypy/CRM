@@ -15,6 +15,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 const CreateSchema = z.object({
   name:        z.string().min(1).max(255),
@@ -56,7 +57,7 @@ function toWorkflow(row: Record<string, unknown>) {
 
 export async function workflowsRoutes(server: FastifyInstance) {
   // ── GET /api/v1/workflows ─────────────────────────────────────────────────
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const tenantId = request.user.tenantId;
 
     const { rows } = await pool.query(
@@ -75,7 +76,7 @@ export async function workflowsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/workflows ────────────────────────────────────────────────
-  server.post("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const parsed = CreateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -100,7 +101,7 @@ export async function workflowsRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/workflows/:id ───────────────────────────────────────────
-  server.patch("/:id", { preHandler: [requireRep] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = UpdateSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -143,7 +144,7 @@ export async function workflowsRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /api/v1/workflows/:id ──────────────────────────────────────────
-  server.delete("/:id", { preHandler: [requireManager] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [requireManager, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -160,7 +161,7 @@ export async function workflowsRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/workflows/:id/runs ───────────────────────────────────────
-  server.get("/:id/runs", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:id/runs", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 

@@ -12,6 +12,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 const ENTITY_TYPES = ["contact", "company", "deal", "activity", "task", "custom_object"] as const;
 const FIELD_TYPES = [
@@ -65,7 +66,7 @@ function toField(row: Record<string, unknown>) {
 
 export async function customFieldsRoutes(server: FastifyInstance) {
   // GET — list fields for a given entity type
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { entityType, customObjectId, includeInactive } = request.query as {
       entityType?: string;
       customObjectId?: string;
@@ -94,7 +95,7 @@ export async function customFieldsRoutes(server: FastifyInstance) {
   });
 
   // POST — create field (admin only)
-  server.post("/", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const parsed = CreateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -123,7 +124,7 @@ export async function customFieldsRoutes(server: FastifyInstance) {
   });
 
   // PATCH — update field (admin only)
-  server.patch("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = UpdateSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -164,7 +165,7 @@ export async function customFieldsRoutes(server: FastifyInstance) {
   });
 
   // DELETE — deactivate field (admin only)
-  server.delete("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 

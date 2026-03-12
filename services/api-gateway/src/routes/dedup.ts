@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
 import { requireManager } from "../middleware/auth";
+import { denyApiKeys } from "../middleware/scope";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
 
@@ -192,6 +193,7 @@ async function findCompanyDuplicates(tenantId: string): Promise<DuplicatePair[]>
 
 export async function dedupRoutes(server: FastifyInstance) {
   server.addHook("onRequest", requireManager);
+  server.addHook("preHandler", denyApiKeys);
 
   server.get("/duplicates", async (request, reply) => {
     const { tenantId } = request.user;

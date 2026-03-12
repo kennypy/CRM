@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 const ENTITY_TYPES = ["contact", "company", "deal", "lead"] as const;
 
@@ -20,7 +21,7 @@ const AddTagsSchema = z.object({
 
 export async function tagsRoutes(app: FastifyInstance) {
   // List unique tags for an entity type in this tenant
-  app.get("/", async (req) => {
+  app.get("/", { preHandler: [requireCrmRead] }, async (req) => {
     const { tenantId } = req.user!;
     const entityType = (req.query as any).entity_type || "contact";
     const { rows } = await pool.query(
@@ -33,7 +34,7 @@ export async function tagsRoutes(app: FastifyInstance) {
   });
 
   // Get tags for a specific entity
-  app.get("/:entityType/:entityId", async (req) => {
+  app.get("/:entityType/:entityId", { preHandler: [requireCrmRead] }, async (req) => {
     const { tenantId } = req.user!;
     const { entityType, entityId } = req.params as any;
     if (!ENTITY_TYPES.includes(entityType)) {
@@ -49,7 +50,7 @@ export async function tagsRoutes(app: FastifyInstance) {
   });
 
   // Add tags to an entity
-  app.post("/:entityType/:entityId", { preHandler: [requireRep] }, async (req, reply) => {
+  app.post("/:entityType/:entityId", { preHandler: [requireRep, requireCrmWrite] }, async (req, reply) => {
     const { tenantId } = req.user!;
     const { entityType, entityId } = req.params as any;
     if (!ENTITY_TYPES.includes(entityType)) {
@@ -83,7 +84,7 @@ export async function tagsRoutes(app: FastifyInstance) {
   });
 
   // Remove a tag from an entity
-  app.delete("/:entityType/:entityId/:tag", { preHandler: [requireRep] }, async (req) => {
+  app.delete("/:entityType/:entityId/:tag", { preHandler: [requireRep, requireCrmWrite] }, async (req) => {
     const { tenantId } = req.user!;
     const { entityType, entityId, tag } = req.params as any;
     await pool.query(

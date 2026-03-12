@@ -13,6 +13,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { importProcessorQueue } from "../workers/import-processor";
 
 const MappingSchema = z.object({
@@ -22,7 +23,7 @@ const MappingSchema = z.object({
 
 export async function importRoutes(server: FastifyInstance) {
   // POST /upload — multipart file upload
-  server.post("/upload", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/upload", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const body = request.body as {
       entity_type?: string;
@@ -73,7 +74,7 @@ export async function importRoutes(server: FastifyInstance) {
   });
 
   // POST /:jobId/mapping — save column mapping, start processing
-  server.post("/:jobId/mapping", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/:jobId/mapping", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { jobId } = request.params as { jobId: string };
     const { tenantId } = request.user;
 
@@ -108,7 +109,7 @@ export async function importRoutes(server: FastifyInstance) {
   });
 
   // GET /:jobId — check status
-  server.get("/:jobId", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:jobId", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { jobId } = request.params as { jobId: string };
     const { tenantId } = request.user;
 
@@ -125,7 +126,7 @@ export async function importRoutes(server: FastifyInstance) {
   });
 
   // GET /:jobId/preview — preview first 5 rows
-  server.get("/:jobId/preview", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:jobId/preview", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { jobId } = request.params as { jobId: string };
     const { tenantId } = request.user;
 
@@ -147,7 +148,7 @@ export async function importRoutes(server: FastifyInstance) {
   });
 
   // POST /:jobId/cancel — cancel in-progress job
-  server.post("/:jobId/cancel", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/:jobId/cancel", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { jobId } = request.params as { jobId: string };
     const { tenantId } = request.user;
 
@@ -166,7 +167,7 @@ export async function importRoutes(server: FastifyInstance) {
   });
 
   // GET / — list import jobs
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { page, limit } = request.query as { page?: string; limit?: string };
 

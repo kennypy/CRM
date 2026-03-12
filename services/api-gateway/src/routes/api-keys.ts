@@ -16,6 +16,7 @@ import { createHash, randomBytes } from "crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
+import { denyApiKeys } from "../middleware/scope";
 
 const KEY_PREFIX = "nxc_";
 
@@ -29,7 +30,7 @@ const CreateKeySchema = z.object({
 
 export async function apiKeysRoutes(server: FastifyInstance) {
   // GET /api/v1/api-keys
-  server.get("/", async (request, reply) => {
+  server.get("/", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
       `SELECT id, name, key_prefix, scopes, last_used_at, expires_at, is_active, created_at
@@ -42,7 +43,7 @@ export async function apiKeysRoutes(server: FastifyInstance) {
   });
 
   // POST /api/v1/api-keys
-  server.post("/", async (request, reply) => {
+  server.post("/", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const parsed = CreateKeySchema.safeParse(request.body);
     if (!parsed.success) {
@@ -78,7 +79,7 @@ export async function apiKeysRoutes(server: FastifyInstance) {
   });
 
   // DELETE /api/v1/api-keys/:id
-  server.delete("/:id", async (request, reply) => {
+  server.delete("/:id", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const { id }       = request.params as { id: string };
     const { tenantId } = request.user;
     const { rows: [key] } = await pool.query(

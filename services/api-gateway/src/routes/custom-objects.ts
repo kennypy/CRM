@@ -24,6 +24,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { getFieldDefinitions, validateCustomFields, applyDefaults } from "../lib/custom-field-validator";
 
 const CreateObjectSchema = z.object({
@@ -87,7 +88,7 @@ function toRecord(row: Record<string, unknown>) {
 export async function customObjectsRoutes(server: FastifyInstance) {
   // ── Object Definitions ────────────────────────────────────────────────────
 
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const tenantId = request.user.tenantId;
     const { includeInactive } = request.query as { includeInactive?: string };
 
@@ -114,7 +115,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: rows.map(toObjectDef) });
   });
 
-  server.post("/", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const parsed = CreateObjectSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -187,7 +188,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     return reply.status(201).send({ success: true, data: toObjectDef(full[0]) });
   });
 
-  server.patch("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = UpdateObjectSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -224,7 +225,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: toObjectDef(rows[0]) });
   });
 
-  server.delete("/:id", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -242,7 +243,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
 
   // ── Associations ──────────────────────────────────────────────────────────
 
-  server.get("/:id/associations", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:id/associations", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -265,7 +266,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     });
   });
 
-  server.post("/:id/associations", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.post("/:id/associations", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -294,7 +295,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     return reply.status(201).send({ success: true, data: rows[0] });
   });
 
-  server.delete("/:id/associations/:assocId", { preHandler: [requireAdmin] }, async (request, reply) => {
+  server.delete("/:id/associations/:assocId", { preHandler: [requireAdmin, requireCrmWrite] }, async (request, reply) => {
     const { id, assocId } = request.params as { id: string; assocId: string };
     const { tenantId } = request.user;
 
@@ -310,7 +311,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
 
   // ── Records ───────────────────────────────────────────────────────────────
 
-  server.get("/:objectKey/records", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:objectKey/records", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { objectKey } = request.params as { objectKey: string };
     const { page, limit, search } = request.query as { page?: string; limit?: string; search?: string };
     const tenantId = request.user.tenantId;
@@ -359,7 +360,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     });
   });
 
-  server.post("/:objectKey/records", { preHandler: [requireRep] }, async (request, reply) => {
+  server.post("/:objectKey/records", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { objectKey } = request.params as { objectKey: string };
     const parsed = CreateRecordSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -401,7 +402,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     return reply.status(201).send({ success: true, data: toRecord(rows[0]) });
   });
 
-  server.patch("/:objectKey/records/:recordId", { preHandler: [requireRep] }, async (request, reply) => {
+  server.patch("/:objectKey/records/:recordId", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { objectKey, recordId } = request.params as { objectKey: string; recordId: string };
     const parsed = UpdateRecordSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -460,7 +461,7 @@ export async function customObjectsRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: toRecord(rows[0]) });
   });
 
-  server.delete("/:objectKey/records/:recordId", { preHandler: [requireRep] }, async (request, reply) => {
+  server.delete("/:objectKey/records/:recordId", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { objectKey, recordId } = request.params as { objectKey: string; recordId: string };
     const { tenantId } = request.user;
 

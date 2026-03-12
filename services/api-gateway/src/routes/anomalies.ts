@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
+import { requireAiRead, requireAiWrite } from "../middleware/scope";
 import { createProxy } from "../lib/proxy";
 
 const AI_ENGINE = process.env.AI_ENGINE_URL ?? "http://localhost:5001";
@@ -43,7 +44,7 @@ function toAlert(row: Record<string, unknown>) {
 
 export async function anomaliesRoutes(server: FastifyInstance) {
   // ── GET /api/v1/anomalies ───────────────────────────────────────────────
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const q = request.query as Record<string, string>;
     const status = q.status ?? "open";
@@ -90,7 +91,7 @@ export async function anomaliesRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/anomalies/summary ───────────────────────────────────────
-  server.get("/summary", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/summary", { preHandler: [requireRep, requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
 
     const { rows } = await pool.query(
@@ -111,7 +112,7 @@ export async function anomaliesRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/anomalies/:id ───────────────────────────────────────────
-  server.get("/:id", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:id", { preHandler: [requireRep, requireAiRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -128,7 +129,7 @@ export async function anomaliesRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/anomalies/:id ─────────────────────────────────────────
-  server.patch("/:id", { preHandler: [requireRep] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [requireRep, requireAiWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = UpdateSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -165,7 +166,7 @@ export async function anomaliesRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/anomalies/scan ─────────────────────────────────────────
-  server.post("/scan", { preHandler: [requireManager] },
+  server.post("/scan", { preHandler: [requireManager, requireAiWrite] },
     createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/anomalies" })
   );
 }

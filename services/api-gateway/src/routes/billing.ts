@@ -8,6 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import Stripe from "stripe";
 import { pool } from "../db";
+import { denyApiKeys } from "../middleware/scope";
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" as any })
@@ -17,7 +18,7 @@ export async function billingRoutes(server: FastifyInstance) {
   // POST /api/v1/billing/portal
   // Returns a short-lived URL to Stripe's hosted billing management portal.
   // The customer can update their payment method, view invoices, or cancel.
-  server.post("/portal", async (request, reply) => {
+  server.post("/portal", { preHandler: [denyApiKeys] }, async (request, reply) => {
     if (!stripe) {
       return reply.status(503).send({
         success: false,
@@ -53,7 +54,7 @@ export async function billingRoutes(server: FastifyInstance) {
   });
 
   // GET /api/v1/billing/status
-  server.get("/status", async (request, reply) => {
+  server.get("/status", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows: [tenant] } = await pool.query(
       `SELECT plan, stripe_subscription_status, subscription_period_end,

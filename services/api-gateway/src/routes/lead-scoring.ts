@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
+import { requireAiRead, requireAiWrite } from "../middleware/scope";
 import { createProxy } from "../lib/proxy";
 
 const AI_ENGINE = process.env.AI_ENGINE_URL ?? "http://localhost:5001";
@@ -34,7 +35,7 @@ function toLeadScore(row: Record<string, unknown>) {
 
 export async function leadScoringRoutes(server: FastifyInstance) {
   // ── GET /api/v1/lead-scoring ────────────────────────────────────────────
-  server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/", { preHandler: [requireRep, requireAiRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const q = request.query as Record<string, string>;
     const tier = q.tier;
@@ -93,7 +94,7 @@ export async function leadScoringRoutes(server: FastifyInstance) {
   });
 
   // ── GET /api/v1/lead-scoring/:contactId ─────────────────────────────────
-  server.get("/:contactId", { preHandler: [requireRep] }, async (request, reply) => {
+  server.get("/:contactId", { preHandler: [requireRep, requireAiRead] }, async (request, reply) => {
     const { contactId } = request.params as { contactId: string };
     const { tenantId } = request.user;
 
@@ -111,12 +112,12 @@ export async function leadScoringRoutes(server: FastifyInstance) {
 
   // ── POST /api/v1/lead-scoring/compute ───────────────────────────────────
   // Trigger AI engine to compute/refresh score for a contact
-  server.post("/compute", { preHandler: [requireRep] },
+  server.post("/compute", { preHandler: [requireRep, requireAiWrite] },
     createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/lead-scoring" })
   );
 
   // ── POST /api/v1/lead-scoring/compute-all ───────────────────────────────
-  server.post("/compute-all", { preHandler: [requireManager] },
+  server.post("/compute-all", { preHandler: [requireManager, requireAiWrite] },
     createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/lead-scoring" })
   );
 }
