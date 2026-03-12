@@ -71,7 +71,26 @@ export function createProxy(opts: ProxyOptions) {
       }
 
       const body = await resp.text();
-      return reply.status(resp.status).type("application/json").send(body);
+
+      // Validate that the response is actually JSON before sending as JSON.
+      // Downstream services may return HTML error pages or empty responses.
+      if (!body) {
+        return reply.status(resp.status || 502).send({
+          success: false,
+          error: { code: "EMPTY_UPSTREAM_RESPONSE", message: "Upstream service returned an empty response" },
+        });
+      }
+
+      try {
+        const parsed = JSON.parse(body);
+        return reply.status(resp.status).type("application/json").send(parsed);
+      } catch {
+        request.log.warn({ status: resp.status, bodySnippet: body.slice(0, 200) }, "proxy.non_json_response");
+        return reply.status(502).send({
+          success: false,
+          error: { code: "BAD_GATEWAY", message: "Upstream service returned an invalid response" },
+        });
+      }
     } catch (err: any) {
       request.log.error({ err, downstream }, "proxy.upstream_error");
       return reply.status(503).send({
