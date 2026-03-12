@@ -64,7 +64,13 @@ async function bootstrap() {
     max: 200,
     timeWindow: "1 minute",
     keyGenerator: (req) => {
-      return (req.headers["x-user-id"] as string) ?? req.ip ?? "unknown";
+      const userId = req.headers["x-user-id"] as string | undefined;
+      if (userId) return userId;
+      const ip = req.ip;
+      if (ip) return ip;
+      const fallback = crypto.randomUUID();
+      req.log.warn({ fallback }, "rate_limit.no_identity_fallback");
+      return fallback;
     },
   });
 
