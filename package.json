@@ -10,6 +10,8 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=@nexcrm/web",
+    "dev:services": "turbo run dev --filter=@nexcrm/api-gateway --filter=@nexcrm/auth --filter=@nexcrm/graph-core --filter=@nexcrm/outreach",
     "build": "turbo run build",
     "test": "vitest run --workspace vitest.workspace.ts",
     "test:watch": "vitest --workspace vitest.workspace.ts",
