@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { formatRelativeTime, formatCurrency, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { useTenantContext } from "@/lib/tenant-context";
+import { useTenant } from "@/lib/tenant-context";
 import {
   LineChart, RefreshCw, AlertCircle, TrendingUp, TrendingDown,
   DollarSign, Target, BarChart3, Zap,
@@ -91,7 +91,9 @@ function StageBadge({ stage }: { stage: string }) {
 export default function ForecastingPage() {
   const t = useTranslations("forecasting");
   const tc = useTranslations("common");
-  const { currency, locale } = useTenantContext();
+  const { tenant } = useTenant();
+  const currency = tenant.defaultCurrency;
+  const locale = tenant.locale;
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [summary, setSummary] = useState<ForecastSummary | null>(null);
   const [loading, setLoading] = useState(true);
