@@ -64,6 +64,7 @@ import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
 import { startDsrProcessorWorker }      from "./workers/dsr-processor";
 import { startScheduledReportsWorker }   from "./workers/scheduled-reports";
 import { dedupRoutes }                   from "./routes/dedup";
+import { adminRoutes }                   from "./routes/admin";
 import { redis }                        from "./lib/redis";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
 
@@ -85,11 +86,11 @@ const server = Fastify({
   // The AI /nl SSE stream has its own extended timeout set via the route config.
   connectionTimeout: 10_000,
 
-  // Trust exactly one hop of reverse proxy (nginx / ALB / Cloud Run ingress).
-  // This lets req.ip reflect the real client IP from X-Forwarded-For so the
-  // rate limiter keys correctly per client rather than keying on the proxy IP.
-  // Set TRUST_PROXY=false in .env to disable if running without a reverse proxy.
-  trustProxy: process.env.TRUST_PROXY !== "false",
+  // Trust one hop of reverse proxy (nginx / ALB / Cloud Run ingress) so
+  // req.ip reflects the real client IP from X-Forwarded-For.
+  // Set TRUST_PROXY=true when running behind a reverse proxy.
+  // Defaults to disabled for safe direct-exposure deployments.
+  trustProxy: process.env.TRUST_PROXY === "true",
 });
 
 async function bootstrap() {
@@ -194,6 +195,7 @@ async function bootstrap() {
   await server.register(territoriesRoutes,      { prefix: "/api/v1/territories" });
   await server.register(notificationsRoutes,    { prefix: "/api/v1/notifications" });
   await server.register(dedupRoutes,             { prefix: "/api/v1/admin" });
+  await server.register(adminRoutes,             { prefix: "/api/admin" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
