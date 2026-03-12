@@ -298,7 +298,7 @@ listing, sub-workspace management, workspace merging, and platform-wide statisti
 
 Source: `services/auth/src/routes/admin.routes.ts`, lines 22-44.
 
-### 2.5 Field-Level and Record-Level Permissions
+### 2.6 Field-Level and Record-Level Permissions
 
 Beyond RBAC, NexCRM supports granular permission controls stored in the database:
 
@@ -396,7 +396,7 @@ For production deployments beyond Docker Compose:
 
 ## 4. Encryption and Secret Management
 
-### 3.1 Passwords: bcrypt (12 rounds)
+### 4.1 Passwords: bcrypt (12 rounds)
 
 All user passwords are hashed with bcrypt using a cost factor of 12 before storage.
 The `password_hash` column is `NULL` for OAuth-only users (no password set).
@@ -406,7 +406,7 @@ bcrypt against a dummy hash to prevent user enumeration via response-time analys
 
 Source: `services/auth/src/users.ts`, `BCRYPT_ROUNDS = 12`, `verifyPassword()`.
 
-### 3.2 OAuth Tokens: AES-256-GCM
+### 4.2 OAuth Tokens: AES-256-GCM
 
 Third-party OAuth tokens (Google, Microsoft, Slack, Zoom) are encrypted at the
 application layer before being written to the `oauth_tokens` table.
@@ -424,7 +424,7 @@ encryption scheme. Both validate the key format at startup.
 
 Source: `services/auth/src/routes/oauth.routes.ts`, `encryptToken()` / `decryptToken()`.
 
-### 3.3 Webhook Signing Secrets: AES-256-GCM (Encrypted at Rest)
+### 4.3 Webhook Signing Secrets: AES-256-GCM (Encrypted at Rest)
 
 Outbound webhook signing secrets are encrypted with the same AES-256-GCM scheme before
 storage in the `outbound_webhooks.secret` column. The delivery worker decrypts the
@@ -433,7 +433,7 @@ secret at delivery time to compute the HMAC-SHA256 signature.
 Source: `services/api-gateway/src/routes/outbound-webhooks.ts`,
 `services/api-gateway/src/workers/webhook-delivery.ts`.
 
-### 3.4 Refresh Tokens and Password Reset Tokens: SHA-256
+### 4.4 Refresh Tokens and Password Reset Tokens: SHA-256
 
 - **Refresh tokens:** 64 random bytes, stored as SHA-256 hash in `refresh_tokens.token_hash`.
 - **Password reset tokens:** 32 random bytes, stored as SHA-256 hash in
@@ -444,13 +444,13 @@ Source: `services/api-gateway/src/routes/outbound-webhooks.ts`,
 In all three cases the raw secret is returned to the client exactly once and is never
 retrievable from the database.
 
-### 3.5 Transport Encryption
+### 4.5 Transport Encryption
 
 - **TLS 1.3 minimum** in production (enforced at the load balancer / reverse proxy).
 - **HSTS headers** set via `@fastify/helmet`.
 - **Secure cookie flag** on HttpOnly auth cookies.
 
-### 3.6 Secret Management Roadmap
+### 4.6 Secret Management Roadmap
 
 | Current                              | Production Target                |
 |--------------------------------------|----------------------------------|
@@ -460,9 +460,9 @@ retrievable from the database.
 
 ---
 
-## 4. Multi-Tenant Isolation
+## 5. Multi-Tenant Isolation
 
-### 4.1 JWT-Claim-Based Tenant Scoping
+### 5.1 JWT-Claim-Based Tenant Scoping
 
 Every JWT contains a `tenantId` claim. The API gateway and downstream services extract
 the tenant ID exclusively from the verified JWT -- never from query parameters, request
@@ -473,7 +473,7 @@ both `tenant_id` and `email`. Listing endpoints filter by `WHERE tenant_id = $1`
 
 Source: `services/auth/src/users.ts` (all query functions accept/use tenant_id).
 
-### 4.2 Database Schema
+### 5.2 Database Schema
 
 Every data table includes a `tenant_id UUID NOT NULL` column with a foreign key to
 `tenants(id)`. Indexes are structured as `(tenant_id, ...)` for efficient tenant-scoped
@@ -482,15 +482,15 @@ queries.
 **Current enforcement:** Application-level `WHERE tenant_id = $1` clauses.
 
 **Not yet implemented:** PostgreSQL Row-Level Security (RLS) policies. See
-[Known Gaps](#10-known-gaps-and-security-roadmap).
+[Known Gaps](#11-known-gaps-and-security-roadmap).
 
-### 4.3 Sub-Workspaces (Hierarchical Tenancy)
+### 5.3 Sub-Workspaces (Hierarchical Tenancy)
 
 Tenants can have child tenants via the `parent_tenant_id` column (migration 022).
 Sub-workspace operations (create, list children, merge) are restricted to
 `super_admin` users.
 
-### 4.4 Workspace Merging
+### 5.4 Workspace Merging
 
 The merge system (`services/auth/src/merge.ts`) allows a `super_admin` to combine two
 workspaces:
@@ -510,9 +510,9 @@ Source: `services/auth/src/merge.ts`.
 
 ---
 
-## 5. Audit Logging
+## 6. Audit Logging
 
-### 5.1 Audit Log Table
+### 6.1 Audit Log Table
 
 The `audit_log` table records all significant actions with before/after state for
 compliance and forensic analysis.
@@ -536,7 +536,7 @@ audit_log (
 
 Source: `infra/db/migrations/001_core_schema.sql`, lines 194-216.
 
-### 5.2 Partitioning Strategy
+### 6.2 Partitioning Strategy
 
 The audit log is partitioned by quarter to support efficient time-range queries and
 enable partition-level archival/deletion for retention policies.
@@ -547,19 +547,19 @@ enable partition-level archival/deletion for retention policies.
 | `audit_log_2026_q2`   | 2026-04-01 to 2026-07-01     |
 | `audit_log_default`   | Catch-all for other dates    |
 
-### 5.3 Indexes
+### 6.3 Indexes
 
 - `idx_audit_log_tenant` on `(tenant_id, created_at DESC)` -- for tenant-scoped queries.
 - `idx_audit_log_entity` on `(entity_type, entity_id, created_at DESC)` -- for
   entity-specific audit trails.
 
-### 5.4 Event Stream (crm_events)
+### 6.4 Event Stream (crm_events)
 
 In addition to the audit log, all system events flow through the `crm_events` table,
 which is partitioned by month and published to Redis Streams. This covers both
 user-initiated and system-generated events (ingestion, AI extraction, webhooks).
 
-### 5.5 Structured Application Logs
+### 6.5 Structured Application Logs
 
 All services use Fastify's Pino logger emitting structured JSON logs. Each request is
 assigned a unique `requestId` via `crypto.randomUUID()`. Auth events are logged with
@@ -575,13 +575,13 @@ structured context:
 
 ---
 
-## 6. Rate Limiting
+## 7. Rate Limiting
 
 Rate limiting is enforced at three levels: the auth service, the API gateway, and
 per-endpoint custom limits. All rate limit counters are stored in Redis, ensuring
 they are shared across all service replicas in a multi-instance deployment.
 
-### 6.1 Auth Service
+### 7.1 Auth Service
 
 | Scope              | Limit           | Window    | Key              | Store |
 |--------------------|-----------------|-----------|------------------|-------|
@@ -595,7 +595,7 @@ SHA-256 hashed email addresses as Redis keys to avoid storing PII.
 
 Source: `services/auth/src/index.ts`, `services/auth/src/routes/auth.routes.ts`.
 
-### 6.2 API Gateway
+### 7.2 API Gateway
 
 | Scope              | Limit           | Window    | Key              | Store |
 |--------------------|-----------------|-----------|------------------|-------|
@@ -611,7 +611,7 @@ The gateway trusts exactly one hop of reverse proxy for accurate client IP resol
 
 Source: `services/api-gateway/src/index.ts`.
 
-### 6.3 Security Headers
+### 7.3 Security Headers
 
 Both services register `@fastify/helmet` which sets:
 - `X-Frame-Options: DENY`
@@ -626,9 +626,9 @@ Source: `services/auth/src/index.ts`, line 52.
 
 ---
 
-## 7. Input Validation and Injection Prevention
+## 8. Input Validation and Injection Prevention
 
-### 7.1 SQL Injection
+### 8.1 SQL Injection
 
 All SQL queries across all services use parameterized statements (`$1`, `$2`, etc.)
 via the `pg` driver. No string interpolation is used for user-supplied values.
@@ -636,7 +636,7 @@ via the `pg` driver. No string interpolation is used for user-supplied values.
 Dynamic column names (used in bulk update operations) are sanitized with
 `/^[a-z_][a-z0-9_]*$/` regex validation before inclusion in SQL strings.
 
-### 7.2 Request Validation
+### 8.2 Request Validation
 
 All request bodies are validated using Zod schemas before processing. Examples:
 
@@ -645,7 +645,7 @@ All request bodies are validated using Zod schemas before processing. Examples:
 - `CreateKeySchema` restricts scopes to the defined enum set
 - Admin route schemas validate UUID formats, enum values, and string lengths
 
-### 7.3 Information Disclosure Prevention
+### 8.3 Information Disclosure Prevention
 
 - Login errors use a generic message: `"Invalid email, password, or organisation"` --
   this does not reveal whether the email, password, or tenant was incorrect.
@@ -656,9 +656,9 @@ All request bodies are validated using Zod schemas before processing. Examples:
 
 ---
 
-## 8. Webhook Security
+## 9. Webhook Security
 
-### 8.1 Inbound Webhooks (Stripe, Slack, Zoom)
+### 9.1 Inbound Webhooks (Stripe, Slack, Zoom)
 
 Inbound webhook endpoints are publicly accessible (no JWT required) but authenticate
 via provider-specific signature verification:
@@ -671,7 +671,7 @@ via provider-specific signature verification:
 
 Source: `services/api-gateway/src/routes/webhooks.ts`.
 
-### 8.2 Outbound Webhooks
+### 9.2 Outbound Webhooks
 
 Tenant-defined webhook endpoints that receive CRM event notifications:
 
@@ -690,9 +690,9 @@ Source: `services/api-gateway/src/workers/webhook-delivery.ts`,
 
 ---
 
-## 9. Data Privacy and Compliance (GDPR/CCPA)
+## 10. Data Privacy and Compliance (GDPR/CCPA)
 
-### 9.1 Data Subject Request (DSR) Automation
+### 10.1 Data Subject Request (DSR) Automation
 
 NexCRM provides automated processing of data subject requests as required by GDPR
 (Articles 15-21) and CCPA. DSRs are submitted via `POST /api/v1/compliance/dsr` and
@@ -723,7 +723,7 @@ the erasure for compliance proof.
 Source: `services/api-gateway/src/workers/dsr-processor.ts`,
 `services/api-gateway/src/routes/compliance.ts`.
 
-### 9.2 CCPA Compliance
+### 10.2 CCPA Compliance
 
 CCPA-specific endpoints provide:
 
@@ -740,7 +740,7 @@ and `ccpa_opt_out_at TIMESTAMPTZ` columns.
 Source: `infra/db/migrations/029_ccpa.sql`,
 `services/api-gateway/src/routes/compliance.ts`.
 
-### 9.3 Data Retention
+### 10.3 Data Retention
 
 Retention policies are configurable per entity type per tenant via
 `POST /api/v1/compliance/retention`. Default retention periods:
@@ -759,9 +759,9 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 
 ---
 
-## 10. Known Gaps and Security Roadmap
+## 11. Known Gaps and Security Roadmap
 
-### 10.1 Current Known Gaps
+### 11.1 Current Known Gaps
 
 | Gap | Risk | Severity | Mitigation / Notes |
 |-----|------|----------|-------------------|
@@ -790,7 +790,7 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 | **GraphQL introspection enabled** | Disabled in production via `NoSchemaIntrospectionCustomRule` from `graphql-js`. Introspection remains enabled in development. |
 | **Hardcoded Redis dev passwords** | All workers now use a shared Redis client module that enforces `REDIS_URL` in production (fatal error on startup if missing). Dev fallbacks only apply when `NODE_ENV !== "production"`. |
 
-### 10.2 Security Roadmap
+### 11.2 Security Roadmap
 
 #### Phase 2 (Months 7-12)
 
