@@ -11,6 +11,7 @@ import { pool } from "../db";
 import { requireRep } from "../middleware/rbac";
 
 import { GRAPH_CORE_URL as GRAPH_CORE, AI_ENGINE_URL as AI_ENGINE } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 
 // Allowed entity types — prevents unexpected query patterns
 const ENTITY_TYPES = ["person", "company", "deal", "activity"] as const;
@@ -88,7 +89,7 @@ export async function aiRoutes(server: FastifyInstance) {
 
       try {
         const downstream = `${GRAPH_CORE}/${endpoint}/${entityId}?tenantId=${jwt.tenantId}`;
-        await fetch(downstream, {
+        await internalFetch(downstream, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",

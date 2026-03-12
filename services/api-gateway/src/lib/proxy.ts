@@ -36,10 +36,11 @@ export function createProxy(opts: ProxyOptions) {
     const downstream = `${opts.baseUrl}${url}${separator}tenantId=${tenantId}`;
 
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "x-user-id":    jwt?.sub   ?? "",
-      "x-tenant-id":  tenantId,
-      "x-user-role":  jwt?.role  ?? "",
+      "Content-Type":    "application/json",
+      "x-user-id":       jwt?.sub   ?? "",
+      "x-tenant-id":     tenantId,
+      "x-user-role":     jwt?.role  ?? "",
+      "x-service-token": process.env.INTERNAL_SERVICE_SECRET ?? "",
       ...(opts.headers ?? {}),
     };
 

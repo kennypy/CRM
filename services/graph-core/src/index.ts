@@ -13,6 +13,7 @@ import { dealsRoutes } from "./routes/deals";
 import { graphRoutes } from "./routes/graph";
 import { activitiesRoutes } from "./routes/activities";
 import { tasksRoutes } from "./routes/tasks";
+import { validateServiceToken } from "./middleware/service-token";
 
 const server = Fastify({
   logger: {
@@ -46,6 +47,11 @@ async function bootstrap() {
     process.exit(1);
   }
 
+  if (process.env.NODE_ENV === "production" && !process.env.INTERNAL_SERVICE_SECRET) {
+    console.error("FATAL: INTERNAL_SERVICE_SECRET must be set in production. Refusing to start.");
+    process.exit(1);
+  }
+
   await server.register(helmet, { contentSecurityPolicy: false });
 
   await server.register(cors, {
@@ -68,6 +74,9 @@ async function bootstrap() {
       error: { code: "INTERNAL_ERROR", message },
     });
   });
+
+  // ── Service-token validation ────────────────────────────────────────────
+  server.addHook("onRequest", validateServiceToken);
 
   // Health
   server.get("/health", async () => ({

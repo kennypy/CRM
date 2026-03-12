@@ -9,6 +9,7 @@
 import { pool } from "../db";
 import { executeQuery } from "../routes/reports";
 import { OUTREACH_URL } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 const CHECK_INTERVAL_MS = 60_000; // 1 minute
 
 interface Subscription {
@@ -123,7 +124,7 @@ async function processSubscriptions() {
              ${result.rowCount > 20 ? `<p><em>Showing 20 of ${result.rowCount} rows</em></p>` : ""}`
           : "<p>No data for this period.</p>";
 
-        await fetch(`${OUTREACH_URL}/api/v1/email/send`, {
+        await internalFetch(`${OUTREACH_URL}/api/v1/email/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-tenant-id": sub.tenant_id },
           body: JSON.stringify({

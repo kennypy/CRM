@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     STREAM_REVIEW_QUEUE: str = "nexcrm:review-queue"
     STREAM_CRM_WRITES: str = "nexcrm:crm-writes"
 
+    INTERNAL_SERVICE_SECRET: str = ""
+    INTERNAL_SERVICE_SECRET_NEXT: str = ""
+    ALLOW_MISSING_SERVICE_TOKEN: str = ""
+
     class Config:
         env_file = "../../.env"
         extra = "ignore"

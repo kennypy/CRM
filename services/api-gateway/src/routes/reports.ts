@@ -235,8 +235,9 @@ async function fetchGraphSource(source: SourceId, tenantId: string): Promise<Rec
     companies: `/companies?tenantId=${tenantId}&limit=5000`,
     contacts:  `/contacts?tenantId=${tenantId}&limit=5000`,
   };
+  const { internalFetch } = await import("../lib/internal-fetch");
   const url = `${GRAPH_CORE}${endpoints[source]}`;
-  const resp = await fetch(url, {
+  const resp = await internalFetch(url, {
     headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
   });
   if (!resp.ok) return [];

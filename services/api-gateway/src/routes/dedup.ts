@@ -10,6 +10,7 @@ import { z } from "zod";
 import { pool, readPool } from "../db";
 import { requireManager } from "../middleware/auth";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 
 interface DuplicatePair {
   id1: string;
@@ -48,7 +49,7 @@ function normalizePhone(phone: string): string {
 
 async function findContactDuplicates(tenantId: string): Promise<DuplicatePair[]> {
   // Fetch all contacts from graph-core
-  const res = await fetch(`${GRAPH_CORE}/contacts?tenantId=${tenantId}&limit=5000`);
+  const res = await internalFetch(`${GRAPH_CORE}/contacts?tenantId=${tenantId}&limit=5000`);
   if (!res.ok) return [];
   const json = await res.json() as { data: Array<Record<string, any>> };
   const contacts = json.data ?? [];
@@ -125,7 +126,7 @@ async function findContactDuplicates(tenantId: string): Promise<DuplicatePair[]>
 }
 
 async function findCompanyDuplicates(tenantId: string): Promise<DuplicatePair[]> {
-  const res = await fetch(`${GRAPH_CORE}/companies?tenantId=${tenantId}&limit=5000`);
+  const res = await internalFetch(`${GRAPH_CORE}/companies?tenantId=${tenantId}&limit=5000`);
   if (!res.ok) return [];
   const json = await res.json() as { data: Array<Record<string, any>> };
   const companies = json.data ?? [];

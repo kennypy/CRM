@@ -8,6 +8,7 @@
 import { pool } from "../db";
 import { updateMessage } from "../lib/slack-client";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 
 interface SlackInteractionPayload {
   type: string;
@@ -29,7 +30,7 @@ interface SlackInteractionPayload {
 
 async function updateDealCloseDate(dealId: string, tenantId: string, newDate: string): Promise<boolean> {
   try {
-    const resp = await fetch(
+    const resp = await internalFetch(
       `${GRAPH_CORE}/deals/${dealId}?tenantId=${tenantId}`,
       {
         method: "PATCH",

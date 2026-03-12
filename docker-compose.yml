@@ -227,7 +227,7 @@ services:
     environment:
       AUTH_PORT: "4001"
     ports:
-      - "4001:4001"
+      - "127.0.0.1:4001:4001"
     depends_on: [postgres, redis]
     profiles: [full-stack]
 
@@ -239,7 +239,7 @@ services:
     environment:
       GRAPH_CORE_PORT: "4002"
     ports:
-      - "4002:4002"
+      - "127.0.0.1:4002:4002"
     depends_on: [postgres, redis]
     profiles: [full-stack]
 
@@ -253,8 +253,7 @@ services:
       # Internal: only API gateway should reach this service
       API_GATEWAY_URL: http://api-gateway:4000
     ports:
-      # Bind to loopback only in prod; expose for dev convenience
-      - "4003:4003"
+      - "127.0.0.1:4003:4003"
     depends_on: [postgres, redis]
     profiles: [full-stack]
 
@@ -264,7 +263,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "5001:5001"
+      - "127.0.0.1:5001:5001"
     depends_on: [postgres, redis]
     profiles: [full-stack]
 

@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"
     LOG_LEVEL: str = "info"
 
+    INTERNAL_SERVICE_SECRET: str = ""
+    INTERNAL_SERVICE_SECRET_NEXT: str = ""
+    ALLOW_MISSING_SERVICE_TOKEN: str = ""
+
     # Redis stream names
     STREAM_RAW_SIGNALS: str = "nexcrm:raw-signals"
     STREAM_NORMALIZED: str = "nexcrm:normalized-signals"
