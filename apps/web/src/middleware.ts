@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/register"];
+const PUBLIC = ["/login", "/register", "/landing", "/demo/enter", "/start"];
 const SUPPORTED_LOCALES = ["en", "pt-BR"];
 const DEFAULT_LOCALE = "en";
 
@@ -48,7 +48,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   if (token && isPublic) {
-    return NextResponse.redirect(new URL("/", request.url));
+    // Don't redirect demo users away from demo/landing pages
+    const isDemo = request.cookies.get("nexcrm_demo")?.value === "1";
+    const isDemoPage = pathname.startsWith("/demo") || pathname.startsWith("/landing");
+    if (!isDemo || !isDemoPage) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
   }
 
   // Gate /admin routes to super_admin role only

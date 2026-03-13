@@ -1,0 +1,180 @@
+# NexCRM Demo Instance — Docker Compose
+#
+# Lightweight production-like stack for the public demo.
+# Runs on a Proxmox LXC with Docker already installed.
+#
+# Usage:
+#   cd /opt/nexcrm-demo
+#   cp .env.demo .env
+#   docker compose -f docker-compose.demo.yml up -d
+#   docker compose -f docker-compose.demo.yml exec graph-core npm run db:migrate
+#   docker compose -f docker-compose.demo.yml exec graph-core npm run db:seed-demo
+#
+# The demo instance exposes:
+#   - Port 3000: Next.js web app (proxy via nginx on host)
+#   - Port 4000: API gateway (internal, proxied through nginx)
+
+version: "3.9"
+
+services:
+  # ── PostgreSQL with Apache AGE ──────────────────────────────────────────────
+  postgres:
+    image: apache/age:release_PG16_1.6.0
+    container_name: nexcrm-demo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexcrm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: nexcrm
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../infra/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexcrm -d nexcrm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [demo]
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nexcrm-demo-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy noeviction
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [demo]
+
+  # ── Typesense (search) ─────────────────────────────────────────────────────
+  typesense:
+    image: typesense/typesense:27.0
+    container_name: nexcrm-demo-typesense
+    restart: unless-stopped
+    environment:
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY}
+      TYPESENSE_DATA_DIR: /data
+    volumes:
+      - typesense-data:/data
+    networks: [demo]
+
+  # ── API Gateway ─────────────────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: nexcrm-demo-api-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      AUTH_SERVICE_URL: http://auth:4001
+      GRAPH_CORE_URL: http://graph-core:4002
+      OUTREACH_URL: http://outreach:4003
+      AI_ENGINE_URL: http://ai-engine:5001
+      DATABASE_URL: postgresql://nexcrm:${POSTGRES_PASSWORD}@postgres:5432/nexcrm
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [demo]
+
+  # ── Auth Service ────────────────────────────────────────────────────────────
+  auth:
+    build:
+      context: ../..
+      dockerfile: services/auth/Dockerfile
+    container_name: nexcrm-demo-auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      AUTH_PORT: "4001"
+      DATABASE_URL: postgresql://nexcrm:${POSTGRES_PASSWORD}@postgres:5432/nexcrm
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [demo]
+
+  # ── Graph Core ──────────────────────────────────────────────────────────────
+  graph-core:
+    build:
+      context: ../..
+      dockerfile: services/graph-core/Dockerfile
+    container_name: nexcrm-demo-graph-core
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      GRAPH_CORE_PORT: "4002"
+      DATABASE_URL: postgresql://nexcrm:${POSTGRES_PASSWORD}@postgres:5432/nexcrm
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [demo]
+
+  # ── Outreach Service ────────────────────────────────────────────────────────
+  outreach:
+    build:
+      context: ../..
+      dockerfile: services/outreach/Dockerfile
+    container_name: nexcrm-demo-outreach
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      OUTREACH_PORT: "4003"
+      DATABASE_URL: postgresql://nexcrm:${POSTGRES_PASSWORD}@postgres:5432/nexcrm
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [demo]
+
+  # ── Web Frontend ────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    container_name: nexcrm-demo-web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      API_GATEWAY_URL: http://api-gateway:4000
+      AUTH_SERVICE_URL: http://auth:4001
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on: [api-gateway]
+    networks: [demo]
+
+volumes:
+  postgres-data:
+  redis-data:
+  typesense-data:
+
+networks:
+  demo:
+    name: nexcrm-demo-network
