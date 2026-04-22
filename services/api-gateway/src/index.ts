@@ -21,7 +21,6 @@ import { aiRoutes } from "./routes/ai";
 import { graphRoutes } from "./routes/graph";
 import { webhookRoutes } from "./routes/webhooks";
 import { vintageWebhookRoutes } from "./routes/vintage-webhook";
-import { ticketsRoutes } from "./routes/tickets";
 import { integrationsRoutes } from "./routes/integrations";
 import { tenantRoutes } from "./routes/tenant";
 import { tasksRoutes }     from "./routes/tasks";
@@ -204,7 +203,6 @@ async function bootstrap() {
   await server.register(campaignsRoutes,        { prefix: "/api/v1/campaigns" });
   await server.register(tagsRoutes,             { prefix: "/api/v1/tags" });
   await server.register(notesRoutes,            { prefix: "/api/v1/notes" });
-  await server.register(ticketsRoutes,          { prefix: "/api/v1/tickets" });
   await server.register(complianceRoutes,       { prefix: "/api/v1" });
   await server.register(coachingRoutes,         { prefix: "/api/v1/coaching" });
   await server.register(territoriesRoutes,      { prefix: "/api/v1/territories" });
