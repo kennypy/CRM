@@ -64,6 +64,9 @@ import { startImportProcessorWorker }   from "./workers/import-processor";
 import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
 import { startDsrProcessorWorker }      from "./workers/dsr-processor";
 import { startScheduledReportsWorker }   from "./workers/scheduled-reports";
+import { startSupportOutboundDispatcher } from "./workers/support-outbound-dispatcher";
+import { startSupportOutboundReconcile }  from "./workers/support-outbound-reconcile";
+import { startSupportOrphanSweeper }      from "./workers/support-orphan-sweeper";
 import { dedupRoutes }                   from "./routes/dedup";
 import { adminRoutes }                   from "./routes/admin";
 import { redis }                        from "./lib/redis";
@@ -115,6 +118,20 @@ async function bootstrap() {
   if (process.env.NODE_ENV === "production" && !process.env.VINTAGE_WEBHOOK_SECRET) {
     console.error("FATAL: VINTAGE_WEBHOOK_SECRET is not set. Refusing to start in production.");
     process.exit(1);
+  }
+
+  // Vintage.br partner API credentials — required in production so agent
+  // replies can actually reach the user. Without these, the outbound
+  // dispatcher logs a warning and stays offline; jobs pile up in 'pending'.
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.VINTAGE_API_URL) {
+      console.error("FATAL: VINTAGE_API_URL is not set. Refusing to start in production.");
+      process.exit(1);
+    }
+    if (!process.env.CRM_PARTNER_KEY) {
+      console.error("FATAL: CRM_PARTNER_KEY is not set. Refusing to start in production.");
+      process.exit(1);
+    }
   }
 
   // ── Security ──────────────────────────────────────────────────────────────
@@ -243,6 +260,14 @@ async function bootstrap() {
   startCloseDateCheckerWorker();
   startDsrProcessorWorker();
   startScheduledReportsWorker();
+
+  // Support-ticket outbound to Vintage. The dispatcher and reconcile loops
+  // share a single VintageClient and share the same retry taxonomy; the
+  // orphan sweeper heals inbound replies whose parent open arrived late.
+  // All three are cheap no-ops when their env isn't configured (dev).
+  startSupportOutboundDispatcher({ logger: server.log });
+  startSupportOutboundReconcile({ logger: server.log });
+  startSupportOrphanSweeper({ logger: server.log });
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);
