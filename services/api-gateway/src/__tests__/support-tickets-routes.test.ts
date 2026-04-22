@@ -11,7 +11,7 @@
  * req.user.role, so a preHandler that sets those is sufficient.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import Fastify from "fastify";
 
 const { queryMock, clientQueryMock, releaseMock } = vi.hoisted(() => ({
@@ -434,7 +434,16 @@ describe("POST /api/v1/support-tickets/jobs/:jobId/retry", () => {
 // ── Attachment pre-signed upload ────────────────────────────────────────────
 
 describe("POST /api/v1/support-tickets/attachments", () => {
-  it("returns a pre-signed uploadUrl + publicUrl when the request is valid", async () => {
+  const ORIG_PUBLIC_BASE = process.env.SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL;
+  beforeEach(() => {
+    process.env.SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL = "https://cdn.example.com/nexcrm-files";
+  });
+  afterAll(() => {
+    if (ORIG_PUBLIC_BASE === undefined) delete process.env.SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL;
+    else process.env.SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL = ORIG_PUBLIC_BASE;
+  });
+
+  it("returns a pre-signed uploadUrl and a permanent publicUrl built from SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL", async () => {
     const app = await makeApp();
     const res = await app.inject({
       method: "POST",
@@ -448,8 +457,24 @@ describe("POST /api/v1/support-tickets/attachments", () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.uploadUrl).toBe("https://signed.example/upload");
-    expect(body.publicUrl).toContain("/support/attachments/");
+    expect(body.publicUrl).toMatch(/^https:\/\/cdn\.example\.com\/nexcrm-files\/support\/attachments\//);
     expect(body.key).toContain("support/attachments/");
+  });
+
+  it("503s when SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL is unset (fail loud)", async () => {
+    delete process.env.SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL;
+    const app = await makeApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/support-tickets/attachments",
+      payload: {
+        filename:    "receipt.pdf",
+        contentType: "application/pdf",
+        sizeBytes:   100_000,
+      },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(JSON.parse(res.body).error).toBe("attachments_not_configured");
   });
 
   it("400s on oversized uploads", async () => {

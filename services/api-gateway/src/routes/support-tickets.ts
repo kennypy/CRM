@@ -551,7 +551,30 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   // Client PUTs the file directly to `uploadUrl`, then includes `publicUrl`
   // in the reply body. Avoids proxying the file through the gateway and
   // sidesteps the global bodyLimit.
+  //
+  // Durability contract: `publicUrl` MUST resolve permanently — Vintage
+  // stores it as an opaque string on its SupportTicketMessage row and
+  // never calls back to us to re-sign. If the URL lapses, the attachment
+  // 404s for the customer. We therefore require ops to declare the public
+  // surface via SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL (a public-read S3
+  // bucket origin, a CloudFront/Cloudflare distribution, etc.) rather than
+  // guessing an S3 URL that may or may not be publicly readable.
   app.post("/attachments", { preHandler: [requireRep] }, async (req, reply) => {
+    const publicBase = process.env.SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL;
+    if (!publicBase) {
+      // Fail loud rather than minting a URL that might silently 404 for
+      // the customer. In production this is a hard error; in dev we'd
+      // rather surface it than let it drift.
+      req.log.error(
+        "SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL is not set — attachment uploads are disabled until ops configures the permanent public URL surface",
+      );
+      return reply.status(503).send({
+        error: "attachments_not_configured",
+        message:
+          "Attachments are disabled: SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL must point to a permanent public-read surface (public S3 bucket origin, CDN, etc.).",
+      });
+    }
+
     const parsed = AttachmentSchema.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: "Invalid body", issues: parsed.error.issues });
 
@@ -569,13 +592,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
       { expiresIn: UPLOAD_URL_TTL_S },
     );
 
-    // Public URL assumes the bucket (or this prefix) is configured for
-    // public reads. If the deployment wants presigned GETs instead, replace
-    // this with a short-lived signed URL minted at reply-send time.
-    const endpoint = process.env.S3_ENDPOINT ?? "";
-    const publicUrl = endpoint
-      ? `${endpoint.replace(/\/$/, "")}/${S3_BUCKET}/${encodeURI(key)}`
-      : `https://${S3_BUCKET}.s3.${process.env.S3_REGION ?? "auto"}.amazonaws.com/${encodeURI(key)}`;
+    const publicUrl = `${publicBase.replace(/\/$/, "")}/${encodeURI(key)}`;
 
     return {
       uploadUrl,

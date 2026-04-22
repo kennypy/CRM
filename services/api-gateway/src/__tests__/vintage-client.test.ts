@@ -97,12 +97,7 @@ describe("VintageClient", () => {
     expect((r as any).error).toBe("timeout_1234ms");
   });
 
-  it("accepts an idempotencyKey but does not emit the header yet (contract pending)", async () => {
-    // Pre-wired for Vintage's upcoming Idempotency-Key contract. The value is
-    // accepted and threaded through our code — it just isn't sent on the
-    // wire until the flag flips. When Vintage ships the contract, flipping
-    // ENABLE_IDEMPOTENCY_HEADER to true is the only change; this test will
-    // then need to be updated to assert header presence.
+  it("emits Idempotency-Key when opts.idempotencyKey is a UUID", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
     const c = new VintageClient({ ...baseCfg, fetch: fetchImpl as unknown as typeof fetch });
 
@@ -110,9 +105,39 @@ describe("VintageClient", () => {
 
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers["Idempotency-Key"]).toBeUndefined();
-    // And we still send the other headers correctly.
+    expect(headers["Idempotency-Key"]).toBe("job-uuid-7");
     expect(headers["X-Partner-Key"]).toBe("pk_test_abc");
+  });
+
+  it("does not emit the header when opts.idempotencyKey is absent", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+    const c = new VintageClient({ ...baseCfg, fetch: fetchImpl as unknown as typeof fetch });
+
+    await c.reply("ck_abc", { agentName: "Ana", body: "Hi" });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBeUndefined();
+  });
+
+  it("skips an empty or whitespace-only idempotencyKey", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+    const c = new VintageClient({ ...baseCfg, fetch: fetchImpl as unknown as typeof fetch });
+
+    await c.reply("ck_abc", { agentName: "Ana", body: "Hi" }, { idempotencyKey: "   " });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBeUndefined();
+  });
+
+  it("skips an idempotencyKey longer than 200 chars (Vintage would ignore it)", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+    const c = new VintageClient({ ...baseCfg, fetch: fetchImpl as unknown as typeof fetch });
+
+    const longKey = "x".repeat(201);
+    await c.reply("ck_abc", { agentName: "Ana", body: "Hi" }, { idempotencyKey: longKey });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBeUndefined();
   });
 
   it("strips a trailing slash from the base URL", async () => {

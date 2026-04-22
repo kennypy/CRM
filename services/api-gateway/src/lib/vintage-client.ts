@@ -106,15 +106,17 @@ export class VintageClient {
       "Content-Type": "application/json",
       "X-Partner-Key": this.partnerKey,
     };
-    // Pre-wired for Vintage's upcoming Idempotency-Key contract on
-    // /reply and /resolve. `idempotencyKey` is the outbound_job UUID so a
-    // retry after a response-side timeout dedupes server-side. The header
-    // is NOT emitted yet — Vintage hasn't shipped the unique-column on
-    // their end. When the contract lands, flip ENABLE_IDEMPOTENCY_HEADER
-    // to true (or just drop the guard). All call sites already pass the
-    // key through.
-    if (ENABLE_IDEMPOTENCY_HEADER && opts.idempotencyKey) {
-      headers["Idempotency-Key"] = opts.idempotencyKey;
+    // Idempotency-Key: value is the outbound_job UUID so every retry of the
+    // same job sends the same key, and Vintage's unique column produces
+    // exactly one SupportTicketMessage regardless of retry count. Vintage
+    // silently ignores keys longer than 200 chars or empty/whitespace-only
+    // (no 400), but we guard here too — a whitespace-only header from our
+    // side would be a bug, not an edge case, so skip rather than forward.
+    if (ENABLE_IDEMPOTENCY_HEADER) {
+      const key = opts.idempotencyKey?.trim();
+      if (key && key.length > 0 && key.length <= 200) {
+        headers["Idempotency-Key"] = key;
+      }
     }
 
     try {
@@ -150,11 +152,13 @@ export interface VintageRequestOpts {
 }
 
 /**
- * Flip to true once Vintage has deployed the Idempotency-Key contract on
- * /reply and /resolve. Until then, the key is accepted and threaded through
- * our side but not emitted as a header.
+ * Controls whether the Idempotency-Key header is emitted on /reply and
+ * /resolve. Vintage shipped the unique-column migration on main; retries
+ * with the same key now collapse to one SupportTicketMessage on their
+ * side. The dispatcher / reconcile workers always pass the outbound_job
+ * UUID as the key, so every retry of the same job dedupes server-side.
  */
-export const ENABLE_IDEMPOTENCY_HEADER = false;
+export const ENABLE_IDEMPOTENCY_HEADER = true;
 
 /**
  * Map an HTTP status code to a retry classification.
