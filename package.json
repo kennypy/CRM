@@ -18,6 +18,7 @@
     "typecheck": "turbo run typecheck",
     "db:migrate": "turbo run db:migrate",
     "db:seed": "turbo run db:seed",
+    "db:seed-demo": "npm run db:seed-demo --workspace=@nexcrm/graph-core",
     "docker:up": "docker compose -f docker-compose.yml up -d",
     "docker:down": "docker compose -f docker-compose.yml down",
     "docker:logs": "docker compose logs -f",

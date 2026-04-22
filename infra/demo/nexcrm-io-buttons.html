@@ -1,0 +1,29 @@
+<!--
+  Add these buttons to your existing nexcrm.io landing page.
+  Place them next to the existing "Request a Demo" button.
+
+  Option A: Link directly to the demo instance
+  Option B: Embed the full landing page from the Next.js app
+
+  If you want to use the full Next.js landing page instead,
+  point nexcrm.io to the demo instance's web container and
+  configure nginx to serve /landing as the root.
+-->
+
+<!-- Option A: Just add these two buttons/links next to "Request a Demo" -->
+
+<a href="https://demo.nexcrm.io/demo/enter"
+   style="display:inline-flex;align-items:center;gap:6px;padding:12px 24px;border-radius:8px;border:2px solid #4f46e5;color:#4f46e5;font-weight:600;font-size:14px;text-decoration:none;transition:all 0.2s"
+   onmouseover="this.style.backgroundColor='#eef2ff'"
+   onmouseout="this.style.backgroundColor='transparent'">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+  Try Demo
+</a>
+
+<a href="https://demo.nexcrm.io/start"
+   style="display:inline-flex;align-items:center;gap:6px;padding:12px 24px;border-radius:8px;background:#4f46e5;color:white;font-weight:600;font-size:14px;text-decoration:none;transition:opacity 0.2s"
+   onmouseover="this.style.opacity='0.9'"
+   onmouseout="this.style.opacity='1'">
+  Start Free Trial
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+</a>

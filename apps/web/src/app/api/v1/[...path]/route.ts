@@ -24,6 +24,15 @@ const AUTH_URL    = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
 type RouteCtx = { params: Promise<{ path: string[] }> };
 
 async function handler(request: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
+  // Demo mode: block all write operations
+  const isDemo = request.cookies.get("nexcrm_demo")?.value === "1";
+  if (isDemo && request.method !== "GET") {
+    return NextResponse.json(
+      { success: false, error: { code: "DEMO_READ_ONLY", message: "This action is disabled in demo mode. Start a free trial to get full access." } },
+      { status: 403 }
+    );
+  }
+
   const { path } = await ctx.params;
   const suffix    = path.join("/");
   const search    = request.nextUrl.search ?? "";
