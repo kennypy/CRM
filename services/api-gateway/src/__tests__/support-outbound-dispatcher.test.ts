@@ -196,6 +196,11 @@ describe("runDispatchPass", () => {
   };
   const mockDeadLetterUpdate = () => {
     clientQueryMock.mockResolvedValueOnce({ rowCount: 1 }); // UPDATE job status='dead_letter'
+    // loadPageContext SELECT that runs before pageDeadLetter.
+    clientQueryMock.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{ external_ticket_id: "VNT-TEST", attempts: 1, last_status_code: 401, last_error: "http_401" }],
+    });
   };
 
   it("delivers a job on a 2xx response", async () => {

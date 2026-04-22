@@ -32,6 +32,7 @@ import {
   type VintageApiResult,
   type VintageClient,
 } from "../lib/vintage-client";
+import { pageDeadLetter } from "../lib/support-pager";
 
 export const OUTBOUND_QUEUE_NAME = "nexcrm-support-outbound";
 export const OUTBOUND_SCHEDULER_PATTERN = "*/5 * * * * *"; // every 5 seconds
@@ -223,13 +224,19 @@ export async function markDeadLetter(
 // ── Dispatch core ────────────────────────────────────────────────────────────
 
 async function dispatchOne(client: VintageClient, job: ClaimedJob): Promise<VintageApiResult> {
+  // The outbound_job UUID is the idempotency key for both inline retries
+  // and reconcile attempts — every retry of the same job sends the same
+  // key. The client doesn't emit the header yet (see ENABLE_IDEMPOTENCY_HEADER)
+  // but threading the value through now means zero call-site churn when
+  // Vintage's contract update ships.
+  const opts = { idempotencyKey: job.id };
   switch (job.kind) {
     case "reply":
-      return client.reply(job.sourceTicketId, job.payload as any);
+      return client.reply(job.sourceTicketId, job.payload as any, opts);
     case "resolve":
-      return client.resolve(job.sourceTicketId, job.payload as any);
+      return client.resolve(job.sourceTicketId, job.payload as any, opts);
     case "assign":
-      return client.assign(job.sourceTicketId, job.payload as any);
+      return client.assign(job.sourceTicketId, job.payload as any, opts);
     default: {
       // Exhaustiveness: a newly-added kind that's not handled here is a bug,
       // not a transient failure. Flip straight to dead_letter.
@@ -251,7 +258,7 @@ async function dispatchOne(client: VintageClient, job: ClaimedJob): Promise<Vint
 export async function runDispatchPass(args: {
   client: VintageClient;
   passStatusFilter: "dispatch" | "reconcile";
-  logger?: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void };
+  logger?: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void; error: (o: object, m: string) => void };
   limit?: number;
 }): Promise<{ claimed: number; delivered: number; pendingRetry: number; stuck: number; deadLetter: number }> {
   const limit = args.limit ?? CLAIM_BATCH_SIZE;
@@ -314,6 +321,17 @@ export async function runDispatchPass(args: {
           { jobId: job.id, ticketId: job.ticketId, kind: job.kind, kind2: result.kind, error: result.error },
           "vintage.outbound.dead_letter",
         );
+        // Page on dead-letter. Best-effort — failures here never bubble up
+        // to fail the dispatcher pass; the row is already persisted.
+        await pageDeadLetter(
+          await loadPageContext(c, job, result),
+          { logger: args.logger },
+        ).catch((err) =>
+          args.logger?.error(
+            { jobId: job.id, err: err?.message ?? String(err) },
+            "support.dead_letter.page_error",
+          ),
+        );
       }
     } finally {
       c.release();
@@ -321,6 +339,44 @@ export async function runDispatchPass(args: {
   }
 
   return stats;
+}
+
+// Pull the row we just wrote so the pager has the full context (external
+// id, attempts count post-update, etc.). Read-after-write on the same pg
+// client we already hold — no extra round-trip to connect.
+export async function loadPageContext(
+  c: PoolClient,
+  job: ClaimedJob,
+  result: Extract<VintageApiResult, { kind: "auth" | "permanent" | "transient" }>,
+): Promise<import("../lib/support-pager").DeadLetterPageInput> {
+  const { rows } = await c.query<{
+    external_ticket_id: string | null;
+    attempts: number;
+    last_status_code: number | null;
+    last_error: string | null;
+  }>(
+    `SELECT t.external_ticket_id,
+            j.attempts,
+            j.last_status_code,
+            j.last_error
+       FROM support_outbound_jobs j
+       JOIN support_tickets t ON t.id = j.ticket_id
+      WHERE j.id = $1`,
+    [job.id],
+  );
+  const row = rows[0];
+  const reason = result.kind === "transient" ? "reconcile_exhausted" : result.kind;
+  return {
+    jobId:            job.id,
+    ticketId:         job.ticketId,
+    externalTicketId: row?.external_ticket_id ?? null,
+    sourceTicketId:   job.sourceTicketId,
+    kind:             job.kind,
+    reason,
+    lastStatusCode:   row?.last_status_code ?? result.statusCode,
+    lastError:        row?.last_error ?? result.error,
+    attempts:         row?.attempts ?? job.attempts,
+  };
 }
 
 // ── BullMQ scheduler wiring ──────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import {
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
   Headphones, Target, Globe, GraduationCap, ShieldCheck,
   Cog, LineChart, MailPlus, ShieldAlert, Store, Megaphone,
+  LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
@@ -29,6 +30,7 @@ const PRIMARY_NAV = [
 ];
 
 const MORE_NAV = [
+  { href: "/support",      icon: LifeBuoy,     labelKey: "support"        },
   { href: "/calling",      icon: Headphones,   labelKey: "calling"        },
   { href: "/sequences",    icon: Mail,         labelKey: "sequences"      },
   { href: "/tasks",        icon: CheckSquare,  labelKey: "tasks"          },
