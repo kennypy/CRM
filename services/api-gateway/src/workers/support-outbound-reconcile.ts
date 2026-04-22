@@ -25,10 +25,12 @@ import {
 } from "../lib/vintage-client";
 import {
   claimJobs,
+  loadPageContext,
   markDeadLetter,
   markDelivered,
   type ClaimedJob,
 } from "./support-outbound-dispatcher";
+import { pageDeadLetter } from "../lib/support-pager";
 
 export const RECONCILE_QUEUE_NAME = "nexcrm-support-outbound-reconcile";
 export const RECONCILE_PATTERN    = "*/5 * * * *"; // every 5 minutes
@@ -68,10 +70,11 @@ export async function markStuckRetry(
 }
 
 async function dispatchOne(client: VintageClient, job: ClaimedJob): Promise<VintageApiResult> {
+  const opts = { idempotencyKey: job.id };
   switch (job.kind) {
-    case "reply":   return client.reply(job.sourceTicketId, job.payload as any);
-    case "resolve": return client.resolve(job.sourceTicketId, job.payload as any);
-    case "assign":  return client.assign(job.sourceTicketId, job.payload as any);
+    case "reply":   return client.reply(job.sourceTicketId, job.payload as any, opts);
+    case "resolve": return client.resolve(job.sourceTicketId, job.payload as any, opts);
+    case "assign":  return client.assign(job.sourceTicketId, job.payload as any, opts);
   }
 }
 
@@ -127,6 +130,10 @@ export async function runReconcilePass(args: {
             { jobId: job.id, ticketId: job.ticketId, kind: job.kind, attempts: job.attempts },
             "vintage.outbound.reconcile_exhausted",
           );
+          await pageDeadLetter(
+            await loadPageContext(c, job, result),
+            { logger: asFullLogger(args.logger) },
+          ).catch(() => {});
         } else {
           stats.rescheduled += 1;
         }
@@ -137,6 +144,10 @@ export async function runReconcilePass(args: {
           { jobId: job.id, ticketId: job.ticketId, kind: job.kind, kind2: result.kind, error: result.error },
           "vintage.outbound.dead_letter",
         );
+        await pageDeadLetter(
+          await loadPageContext(c, job, result),
+          { logger: asFullLogger(args.logger) },
+        ).catch(() => {});
       }
     } finally {
       c.release();
@@ -144,6 +155,20 @@ export async function runReconcilePass(args: {
   }
 
   return stats;
+}
+
+// The reconcile-pass logger is typed narrower than the pager's (no `error`
+// method) because its direct writes never fail fatally. Adapt by dropping
+// error calls rather than propagating them upward.
+function asFullLogger(
+  narrow?: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void },
+): { info: (o: object, m: string) => void; warn: (o: object, m: string) => void; error: (o: object, m: string) => void } | undefined {
+  if (!narrow) return undefined;
+  return {
+    info:  narrow.info,
+    warn:  narrow.warn,
+    error: narrow.warn, // downgrade rather than drop so we don't lose signal
+  };
 }
 
 export const reconcileQueue = new Queue(RECONCILE_QUEUE_NAME, {

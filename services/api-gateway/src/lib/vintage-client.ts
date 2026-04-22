@@ -69,30 +69,58 @@ export class VintageClient {
     this.fetchImpl = cfg.fetch ?? fetch;
   }
 
-  reply(ticketId: string, payload: VintageReplyPayload): Promise<VintageApiResult> {
-    return this.post(`/partner/support/tickets/${encodeURIComponent(ticketId)}/reply`, payload);
+  reply(
+    ticketId: string,
+    payload: VintageReplyPayload,
+    opts: VintageRequestOpts = {},
+  ): Promise<VintageApiResult> {
+    return this.post(`/partner/support/tickets/${encodeURIComponent(ticketId)}/reply`, payload, opts);
   }
 
-  resolve(ticketId: string, payload: VintageResolvePayload): Promise<VintageApiResult> {
-    return this.post(`/partner/support/tickets/${encodeURIComponent(ticketId)}/resolve`, payload);
+  resolve(
+    ticketId: string,
+    payload: VintageResolvePayload,
+    opts: VintageRequestOpts = {},
+  ): Promise<VintageApiResult> {
+    return this.post(`/partner/support/tickets/${encodeURIComponent(ticketId)}/resolve`, payload, opts);
   }
 
-  assign(ticketId: string, payload: VintageAssignPayload): Promise<VintageApiResult> {
-    return this.post(`/partner/support/tickets/${encodeURIComponent(ticketId)}/assign`, payload);
+  assign(
+    ticketId: string,
+    payload: VintageAssignPayload,
+    opts: VintageRequestOpts = {},
+  ): Promise<VintageApiResult> {
+    return this.post(`/partner/support/tickets/${encodeURIComponent(ticketId)}/assign`, payload, opts);
   }
 
-  private async post(path: string, body: object): Promise<VintageApiResult> {
+  private async post(
+    path: string,
+    body: object,
+    opts: VintageRequestOpts,
+  ): Promise<VintageApiResult> {
     const url = this.baseUrl + path;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Partner-Key": this.partnerKey,
+    };
+    // Pre-wired for Vintage's upcoming Idempotency-Key contract on
+    // /reply and /resolve. `idempotencyKey` is the outbound_job UUID so a
+    // retry after a response-side timeout dedupes server-side. The header
+    // is NOT emitted yet — Vintage hasn't shipped the unique-column on
+    // their end. When the contract lands, flip ENABLE_IDEMPOTENCY_HEADER
+    // to true (or just drop the guard). All call sites already pass the
+    // key through.
+    if (ENABLE_IDEMPOTENCY_HEADER && opts.idempotencyKey) {
+      headers["Idempotency-Key"] = opts.idempotencyKey;
+    }
+
     try {
       const res = await this.fetchImpl(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Partner-Key": this.partnerKey,
-        },
+        headers,
         body: JSON.stringify(body),
         signal: controller.signal,
       });
@@ -110,6 +138,23 @@ export class VintageClient {
     }
   }
 }
+
+/**
+ * Per-call options. `idempotencyKey` is threaded through by the dispatcher
+ * (set to the outbound_job UUID) so every retry of the same job sends the
+ * same key — which will let Vintage's unique column dedupe on their side
+ * once the contract update ships.
+ */
+export interface VintageRequestOpts {
+  idempotencyKey?: string;
+}
+
+/**
+ * Flip to true once Vintage has deployed the Idempotency-Key contract on
+ * /reply and /resolve. Until then, the key is accepted and threaded through
+ * our side but not emitted as a header.
+ */
+export const ENABLE_IDEMPOTENCY_HEADER = false;
 
 /**
  * Map an HTTP status code to a retry classification.

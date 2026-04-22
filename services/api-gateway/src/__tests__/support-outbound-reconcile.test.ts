@@ -125,6 +125,13 @@ describe("runReconcilePass", () => {
     expect(stats).toEqual({ claimed: 1, delivered: 1, rescheduled: 0, deadLetter: 0 });
   });
 
+  // SELECT that loadPageContext fires before paging on every dead_letter.
+  const mockLoadPageContext = () =>
+    clientQueryMock.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{ external_ticket_id: "VNT-TEST", attempts: 1, last_status_code: 503, last_error: "http_503" }],
+    });
+
   it("reschedules a transient failure at the reconcile cadence", async () => {
     scriptClaim([stuckJob({ attempts: 10 })]);
     // markStuckRetry UPDATE
@@ -144,6 +151,7 @@ describe("runReconcilePass", () => {
     clientQueryMock.mockResolvedValueOnce({ rowCount: 1 });
     // Post-write status check sees 'dead_letter'
     clientQueryMock.mockResolvedValueOnce({ rowCount: 1, rows: [{ status: "dead_letter" }] });
+    mockLoadPageContext();
 
     const stats = await runReconcilePass({
       client: stubClient({ kind: "transient", statusCode: 504, error: "http_504" }),
@@ -155,6 +163,7 @@ describe("runReconcilePass", () => {
     scriptClaim([stuckJob()]);
     // markDeadLetter UPDATE
     clientQueryMock.mockResolvedValueOnce({ rowCount: 1 });
+    mockLoadPageContext();
 
     const stats = await runReconcilePass({
       client: stubClient({ kind: "permanent", statusCode: 404, error: "http_404" }),

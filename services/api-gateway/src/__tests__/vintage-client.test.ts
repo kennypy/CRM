@@ -97,6 +97,24 @@ describe("VintageClient", () => {
     expect((r as any).error).toBe("timeout_1234ms");
   });
 
+  it("accepts an idempotencyKey but does not emit the header yet (contract pending)", async () => {
+    // Pre-wired for Vintage's upcoming Idempotency-Key contract. The value is
+    // accepted and threaded through our code — it just isn't sent on the
+    // wire until the flag flips. When Vintage ships the contract, flipping
+    // ENABLE_IDEMPOTENCY_HEADER to true is the only change; this test will
+    // then need to be updated to assert header presence.
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+    const c = new VintageClient({ ...baseCfg, fetch: fetchImpl as unknown as typeof fetch });
+
+    await c.reply("ck_abc", { agentName: "Ana", body: "Hi" }, { idempotencyKey: "job-uuid-7" });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Idempotency-Key"]).toBeUndefined();
+    // And we still send the other headers correctly.
+    expect(headers["X-Partner-Key"]).toBe("pk_test_abc");
+  });
+
   it("strips a trailing slash from the base URL", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
     const c = new VintageClient({
