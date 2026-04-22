@@ -20,6 +20,8 @@ import { activitiesRoutes } from "./routes/activities";
 import { aiRoutes } from "./routes/ai";
 import { graphRoutes } from "./routes/graph";
 import { webhookRoutes } from "./routes/webhooks";
+import { vintageWebhookRoutes } from "./routes/vintage-webhook";
+import { ticketsRoutes } from "./routes/tickets";
 import { integrationsRoutes } from "./routes/integrations";
 import { tenantRoutes } from "./routes/tenant";
 import { tasksRoutes }     from "./routes/tasks";
@@ -108,6 +110,14 @@ async function bootstrap() {
     process.exit(1);
   }
 
+  // Vintage.br inbound webhook secret — required in production so we never
+  // accept unsigned tickets. In dev we tolerate an unset secret (the route
+  // returns 503) so a fresh checkout still boots.
+  if (process.env.NODE_ENV === "production" && !process.env.VINTAGE_WEBHOOK_SECRET) {
+    console.error("FATAL: VINTAGE_WEBHOOK_SECRET is not set. Refusing to start in production.");
+    process.exit(1);
+  }
+
   // ── Security ──────────────────────────────────────────────────────────────
   await server.register(helmet, {
     contentSecurityPolicy: false, // handled by Next.js for the web app
@@ -152,6 +162,10 @@ async function bootstrap() {
   // ── Public routes ─────────────────────────────────────────────────────────
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(webhookRoutes, { prefix: "/webhooks" });
+  // Registered as a separate plugin so the raw-body content-type parser is
+  // scoped only to this route — the Stripe/Slack/Zoom plugin already has its
+  // own parser, and other JSON routes get standard parsing.
+  await server.register(vintageWebhookRoutes, { prefix: "/webhooks" });
 
   // ── Protected routes ──────────────────────────────────────────────────────
   server.addHook("preHandler", authMiddleware);
@@ -190,6 +204,7 @@ async function bootstrap() {
   await server.register(campaignsRoutes,        { prefix: "/api/v1/campaigns" });
   await server.register(tagsRoutes,             { prefix: "/api/v1/tags" });
   await server.register(notesRoutes,            { prefix: "/api/v1/notes" });
+  await server.register(ticketsRoutes,          { prefix: "/api/v1/tickets" });
   await server.register(complianceRoutes,       { prefix: "/api/v1" });
   await server.register(coachingRoutes,         { prefix: "/api/v1/coaching" });
   await server.register(territoriesRoutes,      { prefix: "/api/v1/territories" });
