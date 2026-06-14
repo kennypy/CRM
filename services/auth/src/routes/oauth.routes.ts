@@ -154,6 +154,10 @@ export async function oauthRoutes(server: FastifyInstance) {
       scope: string;
     };
 
+    if (!code) {
+      return reply.redirect(`${process.env.APP_URL}/settings/integrations?error=oauth_failed`);
+    }
+
     try {
       const resp = await fetch(GOOGLE_TOKEN_URL, {
         method: "POST",
@@ -166,9 +170,19 @@ export async function oauthRoutes(server: FastifyInstance) {
           grant_type: "authorization_code",
         }),
       });
+      // Google returns 4xx with an { error } body on a bad/expired/replayed code.
+      // Without this check, access_token is undefined and we'd proceed to upsert.
+      if (!resp.ok) {
+        server.log.warn({ status: resp.status }, "oauth.google.token_exchange_rejected");
+        return reply.redirect(`${process.env.APP_URL}/settings/integrations?error=oauth_failed`);
+      }
       googleTokens = await resp.json() as typeof googleTokens;
     } catch (err) {
       server.log.error({ err }, "oauth.google.token_exchange_failed");
+      return reply.redirect(`${process.env.APP_URL}/settings/integrations?error=oauth_failed`);
+    }
+
+    if (!googleTokens.access_token) {
       return reply.redirect(`${process.env.APP_URL}/settings/integrations?error=oauth_failed`);
     }
 
@@ -176,8 +190,17 @@ export async function oauthRoutes(server: FastifyInstance) {
     const userInfo = await fetch(GOOGLE_USERINFO_URL, {
       headers: { Authorization: `Bearer ${googleTokens.access_token}` },
     }).then((r) => r.json()) as {
-      sub: string; email: string; given_name: string; family_name: string; picture?: string;
+      sub: string; email: string; email_verified?: boolean | string;
+      given_name: string; family_name: string; picture?: string;
     };
+
+    // Only trust a Google-verified email. An unverified address could be used to
+    // hijack/overwrite an existing user row via the (tenant_id, email) upsert.
+    const emailVerified = userInfo.email_verified === true || userInfo.email_verified === "true";
+    if (!userInfo.email || !emailVerified) {
+      server.log.warn({ sub: userInfo.sub }, "oauth.google.email_unverified");
+      return reply.redirect(`${process.env.APP_URL}/settings/integrations?error=email_unverified`);
+    }
 
     const { tenantId } = stateData;
 

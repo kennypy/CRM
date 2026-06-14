@@ -13,6 +13,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { decrypt } from "./encrypt";
+import { assertSafeUrl, SsrfBlockedError } from "./ssrf-guard";
 
 export interface AIProviderConfig {
   provider: "anthropic" | "openai_compat";
@@ -112,6 +113,23 @@ async function suggestWithOpenAICompat(
   cfg: AIProviderConfig,
 ): Promise<EmailSuggestion | null> {
   const baseUrl = cfg.baseUrl ?? "https://api.openai.com/v1";
+
+  // SSRF guard — the base URL is tenant-controlled (tenants.settings.ai_outreach)
+  // and we send a bearer token to it, so block internal/metadata targets.
+  // Set OUTREACH_ALLOW_PRIVATE_AI_HOST=true to allow a self-hosted endpoint
+  // (e.g. a local Ollama at http://localhost:11434/v1).
+  try {
+    await assertSafeUrl(baseUrl, {
+      protocols: ["https:", "http:"],
+      allowPrivateEnvVar: "OUTREACH_ALLOW_PRIVATE_AI_HOST",
+    });
+  } catch (err) {
+    if (err instanceof SsrfBlockedError) {
+      throw new Error(`AI provider base_url rejected: ${err.message}`);
+    }
+    throw err;
+  }
+
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {

@@ -88,6 +88,7 @@ export class GraphClient {
 
     // Build property assignments from param keys
     const propEntries = Object.keys(properties);
+    this.validatePropertyKeys(propEntries);
     const propAssignments = propEntries
       .map((key) => `${key}: $${key}`)
       .join(", ");
@@ -124,6 +125,7 @@ export class GraphClient {
     this.validateLabel(label);
 
     const filterKeys = Object.keys(filters);
+    this.validatePropertyKeys(filterKeys);
     let matchClause: string;
 
     if (filterKeys.length > 0) {
@@ -166,6 +168,7 @@ export class GraphClient {
     this.validateLabel(label);
 
     const propEntries = Object.keys(properties);
+    this.validatePropertyKeys(propEntries);
     const propAssignments = propEntries.length > 0
       ? ` {${propEntries.map((key) => `${key}: $${key}`).join(", ")}}`
       : "";
@@ -364,6 +367,23 @@ export class GraphClient {
       throw new Error(
         `Invalid label "${label}": must match /^[A-Za-z_][A-Za-z0-9_]*$/`,
       );
+    }
+  }
+
+  /**
+   * Validate property keys before they are interpolated as Cypher identifiers.
+   * Property VALUES are parameterized ($key), but the KEYS are written into the
+   * query string, so an attacker-influenced key (e.g. from a request-derived
+   * filter map) could otherwise break out and inject Cypher. Restrict to the
+   * same identifier grammar as labels.
+   */
+  private validatePropertyKeys(keys: string[]): void {
+    for (const key of keys) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+        throw new Error(
+          `Invalid property key "${key}": must match /^[A-Za-z_][A-Za-z0-9_]*$/`,
+        );
+      }
     }
   }
 }

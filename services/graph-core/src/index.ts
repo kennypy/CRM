@@ -61,6 +61,9 @@ async function bootstrap() {
 
   await server.register(jwt, {
     secret: jwtSecret,
+    // Pin to HS256 — defense-in-depth against algorithm-confusion / "alg:none".
+    sign: { algorithm: "HS256" },
+    verify: { algorithms: ["HS256"] },
   });
 
   // Sanitize error messages in production to avoid leaking internal details

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomInt } from "crypto";
 
 const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
 
@@ -160,7 +161,11 @@ async function retryWithRandomSlug(
   }
 }
 
-/** Generate a password that meets the auth service's requirements */
+/**
+ * Generate a password that meets the auth service's requirements.
+ * Uses a cryptographically secure RNG (crypto.randomInt) — never Math.random,
+ * whose output is predictable and unsafe for credentials.
+ */
 function generatePassword(): string {
   const lower = "abcdefghijkmnopqrstuvwxyz";
   const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -168,23 +173,21 @@ function generatePassword(): string {
   const special = "!@#$%&*";
   const all = lower + upper + digits + special;
 
+  const pick = (set: string) => set[randomInt(set.length)];
+
   // Guarantee at least one of each required type
-  let pw = "";
-  pw += lower[Math.floor(Math.random() * lower.length)];
-  pw += upper[Math.floor(Math.random() * upper.length)];
-  pw += digits[Math.floor(Math.random() * digits.length)];
-  pw += special[Math.floor(Math.random() * special.length)];
+  const chars = [pick(lower), pick(upper), pick(digits), pick(special)];
 
   // Fill to 16 chars
-  for (let i = pw.length; i < 16; i++) {
-    pw += all[Math.floor(Math.random() * all.length)];
+  for (let i = chars.length; i < 16; i++) chars.push(pick(all));
+
+  // Fisher–Yates shuffle with a secure RNG (Array.sort(random) is biased/unsafe)
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
   }
 
-  // Shuffle
-  return pw
-    .split("")
-    .sort(() => Math.random() - 0.5)
-    .join("");
+  return chars.join("");
 }
 
 /** Send an email with login credentials using the internal email service or direct Resend */

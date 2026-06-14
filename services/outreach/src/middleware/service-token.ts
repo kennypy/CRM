@@ -39,7 +39,11 @@ export async function validateServiceToken(
 
   const secret = process.env.INTERNAL_SERVICE_SECRET ?? "";
   if (!secret) {
-    if (process.env.ALLOW_MISSING_SERVICE_TOKEN === "true") {
+    // Dev-only escape hatch — never bypass auth in production.
+    if (
+      process.env.ALLOW_MISSING_SERVICE_TOKEN === "true" &&
+      process.env.NODE_ENV !== "production"
+    ) {
       return;
     }
     request.log.error("service_token.not_configured — rejecting request");
