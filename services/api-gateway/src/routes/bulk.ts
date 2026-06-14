@@ -25,6 +25,23 @@ const BulkDeleteSchema = z.object({
   ids:         z.array(z.string().uuid()).min(1).max(500),
 });
 
+// Columns/properties a client may never set via bulk update — prevents
+// mass-assignment (e.g. moving rows into another tenant, forging ownership,
+// or overwriting the primary key / audit timestamps).
+const PROTECTED_FIELDS = new Set([
+  "id", "tenant_id", "tenantid", "created_by", "createdby",
+  "created_at", "createdat", "updated_at", "updatedat",
+]);
+
+function rejectProtectedFields(changes: Record<string, unknown>): string | null {
+  for (const key of Object.keys(changes)) {
+    if (PROTECTED_FIELDS.has(key.toLowerCase())) {
+      return `Field '${key}' cannot be set via bulk update`;
+    }
+  }
+  return null;
+}
+
 // Entity types that live in graph-core (Apache AGE)
 const GRAPH_ENTITIES = new Set(["contact", "company", "deal"]);
 
@@ -46,6 +63,15 @@ export async function bulkRoutes(server: FastifyInstance) {
     }
 
     const { entity_type, ids, changes } = parsed.data;
+
+    const protectedErr = rejectProtectedFields(changes);
+    if (protectedErr) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "PROTECTED_FIELD", message: protectedErr },
+      });
+    }
+
     const { tenantId, sub: userId } = request.user;
     let updated = 0;
     const errors: Array<{ id: string; error: string }> = [];

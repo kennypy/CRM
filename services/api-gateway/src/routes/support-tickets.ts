@@ -21,7 +21,7 @@
  * delivered / stuck / dead_letter chip on each message.
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -230,11 +230,44 @@ async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promi
   }
 }
 
+// ── Authorization ───────────────────────────────────────────────────────────
+// The support queue is a single GLOBAL Vintage.br marketplace queue with no
+// per-tenant column — it holds customer PII for the whole marketplace. Without
+// a tenant scope, any rep in any tenant could read/answer every ticket (H-GW1).
+// Restrict the entire surface to the operator's support staff: the tenant whose
+// id matches SUPPORT_OPERATOR_TENANT_ID. If that env is unset we fail closed in
+// production and warn in dev (so local dev still works) rather than silently
+// exposing the queue to every tenant.
+async function requireSupportAccess(req: FastifyRequest, reply: FastifyReply) {
+  const operatorTenant = process.env.SUPPORT_OPERATOR_TENANT_ID;
+  const user = req.user as AuthedUser;
+
+  if (!operatorTenant) {
+    if (process.env.NODE_ENV === "production") {
+      req.log.error("support.operator_tenant_not_configured — refusing access");
+      return reply.status(503).send({
+        success: false,
+        error: { code: "SUPPORT_NOT_CONFIGURED", message: "Support operator tenant is not configured" },
+      });
+    }
+    req.log.warn("support.operator_tenant_not_configured — allowing in non-production only");
+    return;
+  }
+
+  if (user?.tenantId !== operatorTenant) {
+    req.log.warn({ tenantId: user?.tenantId }, "support.access_denied_wrong_tenant");
+    return reply.status(403).send({
+      success: false,
+      error: { code: "FORBIDDEN", message: "Support tickets are restricted to the support operator" },
+    });
+  }
+}
+
 // ── Route plugin ──────────────────────────────────────────────────────────────
 
 export async function supportTicketRoutes(app: FastifyInstance) {
   // ── List ─────────────────────────────────────────────────────────────────
-  app.get("/", { preHandler: [requireRep] }, async (req, reply) => {
+  app.get("/", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const parsed = ListQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid query", issues: parsed.error.issues });
@@ -289,7 +322,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   });
 
   // ── Detail ────────────────────────────────────────────────────────────────
-  app.get("/:id", { preHandler: [requireRep] }, async (req, reply) => {
+  app.get("/:id", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const { id } = req.params as { id: string };
 
     const client = await pool.connect();
@@ -329,7 +362,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   });
 
   // ── Internal note (agent-only, not forwarded) ────────────────────────────
-  app.post("/:id/notes", { preHandler: [requireRep] }, async (req, reply) => {
+  app.post("/:id/notes", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = NoteSchema.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: "Invalid body", issues: parsed.error.issues });
@@ -355,7 +388,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   });
 
   // ── Public reply (agent → Vintage → user) ────────────────────────────────
-  app.post("/:id/reply", { preHandler: [requireRep] }, async (req, reply) => {
+  app.post("/:id/reply", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = ReplySchema.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: "Invalid body", issues: parsed.error.issues });
@@ -414,7 +447,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   });
 
   // ── Resolve ──────────────────────────────────────────────────────────────
-  app.post("/:id/resolve", { preHandler: [requireRep] }, async (req, reply) => {
+  app.post("/:id/resolve", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = ResolveSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.status(400).send({ error: "Invalid body", issues: parsed.error.issues });
@@ -472,7 +505,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   });
 
   // ── Assign ───────────────────────────────────────────────────────────────
-  app.post("/:id/assign", { preHandler: [requireRep] }, async (req, reply) => {
+  app.post("/:id/assign", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = AssignSchema.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: "Invalid body", issues: parsed.error.issues });
@@ -512,7 +545,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   });
 
   // ── CRM-side status transitions (no outbound) ───────────────────────────
-  app.patch("/:id/status", { preHandler: [requireRep] }, async (req, reply) => {
+  app.patch("/:id/status", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = StatusSchema.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: "Invalid body", issues: parsed.error.issues });
@@ -528,7 +561,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   });
 
   // ── Manual retry of a dead-letter job ───────────────────────────────────
-  app.post("/jobs/:jobId/retry", { preHandler: [requireRep] }, async (req, reply) => {
+  app.post("/jobs/:jobId/retry", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const { jobId } = req.params as { jobId: string };
     const { rows } = await pool.query(
       `UPDATE support_outbound_jobs
@@ -559,7 +592,7 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   // surface via SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL (a public-read S3
   // bucket origin, a CloudFront/Cloudflare distribution, etc.) rather than
   // guessing an S3 URL that may or may not be publicly readable.
-  app.post("/attachments", { preHandler: [requireRep] }, async (req, reply) => {
+  app.post("/attachments", { preHandler: [requireRep, requireSupportAccess] }, async (req, reply) => {
     const publicBase = process.env.SUPPORT_ATTACHMENTS_PUBLIC_BASE_URL;
     if (!publicBase) {
       // Fail loud rather than minting a URL that might silently 404 for

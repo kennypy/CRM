@@ -15,17 +15,21 @@ import {
   listChildTenants,
   listTenantUsers,
   toPublicUser,
+  findSuperAdminById,
+  tenantsShareHierarchy,
 } from "../users";
 import { getWorkspaceStats, aggregateChildStats, getPlatformStats } from "../stats";
 import { createMerge, getMerge, previewMerge, saveResolutions, executeMerge, cancelMerge } from "../merge";
 
-function isSuperAdmin(request: any): boolean {
-  const jwt = request.user as { role?: string } | undefined;
-  return jwt?.role === "super_admin";
-}
-
 export async function adminRoutes(server: FastifyInstance) {
-  // All admin routes require authentication + super_admin role
+  // All admin routes require authentication + super_admin role.
+  //
+  // C4: we do NOT trust the JWT `role` claim alone. After verifying the token we
+  // re-load the caller from the database and confirm they are genuinely a
+  // super_admin living in the reserved `_platform` tenant. This defends against
+  // stale tokens (role downgraded/user deleted since issuance) and any path that
+  // could mint a token with an elevated `role` claim. The verified DB row is
+  // stashed on the request for downstream handlers (e.g. merge ownership checks).
   server.addHook("preHandler", async (request, reply) => {
     try {
       await request.jwtVerify();
@@ -35,12 +39,16 @@ export async function adminRoutes(server: FastifyInstance) {
         error: { code: "UNAUTHORIZED", message: "Valid authentication required" },
       });
     }
-    if (!isSuperAdmin(request)) {
+
+    const claims = request.user as { sub?: string } | undefined;
+    const caller = claims?.sub ? await findSuperAdminById(claims.sub) : null;
+    if (!caller) {
       return reply.status(403).send({
         success: false,
         error: { code: "FORBIDDEN", message: "Super admin access required" },
       });
     }
+    (request as any).superAdmin = caller;
   });
 
   /** GET /admin/tenants — list all workspaces */
@@ -309,6 +317,18 @@ export async function adminRoutes(server: FastifyInstance) {
       });
     }
 
+    // C4: a merge moves all data from source → target and soft-deletes the
+    // source tenant. Restrict it to workspaces in the same customer hierarchy
+    // (shared top-level root) so a super_admin cannot fold one customer's data
+    // into an unrelated customer's workspace via arbitrary ids.
+    const hierarchy = await tenantsShareHierarchy(body.data.sourceId, body.data.targetId);
+    if (!hierarchy.ok) {
+      return reply.status(403).send({
+        success: false,
+        error: { code: "MERGE_NOT_PERMITTED", message: hierarchy.reason ?? "Merge not permitted for these workspaces" },
+      });
+    }
+
     const jwt = request.user as { sub: string };
     const mergeId = await createMerge(body.data.sourceId, body.data.targetId, jwt.sub);
     const report = await previewMerge(mergeId, body.data.sourceId, body.data.targetId);
@@ -356,6 +376,24 @@ export async function adminRoutes(server: FastifyInstance) {
 
   /** POST /admin/merges/:id/execute — execute an approved merge */
   server.post<{ Params: { id: string } }>("/merges/:id/execute", async (request, reply) => {
+    // C4: re-validate the hierarchy constraint at execution time (defense in
+    // depth — the merge record's source/target are re-checked against the live
+    // tenant hierarchy before any data is moved).
+    const existing = await getMerge(request.params.id);
+    if (!existing) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Merge not found" },
+      });
+    }
+    const hierarchy = await tenantsShareHierarchy(existing.sourceId, existing.targetId);
+    if (!hierarchy.ok) {
+      return reply.status(403).send({
+        success: false,
+        error: { code: "MERGE_NOT_PERMITTED", message: hierarchy.reason ?? "Merge not permitted for these workspaces" },
+      });
+    }
+
     try {
       await executeMerge(request.params.id);
       const merge = await getMerge(request.params.id);

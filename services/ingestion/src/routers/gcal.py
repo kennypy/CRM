@@ -5,12 +5,13 @@ Receives push notifications from Google Calendar watch channels.
 
 Flow:
   POST /gcal/notifications
-    ↓ Verify X-Goog-Channel-ID + X-Goog-Resource-State
-    ↓ Look up which user owns this channel
+    ↓ Verify X-Goog-Channel-Token against the stored per-channel secret
+    ↓ Look up which user owns this channel (from the verified channel row)
     ↓ GCalConnector.fetch_new_events()
     ↓ Publish each event as RawSignalEvent to nexcrm:raw-signals stream
 """
 
+import hmac
 import json
 import structlog
 from fastapi import APIRouter, Request, Response, BackgroundTasks
@@ -76,6 +77,7 @@ async def gcal_notifications(request: Request, background_tasks: BackgroundTasks
     resource_state  = request.headers.get("X-Goog-Resource-State", "")
     channel_id      = request.headers.get("X-Goog-Channel-ID", "")
     resource_id     = request.headers.get("X-Goog-Resource-ID", "")
+    channel_token   = request.headers.get("X-Goog-Channel-Token", "")
 
     # Sync message — calendar is ready; no events to fetch yet
     if resource_state == "sync":
@@ -85,14 +87,18 @@ async def gcal_notifications(request: Request, background_tasks: BackgroundTasks
     if resource_state != "exists":
         return Response(status_code=200)
 
-    # Look up which tenant/user owns this channel
+    # Look up which tenant/user owns this channel. The X-Goog-Channel-ID header
+    # is attacker-controllable and must NOT be trusted on its own; we verify the
+    # X-Goog-Channel-Token against the per-channel secret stored at watch-setup
+    # time (constant-time) and resolve tenant/user from that row (C2).
     import asyncpg
     try:
         db = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=2)
         row = await db.fetchrow(
             """
             SELECT tenant_id, user_id,
-                   metadata->>'gcal_calendar_id' AS calendar_id
+                   metadata->>'gcal_calendar_id' AS calendar_id,
+                   metadata->>'gcal_channel_token' AS channel_token
             FROM oauth_tokens
             WHERE provider = 'google'
               AND metadata->>'gcal_channel_id' = $1
@@ -106,7 +112,17 @@ async def gcal_notifications(request: Request, background_tasks: BackgroundTasks
 
     if not row:
         log.warning("gcal.unknown_channel", channel_id=channel_id)
-        return Response(status_code=200)
+        return Response(status_code=401)
+
+    stored_token = row["channel_token"]
+    if not stored_token:
+        # No secret stored for this channel — cannot prove authenticity.
+        log.warning("gcal.no_channel_token", channel_id=channel_id)
+        return Response(status_code=401)
+
+    if not channel_token or not hmac.compare_digest(channel_token, stored_token):
+        log.warning("gcal.channel_token_mismatch", channel_id=channel_id)
+        return Response(status_code=401)
 
     background_tasks.add_task(
         _process_notification,

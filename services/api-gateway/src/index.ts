@@ -166,7 +166,9 @@ async function bootstrap() {
 
   await server.register(jwt, {
     secret: jwtSecret,
-    sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? "15m" },
+    // Pin to HS256 — defense-in-depth against algorithm-confusion / "alg:none".
+    sign: { algorithm: "HS256", expiresIn: process.env.JWT_EXPIRES_IN ?? "15m" },
+    verify: { algorithms: ["HS256"] },
   });
 
   // ── Health check (no auth) ────────────────────────────────────────────────

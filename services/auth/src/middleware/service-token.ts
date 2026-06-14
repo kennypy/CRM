@@ -29,7 +29,13 @@ export async function validateServiceToken(
 ): Promise<void> {
   const secret = process.env.INTERNAL_SERVICE_SECRET ?? "";
   if (!secret) {
-    if (process.env.ALLOW_MISSING_SERVICE_TOKEN === "true") {
+    // ALLOW_MISSING_SERVICE_TOKEN is a dev-only escape hatch. Never honor it in
+    // production — a misconfigured prod deploy would otherwise accept every
+    // internal request unauthenticated.
+    if (
+      process.env.ALLOW_MISSING_SERVICE_TOKEN === "true" &&
+      process.env.NODE_ENV !== "production"
+    ) {
       return;
     }
     request.log.error("service_token.not_configured — rejecting request");

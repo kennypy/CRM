@@ -19,9 +19,23 @@ class Settings(BaseSettings):
     INTERNAL_SERVICE_SECRET_NEXT: str = ""
     ALLOW_MISSING_SERVICE_TOKEN: str = ""
 
+    # Expected audience for the Gmail Pub/Sub push OIDC token.
+    # Should match the audience configured on the Pub/Sub push subscription
+    # (typically the public push endpoint URL). When empty, the audience claim
+    # is not enforced (but issuer + signature still are).
+    GMAIL_PUBSUB_AUDIENCE: str = ""
+
     # Redis stream names
     STREAM_RAW_SIGNALS: str = "nexcrm:raw-signals"
     STREAM_NORMALIZED: str = "nexcrm:normalized-signals"
+    STREAM_RESOLVED: str = "nexcrm:resolved-signals"
+    STREAM_CRM_WRITES: str = "nexcrm:crm-writes"
+
+    # Per-tenant cap on auto-created graph nodes (Person/Company) within the
+    # rolling window below. Beyond this, candidates are routed to the review
+    # queue instead of being auto-created (M-ING2: spoofable-sender protection).
+    ENTITY_AUTO_CREATE_LIMIT: int = 200
+    ENTITY_AUTO_CREATE_WINDOW_SECONDS: int = 3600
 
     class Config:
         env_file = "../../.env"

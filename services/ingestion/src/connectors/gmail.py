@@ -132,6 +132,20 @@ class GmailConnector:
             return None
 
         async with httpx.AsyncClient(timeout=15) as http:
+            # Fetch the mailbox address so inbound Pub/Sub pushes (which carry
+            # only the emailAddress) can be resolved back to this tenant/user
+            # row. See routers/gmail.py::_resolve_owner (C3).
+            email_address: str | None = None
+            profile_resp = await http.get(
+                f"{GMAIL_API_BASE}/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if profile_resp.status_code == 200:
+                email_address = profile_resp.json().get("emailAddress")
+            else:
+                log.warning("gmail.profile_fetch_failed user=%s status=%s",
+                            user_id, profile_resp.status_code)
+
             resp = await http.post(
                 f"{GMAIL_API_BASE}/users/me/watch",
                 headers={"Authorization": f"Bearer {token}"},
@@ -149,14 +163,19 @@ class GmailConnector:
         data = resp.json()
         history_id = data.get("historyId")
 
-        # Store history_id so we can do incremental sync
+        # Store history_id (incremental sync) + mailbox address (push resolution)
+        watch_meta: dict[str, Any] = {
+            "gmail_history_id": history_id,
+            "watch_expires_at": data.get("expiration"),
+        }
+        if email_address:
+            watch_meta["gmail_email_address"] = email_address
         await self.db.execute(
             """UPDATE oauth_tokens
                SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
                    updated_at = NOW()
                WHERE tenant_id = $2 AND user_id = $3 AND provider = 'google'""",
-            json.dumps({"gmail_history_id": history_id,
-                        "watch_expires_at": data.get("expiration")}),
+            json.dumps(watch_meta),
             tenant_id, user_id,
         )
 

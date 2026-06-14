@@ -5,6 +5,7 @@
  */
 
 import type { FastifyRequest, FastifyReply } from "fastify";
+import { mintInternalToken } from "./internal-fetch";
 
 export interface ProxyOptions {
   baseUrl: string;
@@ -43,6 +44,12 @@ export function createProxy(opts: ProxyOptions) {
       "x-service-token": process.env.INTERNAL_SERVICE_SECRET ?? "",
       ...(opts.headers ?? {}),
     };
+
+    // Mint a short-lived internal JWT so downstream services can verify the
+    // tenant cryptographically and reject a forged ?tenantId= (defence in depth
+    // behind the service token). Works for both JWT- and API-key-authed callers.
+    const internalToken = mintInternalToken(request);
+    if (internalToken) headers["Authorization"] = `Bearer ${internalToken}`;
 
     // Forward the raw request body for mutating methods
     const hasBody = ["POST", "PUT", "PATCH"].includes(request.method);

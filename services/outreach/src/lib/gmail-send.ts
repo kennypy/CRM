@@ -28,6 +28,24 @@ export interface GmailSendResult {
 }
 
 /**
+ * Reject header values containing CR/LF or other control characters.
+ * Prevents SMTP/RFC-2822 header injection (e.g. a crafted `subject` smuggling
+ * an extra `Bcc:` header or a forged body) when values flow into the raw
+ * header block below.
+ */
+function sanitizeHeaderValue(name: string, value: string): string {
+  // Reject CR, LF and other C0/DEL control characters to prevent
+  // RFC-2822 header injection (e.g. a crafted subject smuggling a Bcc).
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    if (c < 0x20 || c === 0x7f) {
+      throw new Error(`Illegal control character in email ${name} header`);
+    }
+  }
+  return value;
+}
+
+/**
  * Build an RFC-2822 message and send it via the Gmail API.
  * Returns the Gmail messageId and threadId for storage.
  */
@@ -37,16 +55,16 @@ export async function sendViaGmail(opts: SendEmailOptions): Promise<GmailSendRes
   const gmail = google.gmail({ version: "v1", auth });
 
   const headers: Record<string, string> = {
-    From:    opts.from,
-    To:      opts.to.join(", "),
-    Subject: opts.subject,
+    From:    sanitizeHeaderValue("From", opts.from),
+    To:      sanitizeHeaderValue("To", opts.to.join(", ")),
+    Subject: sanitizeHeaderValue("Subject", opts.subject),
     "Content-Type": "text/plain; charset=UTF-8",
     "List-Unsubscribe": `<${opts.unsubscribeUrl}>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
   };
-  if (opts.cc?.length)    headers["Cc"]          = opts.cc.join(", ");
-  if (opts.bcc?.length)   headers["Bcc"]         = opts.bcc.join(", ");
-  if (opts.inReplyTo)     headers["In-Reply-To"] = opts.inReplyTo;
+  if (opts.cc?.length)    headers["Cc"]          = sanitizeHeaderValue("Cc", opts.cc.join(", "));
+  if (opts.bcc?.length)   headers["Bcc"]         = sanitizeHeaderValue("Bcc", opts.bcc.join(", "));
+  if (opts.inReplyTo)     headers["In-Reply-To"] = sanitizeHeaderValue("In-Reply-To", opts.inReplyTo);
 
   const headerStr = Object.entries(headers)
     .map(([k, v]) => `${k}: ${v}`)

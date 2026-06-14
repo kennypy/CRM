@@ -7,7 +7,7 @@ import os
 import httpx
 import structlog
 from uuid import UUID
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
 
@@ -21,13 +21,37 @@ GRAPH_CORE_URL = os.getenv("GRAPH_CORE_URL", "http://localhost:4002")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 
+def _resolve_tenant(header_tenant: str | None, body_tenant: str | None) -> str:
+    """
+    H-AI5: derive the tenant strictly from the gateway-provided `x-tenant-id`
+    header. The gateway sets this header from the verified JWT (see
+    api-gateway/src/lib/proxy.ts) and never accepts it from clients, so it is the
+    authoritative tenant context. A tenant_id in the request body is attacker-
+    controllable and MUST NOT be trusted: if present it must match the header,
+    otherwise we reject with 403 to prevent cross-tenant reads/write-backs.
+    """
+    header_tenant = (header_tenant or "").strip()
+    if not header_tenant:
+        raise HTTPException(status_code=403, detail="Tenant context missing")
+    if body_tenant and body_tenant.strip() and body_tenant.strip() != header_tenant:
+        log.warning(
+            "enrichment.tenant_mismatch",
+            header_tenant=header_tenant,
+            body_tenant=body_tenant,
+        )
+        raise HTTPException(status_code=403, detail="Tenant mismatch")
+    return header_tenant
+
+
 class EnrichRequest(BaseModel):
-    tenant_id: str
+    # H-AI5: tenant_id is no longer authoritative. It is accepted only so we can
+    # 403 on a mismatch with the verified x-tenant-id header; the header always wins.
+    tenant_id: str | None = None
     source: str = "internal"
 
 
 class BatchEnrichRequest(BaseModel):
-    tenant_id: str
+    tenant_id: str | None = None
     entity_type: str
     entity_ids: list[str]
 
@@ -37,10 +61,12 @@ async def enrich_entity(
     entity_type: str,
     entity_id: str,
     request: EnrichRequest,
+    x_tenant_id: str | None = Header(default=None),
 ):
     """Enrich a single entity with external data."""
     pool = await get_pool()
-    tenant_id = request.tenant_id
+    # H-AI5: tenant is derived from the verified gateway header, not the body.
+    tenant_id = _resolve_tenant(x_tenant_id, request.tenant_id)
 
     # Create enrichment job record
     async with pool.acquire() as conn:
@@ -120,20 +146,36 @@ async def enrich_entity(
             },
         }
 
+    except HTTPException:
+        # Intentional client-facing errors (e.g. 404 entity-not-found) carry safe,
+        # deliberate messages — mark the job failed but propagate them unchanged.
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE enrichment_jobs SET status = 'failed', completed_at = NOW() WHERE id = $1""",
+                job_id,
+            )
+        raise
     except Exception as e:
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE enrichment_jobs SET status = 'failed', completed_at = NOW() WHERE id = $1""",
                 job_id,
             )
+        # L2: do not leak internal exception detail to the client. Log server-side,
+        # return a generic message.
         log.error("enrichment.failed", entity_type=entity_type, entity_id=entity_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Enrichment failed")
 
 
 @router.post("/enrich/batch")
-async def batch_enrich(request: BatchEnrichRequest):
+async def batch_enrich(
+    request: BatchEnrichRequest,
+    x_tenant_id: str | None = Header(default=None),
+):
     """Enrich multiple entities. Returns immediately with job IDs."""
     pool = await get_pool()
+    # H-AI5: tenant scoped to the verified gateway header, never the request body.
+    tenant_id = _resolve_tenant(x_tenant_id, request.tenant_id)
     jobs = []
 
     for eid in request.entity_ids[:50]:  # Limit to 50 per batch
@@ -142,7 +184,7 @@ async def batch_enrich(request: BatchEnrichRequest):
                 """INSERT INTO enrichment_jobs (tenant_id, entity_type, entity_id, status)
                    VALUES ($1, $2, $3, 'pending')
                    RETURNING id""",
-                request.tenant_id, request.entity_type, eid,
+                tenant_id, request.entity_type, eid,
             )
             jobs.append({"jobId": str(job["id"]), "entityId": eid})
 

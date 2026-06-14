@@ -15,6 +15,7 @@ import { callsRoutes }     from "./routes/calls";
 import { dialersRoutes }   from "./routes/dialers";
 import { startSequenceRunner } from "./workers/sequence-runner";
 import { validateServiceToken } from "./middleware/service-token";
+import { resolveIdentity } from "./lib/auth-context";
 
 const server = Fastify({
   logger: {
@@ -87,6 +88,14 @@ async function bootstrap() {
 
   // ── Service-token validation ────────────────────────────────────────────
   server.addHook("onRequest", validateServiceToken);
+
+  // ── Identity resolution ───────────────────────────────────────────────────
+  // When the gateway forwards `Authorization: Bearer <jwt>`, verify it and
+  // derive tenant/user/role from the signed claims. Route helpers (tenantOf /
+  // userOf / roleOf) prefer these verified claims over the spoofable x-* headers
+  // and, in production, refuse to fall back to raw headers when no bearer is
+  // present (a valid service token is still required by the hook above).
+  server.addHook("onRequest", resolveIdentity);
 
   // ── Health ─────────────────────────────────────────────────────────────────
   server.get("/health", async () => ({

@@ -18,6 +18,22 @@ import { z } from "zod";
 import { pool } from "../db";
 import { encrypt } from "../lib/oauth-exchange";
 import { webhookDeliveryQueue } from "../workers/webhook-delivery";
+import { assertSafeUrl, SsrfBlockedError } from "../lib/ssrf-guard";
+
+// Customer webhook URLs must be public https endpoints. Set
+// WEBHOOKS_ALLOW_PRIVATE_HOST=true only for self-hosted/dev setups.
+async function validateWebhookUrl(url: string): Promise<string | null> {
+  try {
+    await assertSafeUrl(url, {
+      protocols: ["https:", "http:"],
+      allowPrivateEnvVar: "WEBHOOKS_ALLOW_PRIVATE_HOST",
+    });
+    return null;
+  } catch (err) {
+    if (err instanceof SsrfBlockedError) return err.message;
+    return "Invalid webhook URL";
+  }
+}
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -98,6 +114,14 @@ export async function outboundWebhooksRoutes(server: FastifyInstance) {
       });
     }
 
+    const urlErr = await validateWebhookUrl(parsed.data.url);
+    if (urlErr) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "INVALID_WEBHOOK_URL", message: urlErr },
+      });
+    }
+
     // Generate a random signing secret (shown once to the customer).
     const rawSecret      = "whsec_" + randomBytes(32).toString("hex");
     const encryptedSecret = encrypt(rawSecret);
@@ -122,6 +146,16 @@ export async function outboundWebhooksRoutes(server: FastifyInstance) {
     const sets: string[] = ["updated_at = NOW()"];
     const vals: unknown[] = [id, tenantId];
     let idx = 3;
+
+    if (b.url) {
+      const urlErr = await validateWebhookUrl(String(b.url));
+      if (urlErr) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: "INVALID_WEBHOOK_URL", message: urlErr },
+        });
+      }
+    }
 
     if (b.name)        { sets.push(`name = $${idx++}`);        vals.push(b.name); }
     if (b.url)         { sets.push(`url = $${idx++}`);         vals.push(b.url); }
@@ -159,6 +193,15 @@ export async function outboundWebhooksRoutes(server: FastifyInstance) {
       [id, tenantId],
     );
     if (!wh) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+
+    // Re-validate at send time (defeats DNS rebinding / rows created before the guard).
+    const urlErr = await validateWebhookUrl(wh.url);
+    if (urlErr) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "INVALID_WEBHOOK_URL", message: urlErr },
+      });
+    }
 
     const testPayload = {
       event:     "test",

@@ -36,7 +36,9 @@ class ServiceTokenMiddleware(BaseHTTPMiddleware):
 
         secret = os.environ.get("INTERNAL_SERVICE_SECRET", "")
         if not secret:
-            if os.environ.get("ALLOW_MISSING_SERVICE_TOKEN") == "true":
+            # Dev-only escape hatch — never bypass auth in production.
+            is_prod = os.environ.get("NODE_ENV") == "production" or os.environ.get("ENV") == "production"
+            if os.environ.get("ALLOW_MISSING_SERVICE_TOKEN") == "true" and not is_prod:
                 return await call_next(request)
             log.error("service_token.not_configured")
             return JSONResponse(

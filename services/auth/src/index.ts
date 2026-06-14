@@ -13,6 +13,7 @@ import { oauthRoutes } from "./routes/oauth.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { internalRoutes } from "./routes/internal.routes";
 import { redis } from "./lib/redis";
+import { isTokenDenied } from "./lib/deny-list";
 
 const server = Fastify({
   logger: {
@@ -82,7 +83,10 @@ async function bootstrap() {
 
   await server.register(jwt, {
     secret: jwtSecret,
-    sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? "15m" },
+    // Pin the algorithm on both sign and verify so a token can only ever be an
+    // HS256 HMAC — defense-in-depth against algorithm-confusion / "alg:none".
+    sign: { algorithm: "HS256", expiresIn: process.env.JWT_EXPIRES_IN ?? "15m" },
+    verify: { algorithms: ["HS256"] },
   });
 
   // Decorate for preHandler usage
@@ -91,9 +95,21 @@ async function bootstrap() {
       await request.jwtVerify();
     } catch (err) {
       request.log.warn({ err }, "JWT verification failed");
-      reply.status(401).send({
+      return reply.status(401).send({
         success: false,
         error: { code: "UNAUTHORIZED", message: "Valid authentication required" },
+      });
+    }
+
+    // Access-token deny-list (M-AUTH7): reject tokens that were issued before the
+    // user logged out / reset their password, even though the JWT is otherwise
+    // still within its 15-minute validity window.
+    const claims = request.user as { sub?: string; iat?: number } | undefined;
+    if (claims?.sub && (await isTokenDenied(claims.sub, claims.iat))) {
+      request.log.warn({ userId: claims.sub }, "auth.token_denied");
+      return reply.status(401).send({
+        success: false,
+        error: { code: "TOKEN_REVOKED", message: "Session has been revoked. Please log in again." },
       });
     }
   });

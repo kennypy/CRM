@@ -24,6 +24,7 @@ import { assertNotOptedOut, OptOutError, personalizeTemplate } from "../lib/comp
 import { assertEmailQuota, incrementEmailUsage } from "../lib/plan-limits";
 import { computeScheduledAt } from "../lib/scheduler";
 import { decrypt } from "../lib/encrypt";
+import { unsubscribeSigParams } from "../lib/unsubscribe-sign";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -321,8 +322,12 @@ async function executeEmailStep(exec: DueExecution): Promise<{
     email:     exec.contact_email,
   });
 
+  // HMAC-sign the unsubscribe link (tenant|email|channel) so the public handler
+  // can reject forged/cross-tenant opt-out injections.
+  const unsubChannel = "email";
   const unsubUrl = `${APP_URL()}/api/v1/outreach/email/unsubscribe`
-    + `?t=${encodeURIComponent(exec.tenant_id)}&e=${encodeURIComponent(exec.contact_email)}&ch=email`;
+    + `?t=${encodeURIComponent(exec.tenant_id)}&e=${encodeURIComponent(exec.contact_email)}&ch=${unsubChannel}`
+    + unsubscribeSigParams(exec.tenant_id, exec.contact_email, unsubChannel);
 
   // Ensure / create email thread.
   let threadId: string;

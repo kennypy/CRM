@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db";
 import { exchangeGoogleCode, exchangeOutlookCode, encrypt } from "../lib/oauth-exchange";
+import { createOAuthState, consumeOAuthState } from "../lib/oauth-state";
 
 export async function integrationsRoutes(fastify: FastifyInstance) {
   // GET /api/v1/integrations — list connected integrations for tenant
@@ -42,19 +43,23 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
     const scope = encodeURIComponent(
       "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly"
     );
-    const state = request.user.tenantId;
+    const state = await createOAuthState(request.user.tenantId, request.user.sub);
     const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent&state=${state}`;
     return reply.redirect(url);
   });
 
   fastify.get("/gmail/callback", async (request, reply) => {
     const { code, state } = request.query as { code: string; state?: string };
-    const tenantId = state ?? request.user?.tenantId;
-    const userId = request.user?.sub;
 
     if (!code) {
       return reply.redirect("/settings?tab=integrations&gmail=error&reason=missing_code");
     }
+
+    const bound = await consumeOAuthState(state);
+    if (!bound) {
+      return reply.redirect("/settings?tab=integrations&gmail=error&reason=invalid_state");
+    }
+    const { tenantId, userId } = bound;
 
     try {
       const redirectUri = process.env.GMAIL_OAUTH_REDIRECT
@@ -102,19 +107,23 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
     const scope = encodeURIComponent(
       "https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Calendars.Read offline_access"
     );
-    const state = request.user.tenantId;
+    const state = await createOAuthState(request.user.tenantId, request.user.sub);
     const url = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&state=${state}`;
     return reply.redirect(url);
   });
 
   fastify.get("/outlook/callback", async (request, reply) => {
     const { code, state } = request.query as { code: string; state?: string };
-    const tenantId = state ?? request.user?.tenantId;
-    const userId = request.user?.sub;
 
     if (!code) {
       return reply.redirect("/settings?tab=integrations&outlook=error&reason=missing_code");
     }
+
+    const bound = await consumeOAuthState(state);
+    if (!bound) {
+      return reply.redirect("/settings?tab=integrations&outlook=error&reason=invalid_state");
+    }
+    const { tenantId, userId } = bound;
 
     try {
       const redirectUri = process.env.OUTLOOK_OAUTH_REDIRECT

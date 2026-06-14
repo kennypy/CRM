@@ -14,6 +14,15 @@ import type { JWTPayload, UserRole } from "@nexcrm/shared-types";
 
 const REFRESH_EXPIRY_DAYS = 30;
 
+/** Thrown when a revoked refresh token is replayed — strongly indicative of
+ *  token theft. The caller's entire token family has been revoked as a result. */
+export class RefreshTokenReuseError extends Error {
+  constructor(public readonly userId: string) {
+    super("Refresh token reuse detected; all sessions revoked");
+    this.name = "RefreshTokenReuseError";
+  }
+}
+
 /** Sign a JWT access token. Fastify's JWT plugin is used in routes; this
  *  helper is for standalone signing (e.g., after OAuth). */
 export function buildJWTPayload(user: {
@@ -49,7 +58,18 @@ export async function createRefreshToken(userId: string): Promise<string> {
   return raw;
 }
 
-/** Validate a refresh token. Returns the user_id if valid, null otherwise. */
+/**
+ * Validate a refresh token. Returns the user_id if valid, null if the token is
+ * unknown/expired.
+ *
+ * Reuse / theft detection: a refresh token is single-use (rotation revokes it on
+ * consumption). If a token hash is presented that is *known but already revoked*,
+ * that means a rotated token was replayed — either the legitimate client lost a
+ * rotation race, or an attacker is replaying a stolen token. We cannot tell the
+ * two apart, so we treat it as theft and revoke the user's entire token family
+ * (all their refresh tokens), forcing every session to re-authenticate.
+ * The caller is signalled via {@link RefreshTokenReuseError}.
+ */
 export async function consumeRefreshToken(
   raw: string
 ): Promise<string | null> {
@@ -69,9 +89,24 @@ export async function consumeRefreshToken(
     );
 
     const token = rows[0];
-    if (!token || token.revoked_at || new Date(token.expires_at) < new Date()) {
+
+    // Unknown or expired token — not necessarily an attack, just reject.
+    if (!token || new Date(token.expires_at) < new Date()) {
       await client.query("ROLLBACK");
       return null;
+    }
+
+    // Known but already revoked token replayed → reuse/theft. Revoke the whole
+    // family within the same transaction so the lock is held throughout.
+    if (token.revoked_at) {
+      await client.query(
+        `UPDATE refresh_tokens
+         SET revoked_at = NOW()
+         WHERE user_id = $1 AND revoked_at IS NULL`,
+        [token.user_id]
+      );
+      await client.query("COMMIT");
+      throw new RefreshTokenReuseError(token.user_id as string);
     }
 
     // Revoke the used token (rotation)
@@ -83,6 +118,8 @@ export async function consumeRefreshToken(
     await client.query("COMMIT");
     return token.user_id as string;
   } catch (err) {
+    // A committed reuse-detection error must propagate without a second rollback.
+    if (err instanceof RefreshTokenReuseError) throw err;
     await client.query("ROLLBACK");
     throw err;
   } finally {

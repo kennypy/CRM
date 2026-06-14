@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import time
 import uuid
 from datetime import datetime, timezone
@@ -148,6 +149,12 @@ class GCalConnector:
         webhook_url   = f"{settings.API_GATEWAY_URL}/ingestion/gcal/notifications"
         expiration_ms = int((time.time() + WATCH_EXPIRY_SECS) * 1000)
 
+        # Per-channel random token. Google echoes this back in the
+        # X-Goog-Channel-Token header on every push; the webhook handler compares
+        # it (constant-time) against the stored value to prove authenticity. The
+        # channel_id alone is NOT a secret and must not be trusted on its own.
+        channel_token = secrets.token_urlsafe(32)
+
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 # First, fetch initial sync token
@@ -170,6 +177,7 @@ class GCalConnector:
                         "id":         channel_id,
                         "type":       "web_hook",
                         "address":    webhook_url,
+                        "token":      channel_token,
                         "expiration": expiration_ms,
                     },
                 )
@@ -183,6 +191,7 @@ class GCalConnector:
         # Persist channel metadata alongside oauth token
         metadata = {
             "gcal_channel_id":    channel_id,
+            "gcal_channel_token": channel_token,
             "gcal_resource_id":   watch_data.get("resourceId"),
             "gcal_next_sync_token": next_sync_token,
             "gcal_watch_expires": expiration_ms,

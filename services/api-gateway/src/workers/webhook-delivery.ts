@@ -16,6 +16,7 @@ import { pool } from "../db";
 import { decrypt } from "../lib/oauth-exchange";
 import { redisConnection } from "../lib/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
+import { assertSafeUrl, SsrfBlockedError } from "../lib/ssrf-guard";
 
 const QUEUE_NAME = "nexcrm-webhook-deliveries";
 
@@ -52,6 +53,27 @@ export function startWebhookDeliveryWorker(): void {
           [webhookId],
         );
         return;
+      }
+
+      // SSRF guard — re-validate the stored URL before every delivery so a
+      // webhook can never be used to reach internal/metadata addresses (also
+      // catches rows created before the guard and DNS-rebinding).
+      try {
+        await assertSafeUrl(wh.url, {
+          protocols: ["https:", "http:"],
+          allowPrivateEnvVar: "WEBHOOKS_ALLOW_PRIVATE_HOST",
+        });
+      } catch (err) {
+        if (err instanceof SsrfBlockedError) {
+          await pool.query(
+            `UPDATE outbound_webhook_deliveries
+                SET status = 'failed', last_error = $1, updated_at = NOW()
+              WHERE webhook_id = $2 AND status = 'pending'`,
+            [`blocked_url: ${err.message}`.slice(0, 500), webhookId],
+          ).catch(() => {});
+          return; // do not throw → no BullMQ retry for a permanently-blocked URL
+        }
+        throw err;
       }
 
       const body        = JSON.stringify(payload);
