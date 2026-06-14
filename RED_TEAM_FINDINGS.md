@@ -23,7 +23,7 @@ C2 spoof an inbound email webhook (no authenticity check)
 Independently, a logged-in user of **any** tenant can reach other tenants' data through:
 `H-GW1` (global support-ticket queue), `H-GW2`/`H-AI5`/`M-OUT4` (tenant taken from request input, not the verified token), and the SSRF sinks `H-GW4`/`H-OUT1`.
 
-Fixes for the cleanly-remediable subset are included in this branch (see **Remediation status** at the end); the design-level items are documented with recommended fixes for product/eng sign-off.
+**All findings — Critical through Low — are remediated in this branch** (see **Remediation status** at the end). The clean fixes landed first; the design-level items (LLM auto-write policy, webhook authenticity, merge ownership, support-ticket access, OAuth state binding, Twilio/unsubscribe signing, internal-service tenant binding, token revocation) followed.
 
 ---
 
@@ -201,19 +201,58 @@ Anyone reaching the port gets full Grafana admin over all tenant telemetry (Prom
 
 ## Remediation status (this branch)
 
-**Fixed (clean, self-contained, low-regression):**
+**ALL findings are now remediated in this branch.** Verified: every changed TS
+service typechecks (only 3 unrelated pre-existing errors in `dedup.ts`/
+`scheduled-reports.ts` remain), all 174 unit tests pass (the 2 "no suite" files
+— `tenant-route.test.ts`, `currency.test.ts` — are pre-existing console-style
+scripts unrelated to these changes), and all changed Python compiles.
+
+### Wave 1 — clean, self-contained fixes
 | ID | Fix |
 |----|-----|
 | H-GW4 / H-OUT1 | SSRF egress guard (block private/link-local/metadata/loopback; require http(s); DNS-resolved re-check) on outbound webhooks (create/update/test/worker) and the per-tenant AI `base_url`. |
 | H-OUT2 | CR/LF + control-char rejection on all RFC-2822 header fields in Gmail send. |
 | H-AUTH5 | Require Google `email_verified`; check token-exchange `resp.ok`. |
-| M-GW3 | Protected-column blocklist (`id/tenant_id/created_by/created_at/...`) in bulk update (relational + graph paths). |
+| M-GW3 | Protected-column blocklist (`id/tenant_id/created_by/created_at/...`) in bulk update. |
 | M-CORE2 | Property-key allowlist validation in `GraphClient`. |
 | M-WEB1 | Cryptographic password generation in `/api/start`. |
 | M-INFRA1 | `ALLOW_MISSING_SERVICE_TOKEN` fails closed in production across auth/outreach/ingestion/ai-engine. |
-| L-AUTH-JWT | Pin JWT verify/sign algorithm to HS256 in auth + graph-core. |
+| L-AUTH-JWT | Pin JWT verify/sign algorithm to HS256 in api-gateway + auth + graph-core. |
 
-**Documented, needs product/eng decision (NOT auto-fixed to avoid guessing intent):**
-C1 (LLM auto-write policy), C2/C3 (webhook authenticity + Gmail tenant resolution), C4 (merge ownership model), H-GW1 (support-ticket tenancy model + role), H-GW2 (gateway OAuth `state` signing), H-OUT3 (Twilio URL reconstruction), H-OUT4 (signed unsubscribe links), H-AI5 / M-CORE1 (graph-core JWT + RLS), M-OUT3/M-OUT4 (in-service JWT verification), M-AUTH6/M-AUTH7 (token reuse detection / deny-list), M-INFRA2 (Grafana), and the Low items.
+### Wave 2 — design-level fixes
+| ID | Fix |
+|----|-----|
+| C1 | Untrusted (inbound-email) extractions now ALWAYS go to the review queue; unattended graph writes disabled by default (`AI_ALLOW_AUTO_WRITE`, `AI_TRUSTED_SOURCES`), constrained to an `AUTO_WRITE_ALLOWLIST`; prompt wraps untrusted content in `<<<UNTRUSTED_CONTENT>>>` delimiters with a "data, not instructions" rule. |
+| C2 | Webhook authenticity: Gmail Pub/Sub OIDC JWT verification (`GMAIL_PUBSUB_AUDIENCE`); GCal per-channel `X-Goog-Channel-Token` constant-time check; Outlook per-subscription secret `clientState` (migration `034_webhook_secrets.sql`). |
+| C3 | Gmail ingestion resolves tenant/user from the payload `emailAddress` via `oauth_tokens`; unresolved mailboxes are acked but never published. |
+| C4 | Workspace merge: admin preHandler re-loads the caller from the DB (`findSuperAdminById`, `_platform`), and both tenants must share the same root hierarchy (`tenantsShareHierarchy`); re-validated at execute time. |
+| H-GW1 | Support-ticket API restricted to the operator tenant (`SUPPORT_OPERATOR_TENANT_ID`; 503 in prod if unset) on all 9 routes. |
+| H-GW2 | Gateway Google/Outlook/Slack callbacks use a random, single-use, Redis-bound `state`; tenant resolved from the bound record, never from raw `state`. |
+| H-OUT3 | Twilio status webhook verified via the SDK `validateRequest` against the real reconstructed URL; tenant resolved from the signed `AccountSid`, not `?tenantId=`. |
+| H-OUT4 | One-click unsubscribe links HMAC-signed (`UNSUBSCRIBE_SIGNING_SECRET`) and constant-time verified before recording an opt-out. |
+| H-AI5 | Enrichment/scoring/manual-extraction derive tenant from the gateway-set `x-tenant-id`; body `tenant_id` must match or 403. (L2 error-leak also fixed.) |
+| M-CORE1 (GC1) | Gateway mints a short-lived internal JWT from the verified `request.user`; graph-core verifies it (when present) and rejects any `tenantId` not matching the signed claim. |
+| M-OUT3 | Voice tokens signed with a dedicated Twilio API Key (`TWILIO_API_KEY_SID/SECRET`), identity bound to the verified user. |
+| M-OUT4 | Outreach prefers verified-JWT identity; raw `x-*` headers trusted only behind the service-token boundary (covers background workers). |
+| M-AUTH6 | Refresh-token reuse detection — replay of a revoked token revokes the whole family. |
+| M-AUTH7 | Per-user Redis deny-list (`tokensValidAfter`/`iat`) enforced in `authenticate`; logout & password-reset revoke live access tokens. |
+| M-VINT | Replay protection on the Vintage webhook via body-digest idempotency (blocks replayed `user_reopened`). |
+| M-ING2 | Graph node auto-create gated on SPF/DKIM/DMARC alignment + per-tenant rate limit; otherwise routed to review. |
+| M-INFRA2 | Grafana anonymous-Admin disabled; admin password from `GRAFANA_ADMIN_PASSWORD`. |
+| L-WEB-ROOT | All Dockerfiles run as a non-root user. |
+| L-WEB-DEMO | `/graphql` routed through a Route Handler that enforces the demo read-only guard; demo password moved to `DEMO_USER_PASSWORD`. |
+
+### Cross-cutting note
+Internal services historically trusted a `?tenantId=` query param. The gateway
+now mints a 60-second internal JWT from the already-verified `request.user`
+(works for JWT- and API-key-authed callers) and forwards it; graph-core and
+outreach verify it and bind the tenant to the signed claim. Background workers
+(no user context) remain authenticated by the internal service token, which is
+the trust boundary for the `x-*` identity headers.
+
+New/changed env vars are documented in `.env.example` under
+**“Security hardening”**. Several fail closed in production:
+`SUPPORT_OPERATOR_TENANT_ID` (support API → 503 if unset) and
+`TWILIO_API_KEY_SID/SECRET` (voice-token minting throws if unset).
 
 </invoke>

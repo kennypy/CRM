@@ -17,6 +17,7 @@ import { requireRep, requireAdmin } from "../middleware/rbac";
 import { exchangeSlackCode, encrypt } from "../lib/oauth-exchange";
 import { listSlackUsers } from "../lib/slack-client";
 import { handleCloseDateInteraction } from "../workers/close-date-handler";
+import { createOAuthState, consumeOAuthState } from "../lib/oauth-state";
 
 function verifySlackRequest(rawBody: Buffer, timestamp: string, signature: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET;
@@ -59,7 +60,7 @@ export async function slackRoutes(server: FastifyInstance) {
 
     const redirectUri = `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/slack/callback`;
     const scopes = "chat:write,users:read,users:read.email,channels:read,im:write";
-    const state = request.user.tenantId;
+    const state = await createOAuthState(request.user.tenantId, request.user.sub);
 
     const url = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
     return reply.redirect(url);
@@ -68,12 +69,18 @@ export async function slackRoutes(server: FastifyInstance) {
   // GET /callback — exchange code
   server.get("/callback", async (request, reply) => {
     const { code, state } = request.query as { code: string; state: string };
-    const tenantId = state;
-    const userId = request.user?.sub;
 
-    if (!code || !tenantId) {
+    if (!code) {
       return reply.redirect("/settings?slack=error&reason=missing_code");
     }
+
+    // Resolve tenant from the single-use, server-bound state — never trust the
+    // raw `state` as the tenant id (H-GW2).
+    const bound = await consumeOAuthState(state);
+    if (!bound) {
+      return reply.redirect("/settings?tab=integrations&slack=error&reason=invalid_state");
+    }
+    const { tenantId, userId } = bound;
 
     try {
       const redirectUri = `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/slack/callback`;

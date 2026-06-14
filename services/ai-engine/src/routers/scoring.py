@@ -22,7 +22,7 @@ from typing import Optional
 
 import asyncpg
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from ..db import get_pool
@@ -51,7 +51,9 @@ BUDGET_KEYWORDS = frozenset([
 
 class RealityScoreRequest(BaseModel):
     deal_id: str
-    tenant_id: str
+    # H-AI5: non-authoritative. Tenant is derived from the verified x-tenant-id
+    # header; a body tenant_id must match the header or the request is rejected.
+    tenant_id: str | None = None
     # Optional deal context passed from the gateway to avoid a graph round-trip
     close_date: Optional[str] = None   # ISO-8601 date or datetime
     stage: Optional[str] = None
@@ -144,8 +146,19 @@ def _weighted_total(factors: dict[str, float]) -> int:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/reality-score", response_model=RealityScoreResponse)
-async def calculate_reality_score(req: RealityScoreRequest):
+async def calculate_reality_score(
+    req: RealityScoreRequest,
+    x_tenant_id: str | None = Header(default=None),
+):
     pool: asyncpg.Pool = await get_pool()
+
+    # H-AI5: tenant comes from the gateway-set header (derived from the verified
+    # JWT), never the request body. A body tenant_id is allowed only if it matches.
+    tenant_id = (x_tenant_id or "").strip()
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant context missing")
+    if req.tenant_id and req.tenant_id.strip() and req.tenant_id.strip() != tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant mismatch")
 
     recency_val = breadth_val = sentiment_val = budget_val = 50.0
     recency_ev = breadth_ev = sentiment_ev = budget_ev = "No data"
@@ -163,7 +176,7 @@ async def calculate_reality_score(req: RealityScoreRequest):
                 ORDER BY created_at DESC
                 LIMIT 100
                 """,
-                req.tenant_id, req.deal_id,
+                tenant_id, req.deal_id,
             )
 
             activity_rows = [r for r in rows if r["event_type"].startswith("activity.")]
@@ -213,7 +226,7 @@ async def calculate_reality_score(req: RealityScoreRequest):
                   AND event_type = 'activity.created'
                 LIMIT 50
                 """,
-                req.tenant_id, req.deal_id,
+                tenant_id, req.deal_id,
             )
             for r in old_rows:
                 payload = r["payload"] or {}

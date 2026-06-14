@@ -140,9 +140,12 @@ services:
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      # Admin password sourced from env. The :- fallback keeps local dev working,
+      # but GRAFANA_ADMIN_PASSWORD MUST be overridden in .env for any shared/staging/
+      # production deployment — never ship Grafana with the default "admin" password.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Anonymous access disabled — Grafana previously granted anonymous Admin.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
     ports:
       - "127.0.0.1:3001:3000"
     volumes:

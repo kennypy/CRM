@@ -11,6 +11,7 @@ import {
   assertEnrollmentQuota,
 } from "../lib/plan-limits";
 import { computeScheduledAt } from "../lib/scheduler";
+import { tenantOf, userOf } from "../lib/auth-context";
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -54,9 +55,6 @@ const EnrollSchema = z.object({
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 export async function sequencesRoutes(fastify: FastifyInstance) {
-  const tenantOf = (req: any) => req.headers["x-tenant-id"] as string;
-  const userOf   = (req: any) => req.headers["x-user-id"]   as string;
-
   // GET /sequences
   fastify.get("/", async (request, reply) => {
     const tenantId = tenantOf(request);

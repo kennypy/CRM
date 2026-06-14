@@ -187,8 +187,14 @@ describe("/webhooks/vintage integration", () => {
     queryMock.mockReset();
     clientQueryMock.mockReset();
     releaseMock.mockReset();
-    // The delivery-log INSERT goes through pool.query — default-resolve it.
-    queryMock.mockResolvedValue({ rowCount: 1 });
+    // pool.query serves two callers: the replay-dedup SELECT (must report "no
+    // prior delivery" so processing proceeds) and the delivery-log INSERT.
+    queryMock.mockImplementation((sql: unknown) => {
+      if (typeof sql === "string" && sql.includes("SELECT id FROM support_webhook_deliveries")) {
+        return Promise.resolve({ rowCount: 0, rows: [] }); // not a replay
+      }
+      return Promise.resolve({ rowCount: 1 }); // delivery-log INSERT
+    });
   });
 
   describe("guardrails", () => {
@@ -228,8 +234,10 @@ describe("/webhooks/vintage integration", () => {
       expect(res.statusCode).toBe(401);
       expect(clientQueryMock).not.toHaveBeenCalled();
       // Delivery log insert fired once with signature_valid=false and raw_body null.
-      expect(queryMock).toHaveBeenCalledTimes(1);
-      const logArgs = queryMock.mock.calls[0][1] as unknown[];
+      expect(queryMock).toHaveBeenCalledTimes(1); // invalid sig: only the failure-log INSERT (dedup skipped)
+      const logArgs = (queryMock.mock.calls.find(
+        (c) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO support_webhook_deliveries"),
+      )?.[1] ?? []) as unknown[];
       // [source, event, sourceTicketId, sourceMessageId, bodyDigest, rawBody,
       //  signatureValid, statusCode, error, ticketId]
       expect(logArgs[5]).toBeNull();       // rawBody
@@ -249,8 +257,10 @@ describe("/webhooks/vintage integration", () => {
       expect(JSON.parse(res.body).error).toBe("Invalid body");
       expect(clientQueryMock).not.toHaveBeenCalled();
       // Logged with signature_valid=true, raw body retained.
-      expect(queryMock).toHaveBeenCalledTimes(1);
-      const logArgs = queryMock.mock.calls[0][1] as unknown[];
+      expect(queryMock).toHaveBeenCalledTimes(2); // replay-dedup SELECT + delivery-log INSERT
+      const logArgs = (queryMock.mock.calls.find(
+        (c) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO support_webhook_deliveries"),
+      )?.[1] ?? []) as unknown[];
       expect(logArgs[6]).toBe(true);
       expect(logArgs[7]).toBe(400);
       expect(logArgs[8]).toBe("invalid_body");
@@ -278,8 +288,10 @@ describe("/webhooks/vintage integration", () => {
       ]);
 
       // Delivery log persisted with the ticket's UUID linked.
-      expect(queryMock).toHaveBeenCalledTimes(1);
-      const logArgs = queryMock.mock.calls[0][1] as unknown[];
+      expect(queryMock).toHaveBeenCalledTimes(2); // replay-dedup SELECT + delivery-log INSERT
+      const logArgs = (queryMock.mock.calls.find(
+        (c) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO support_webhook_deliveries"),
+      )?.[1] ?? []) as unknown[];
       expect(logArgs[1]).toBe("ticket.opened");
       expect(logArgs[2]).toBe(openedBody.ticketId);
       expect(logArgs[9]).toBe(TICKET_UUID);
@@ -351,7 +363,9 @@ describe("/webhooks/vintage integration", () => {
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.body)).toMatchObject({ ok: true, warning: "ticket_not_found" });
       // Delivery log records the warning.
-      const logArgs = queryMock.mock.calls[0][1] as unknown[];
+      const logArgs = (queryMock.mock.calls.find(
+        (c) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO support_webhook_deliveries"),
+      )?.[1] ?? []) as unknown[];
       expect(logArgs[8]).toBe("ticket_not_found");
       expect(logArgs[9]).toBeNull();
     });
@@ -422,9 +436,34 @@ describe("/webhooks/vintage integration", () => {
       expect(sqls).toContain("ROLLBACK");
       expect(releaseMock).toHaveBeenCalled();
       // Delivery log still recorded the failure.
-      const logArgs = queryMock.mock.calls[0][1] as unknown[];
+      const logArgs = (queryMock.mock.calls.find(
+        (c) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO support_webhook_deliveries"),
+      )?.[1] ?? []) as unknown[];
       expect(logArgs[7]).toBe(500);
       expect(String(logArgs[8])).toContain("handler_error");
+    });
+  });
+
+  describe("replay protection (M-VINT)", () => {
+    it("acks idempotently and does NOT re-process a previously-delivered body", async () => {
+      // The dedup SELECT reports a prior successful delivery for this body.
+      queryMock.mockImplementation((sql: unknown) => {
+        if (typeof sql === "string" && sql.includes("SELECT id FROM support_webhook_deliveries")) {
+          return Promise.resolve({ rowCount: 1, rows: [{ id: "prior-delivery" }] });
+        }
+        return Promise.resolve({ rowCount: 1 });
+      });
+
+      const app = makeApp();
+      await app.register(vintageWebhookRoutes, { prefix: "/webhooks" });
+
+      // A valid signature for a reopen that would otherwise flip CLOSED → NEW.
+      const res = await inject(app, reopenBody);
+
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({ duplicate: true });
+      // No transaction was opened — the event was never re-applied.
+      expect(clientQueryMock).not.toHaveBeenCalled();
     });
   });
 });

@@ -3,10 +3,21 @@ Extraction Worker
 =================
 Reads ActivityEvents from nexcrm:normalized-signals.
 Uses Claude (Haiku for speed) to extract structured CRM data.
-Routes results based on confidence:
-  >= AUTO_APPROVE_THRESHOLD  → nexcrm:crm-writes (auto-write)
-  >= CONFIDENCE_THRESHOLD    → nexcrm:review-queue (human review)
-  < CONFIDENCE_THRESHOLD     → discard + audit log
+
+Routing (see C1 security note below):
+  - UNTRUSTED source (inbound email/webhook — the normal case): ALWAYS → review queue,
+    regardless of confidence. Never auto-write.
+  - TRUSTED source AND auto-write enabled AND confidence >= AUTO_APPROVE_THRESHOLD
+    → nexcrm:crm-writes (auto-write), constrained to the allowlist below.
+  - Otherwise, confidence >= CONFIDENCE_THRESHOLD → nexcrm:review-queue (human review)
+  - confidence < CONFIDENCE_THRESHOLD → discard + audit log
+
+SECURITY (C1): the LLM's self-reported `confidence` is attacker-influenceable via
+prompt injection in an untrusted email/webhook body. It is therefore treated as a
+NON-authoritative hint only and must never, on its own, authorize an unattended
+write into the CRM graph. Auto-write is gated on (a) an explicit trusted source and
+(b) the AI_ALLOW_AUTO_WRITE config flag (default false), and applied writes are
+restricted to a strict entity-type/field allowlist.
 """
 
 import json
@@ -23,6 +34,40 @@ from ..prompts.extraction import EXTRACTION_SYSTEM_PROMPT, build_extraction_prom
 
 log = structlog.get_logger()
 client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+# C1: strict allowlist of entity types → writable fields. Auto-write only ever
+# applies the intersection of what the model returned and this allowlist, so a
+# prompt-injected extraction cannot push arbitrary keys into the CRM graph.
+# Field names mirror the extraction schema in src/prompts/extraction.py.
+AUTO_WRITE_ALLOWLIST: dict[str, frozenset[str]] = {
+    "person": frozenset({"first_name", "last_name", "email", "title", "company_name", "phone"}),
+    "company": frozenset({"name", "domain", "industry", "headcount_estimate", "location"}),
+    "deal_update": frozenset({
+        "stage_signal", "budget_confirmed", "timeline_mentioned", "competitors_mentioned",
+        "blockers", "decision_makers_mentioned", "next_steps",
+    }),
+    "task": frozenset({"title", "due_date", "assignee_name", "related_company"}),
+}
+
+
+def _trusted_sources() -> frozenset[str]:
+    """Parse AI_TRUSTED_SOURCES (comma-separated) into a normalized set."""
+    return frozenset(
+        s.strip().lower() for s in (settings.AI_TRUSTED_SOURCES or "").split(",") if s.strip()
+    )
+
+
+def _is_trusted_source(activity: dict) -> bool:
+    """
+    C1: Decide whether an extraction may take the auto-write fast-path.
+
+    There is no cryptographic trust marker on normalized signals, so we treat the
+    `source` field as the trust signal and require it to be explicitly allowlisted.
+    Inbound email / webhook sources are NOT in the allowlist by default, so they are
+    always treated as untrusted and routed to human review.
+    """
+    source = str(activity.get("source") or "").strip().lower()
+    return bool(source) and source in _trusted_sources()
 
 
 async def start_extraction_worker():
@@ -81,20 +126,49 @@ async def _process_activity(redis, msg_id: str, fields: dict):
 
         overall_confidence = _compute_overall_confidence(result)
 
-        extraction_record = {
-            "activity_id": activity.get("id"),
-            "tenant_id": activity.get("tenant_id"),
-            "source": activity.get("source"),
-            "confidence": overall_confidence,
-            "extraction": result,
-            "activity_type": activity.get("activity_type"),
-        }
+        # C1: model-reported confidence is a non-authoritative hint. The auto-write
+        # fast-path is only available for explicitly trusted/internal sources AND
+        # when AI_ALLOW_AUTO_WRITE is enabled. Untrusted external content (the normal
+        # case here) ALWAYS goes to human review regardless of confidence — this is
+        # the prompt-injection containment boundary.
+        auto_write_eligible = (
+            settings.AI_ALLOW_AUTO_WRITE
+            and _is_trusted_source(activity)
+            and overall_confidence >= settings.AI_AUTO_APPROVE_THRESHOLD
+        )
 
-        if overall_confidence >= settings.AI_AUTO_APPROVE_THRESHOLD:
-            await redis.xadd(settings.STREAM_CRM_WRITES, {"data": json.dumps(extraction_record)})
-            log.info("extraction.auto_write", confidence=overall_confidence, activity_id=activity.get("id"))
+        if auto_write_eligible:
+            # Constrain the applied write to the strict allowlist rather than trusting
+            # whatever JSON the model emitted.
+            allowlisted = _build_allowlisted_changes(result)
+            if not allowlisted:
+                # Nothing the model returned is safe to write; fall back to review.
+                log.warning(
+                    "extraction.auto_write_empty_after_allowlist",
+                    activity_id=activity.get("id"),
+                )
+            else:
+                extraction_record = {
+                    "activity_id": activity.get("id"),
+                    "tenant_id": activity.get("tenant_id"),
+                    "source": activity.get("source"),
+                    "confidence": overall_confidence,
+                    # Only the allowlisted changes are forwarded to the writer.
+                    "changes": allowlisted,
+                    "activity_type": activity.get("activity_type"),
+                }
+                await redis.xadd(settings.STREAM_CRM_WRITES, {"data": json.dumps(extraction_record)})
+                log.info(
+                    "extraction.auto_write",
+                    confidence=overall_confidence,
+                    activity_id=activity.get("id"),
+                    source=activity.get("source"),
+                    fields=len(allowlisted),
+                )
+                await redis.xack(settings.STREAM_NORMALIZED, "extractor", msg_id)
+                return
 
-        elif overall_confidence >= settings.AI_CONFIDENCE_THRESHOLD:
+        if overall_confidence >= settings.AI_CONFIDENCE_THRESHOLD:
             review_item = {
                 "tenant_id": activity.get("tenant_id"),
                 "extraction_id": activity.get("id"),
@@ -174,6 +248,36 @@ def _build_review_summary(result: dict) -> str:
         parts.append(f"Signals: {', '.join(types)}")
 
     return ". ".join(parts) if parts else "Unstructured extraction"
+
+
+def _build_allowlisted_changes(result: dict) -> list[dict]:
+    """
+    C1: Build the set of writes for the auto-write fast-path, restricted to the
+    AUTO_WRITE_ALLOWLIST. Any entity type or field not on the allowlist is dropped,
+    so a prompt-injected extraction cannot introduce arbitrary entities/fields into
+    the CRM graph even when the trusted-source + confidence gates are satisfied.
+    """
+    changes: list[dict] = []
+    for i, entity in enumerate(result.get("entities", [])):
+        entity_type = entity.get("type")
+        allowed_fields = AUTO_WRITE_ALLOWLIST.get(entity_type)
+        if not allowed_fields:
+            continue  # unknown/disallowed entity type → skip
+        for field_name, field_data in entity.get("fields", {}).items():
+            if field_name not in allowed_fields:
+                continue  # field not on allowlist → skip
+            if not isinstance(field_data, dict):
+                continue
+            changes.append({
+                "operation": "create_or_update",
+                "entity_type": entity_type,
+                "entity_idx": i,
+                "field": field_name,
+                "value": field_data.get("value"),
+                "confidence": field_data.get("confidence"),
+                "evidence": field_data.get("evidence"),
+            })
+    return changes
 
 
 def _build_proposed_changes(result: dict) -> list[dict]:

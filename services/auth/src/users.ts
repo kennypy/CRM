@@ -171,6 +171,99 @@ export async function findSuperAdminByEmail(email: string): Promise<DBUser | nul
   return rows[0] ?? null;
 }
 
+/** Find a super_admin user by id (checks the _platform tenant). Used to
+ *  re-verify the caller of privileged admin mutations against the DB rather
+ *  than trusting the (potentially stale/forged) JWT `role` claim. */
+export async function findSuperAdminById(id: string): Promise<DBUser | null> {
+  const { rows } = await pool.query<DBUser>(
+    `SELECT u.* FROM users u
+     JOIN tenants t ON u.tenant_id = t.id
+     WHERE t.slug = '_platform' AND u.id = $1 AND u.role = 'super_admin' AND u.deleted_at IS NULL`,
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Resolve the top-level ("root") ancestor of a tenant by walking
+ * parent_tenant_id up the hierarchy. A top-level workspace is its own root.
+ * Returns the root tenant id, or null if the tenant does not exist / is deleted.
+ *
+ * A depth cap guards against accidental cycles in the parent chain (the schema
+ * does not enforce acyclicity).
+ */
+export async function findRootTenantId(tenantId: string): Promise<string | null> {
+  let currentId = tenantId;
+  const seen = new Set<string>();
+  for (let depth = 0; depth < 64; depth++) {
+    if (seen.has(currentId)) return currentId; // cycle — treat current as root
+    seen.add(currentId);
+    let parentId: string | null;
+    try {
+      const { rows } = await pool.query<{ parent_tenant_id: string | null }>(
+        `SELECT parent_tenant_id FROM tenants WHERE id = $1 AND deleted_at IS NULL`,
+        [currentId]
+      );
+      if (!rows[0]) return depth === 0 ? null : currentId;
+      parentId = rows[0].parent_tenant_id ?? null;
+    } catch {
+      // Fallback: migration 022 not applied (no parent_tenant_id column) → the
+      // tenant is necessarily top-level, so it is its own root.
+      const { rows } = await pool.query(
+        `SELECT id FROM tenants WHERE id = $1 AND deleted_at IS NULL`,
+        [currentId]
+      );
+      return rows[0] ? currentId : depth === 0 ? null : currentId;
+    }
+    if (!parentId) return currentId; // reached a top-level workspace
+    currentId = parentId;
+  }
+  return currentId;
+}
+
+/**
+ * C4 guard: determine whether two workspaces may be merged together.
+ *
+ * A merge moves all data from `source` into `target` and soft-deletes the
+ * source tenant, so it must never be allowed to span unrelated customers. We
+ * require both workspaces to belong to the *same* customer hierarchy — i.e.
+ * they resolve to the same top-level root tenant — and forbid touching the
+ * reserved `_platform` tenant entirely.
+ */
+export async function tenantsShareHierarchy(
+  sourceId: string,
+  targetId: string
+): Promise<{ ok: boolean; reason?: string }> {
+  if (sourceId === targetId) {
+    return { ok: false, reason: "Cannot merge a workspace with itself" };
+  }
+
+  // Never allow the reserved platform tenant to be a merge source or target.
+  const { rows: platformRows } = await pool.query<{ id: string }>(
+    `SELECT id FROM tenants WHERE slug = '_platform' AND deleted_at IS NULL`
+  );
+  const platformId = platformRows[0]?.id;
+  if (platformId && (sourceId === platformId || targetId === platformId)) {
+    return { ok: false, reason: "The platform tenant cannot be merged" };
+  }
+
+  const [sourceRoot, targetRoot] = await Promise.all([
+    findRootTenantId(sourceId),
+    findRootTenantId(targetId),
+  ]);
+
+  if (!sourceRoot || !targetRoot) {
+    return { ok: false, reason: "Source or target workspace not found" };
+  }
+  if (sourceRoot !== targetRoot) {
+    return {
+      ok: false,
+      reason: "Source and target must belong to the same workspace hierarchy",
+    };
+  }
+  return { ok: true };
+}
+
 /** List all tenants with user counts and child counts (excludes _platform). */
 export async function listAllTenants(): Promise<Array<{
   id: string;

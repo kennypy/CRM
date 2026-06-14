@@ -6,22 +6,14 @@ import bundleAnalyzer from "@next/bundle-analyzer";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const withBundleAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === "true" });
 
-// Gateway URL — server-side only. NEVER use NEXT_PUBLIC_ for internal service URLs.
-const GATEWAY_URL = process.env.API_GATEWAY_URL ?? "http://localhost:4000";
-
 const nextConfig: NextConfig = {
   output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
 
-  // /api/v1/* and /auth/* are handled by Route Handlers (apps/web/src/app/api/).
-  // Only /graphql still needs the Next.js rewrite since it's not a Route Handler.
-  async rewrites() {
-    return [
-      {
-        source: "/graphql",
-        destination: `${GATEWAY_URL}/graphql`,
-      },
-    ];
-  },
+  // /api/v1/*, /auth/* and /graphql are all handled by Route Handlers
+  // (apps/web/src/app/api/ and apps/web/src/app/graphql/). We intentionally do
+  // NOT add a direct rewrite for /graphql: a rewrite would proxy straight to the
+  // gateway and bypass the server-side auth/cookie injection and the demo
+  // read-only guard. See apps/web/src/app/graphql/route.ts.
 
   async headers() {
     const isProd = process.env.NODE_ENV === "production";

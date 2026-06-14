@@ -10,8 +10,9 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { pool, auditLog, emitEvent } from "../db";
 import { assertCallQuota, incrementCallUsage } from "../lib/plan-limits";
 import { assertNotOptedOut, OptOutError } from "../lib/compliance";
-import { buildTwilioClient, generateVoiceToken, verifyTwilioSignature, TwilioCredentials } from "../lib/twilio-client";
+import { generateVoiceToken, verifyTwilioSignature, reconstructTwilioUrl, TwilioCredentials } from "../lib/twilio-client";
 import { decrypt } from "../lib/encrypt";
+import { tenantOf, userOf } from "../lib/auth-context";
 
 // ── S3 Client ─────────────────────────────────────────────────────────────────
 
@@ -54,9 +55,6 @@ const CallsQuerySchema = z.object({
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 export async function callsRoutes(fastify: FastifyInstance) {
-  const tenantOf = (req: any) => req.headers["x-tenant-id"] as string;
-  const userOf   = (req: any) => req.headers["x-user-id"]   as string;
-
   // GET /calls — call history
   fastify.get("/", async (request, reply) => {
     const tenantId = tenantOf(request);
@@ -230,29 +228,53 @@ export async function callsRoutes(fastify: FastifyInstance) {
   });
 
   // POST /webhooks/twilio/status — Twilio call status callback
-  // This route is public (no JWT) but verified via Twilio signature
+  // This route is public (no JWT) but verified via Twilio signature.
+  //
+  // Security: the tenant is resolved from the verified Twilio AccountSid in the
+  // request body (matched against dialer_configs), NOT from the attacker-
+  // controlled `?tenantId=` query param. The signature is checked against the
+  // exact inbound URL Twilio signed (reconstructed from the real request), so a
+  // forged URL can no longer be smuggled in via the query string.
   fastify.post("/webhooks/twilio/status", { config: { skipAuth: true } } as any, async (request, reply) => {
-    const tenantId = (request.query as any).tenantId as string;
-    if (!tenantId) return reply.status(400).send("Missing tenantId");
+    const body = request.body as Record<string, string>;
+    const accountSid = body?.AccountSid;
+    if (!accountSid) return reply.status(400).send("Missing AccountSid");
 
-    const { rows } = await pool.query<{ native_credentials_enc: string | null }>(
-      `SELECT native_credentials_enc FROM dialer_configs WHERE tenant_id=$1 LIMIT 1`,
-      [tenantId],
+    // Resolve the tenant whose stored Twilio credentials match this AccountSid.
+    // We must decrypt to compare, so scan candidate configs (typically few).
+    const { rows } = await pool.query<{ tenant_id: string; native_credentials_enc: string | null }>(
+      `SELECT tenant_id, native_credentials_enc
+         FROM dialer_configs
+        WHERE native_credentials_enc IS NOT NULL`,
     );
-    if (!rows[0]?.native_credentials_enc) return reply.status(400).send("Not configured");
 
-    let creds: TwilioCredentials;
-    try { creds = JSON.parse(decrypt(rows[0].native_credentials_enc)); }
-    catch { return reply.status(500).send("Credential error"); }
+    let tenantId: string | null = null;
+    let creds: TwilioCredentials | null = null;
+    for (const row of rows) {
+      if (!row.native_credentials_enc) continue;
+      try {
+        const parsed = JSON.parse(decrypt(row.native_credentials_enc)) as TwilioCredentials;
+        if (parsed.accountSid === accountSid) {
+          tenantId = row.tenant_id;
+          creds = parsed;
+          break;
+        }
+      } catch {
+        // Skip configs we cannot decrypt/parse.
+      }
+    }
 
-    const sig = request.headers["x-twilio-signature"] as string ?? "";
-    const url = `${process.env.APP_URL ?? "http://localhost:3000"}/api/v1/outreach/calls/webhooks/twilio/status?tenantId=${tenantId}`;
+    if (!tenantId || !creds) return reply.status(403).send("Unknown account");
 
-    if (!verifyTwilioSignature(creds.authToken, sig, url, request.body as Record<string, string>)) {
+    const sig = (request.headers["x-twilio-signature"] as string) ?? "";
+    // Reconstruct the exact URL Twilio signed from the real request (path +
+    // query as received), never re-serialised from our own params.
+    const url = reconstructTwilioUrl(request.raw.url ?? request.url, request.headers);
+
+    if (!verifyTwilioSignature(creds.authToken, sig, url, body)) {
       return reply.status(403).send("Invalid signature");
     }
 
-    const body = request.body as Record<string, string>;
     const { CallSid, CallStatus, CallDuration } = body;
 
     const statusMap: Record<string, string> = {

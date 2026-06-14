@@ -12,6 +12,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, auditLog } from "../db";
 import { encrypt, decrypt } from "../lib/encrypt";
+import { tenantOf, userOf, roleOf } from "../lib/auth-context";
 
 const TwilioCredsSchema = z.object({
   accountSid:  z.string().min(34).max(34).regex(/^AC[a-f0-9]{32}$/),
@@ -28,10 +29,6 @@ const IframeDialerSchema = z.object({
 });
 
 export async function dialersRoutes(fastify: FastifyInstance) {
-  const tenantOf = (req: any) => req.headers["x-tenant-id"] as string;
-  const userOf   = (req: any) => req.headers["x-user-id"]   as string;
-  const roleOf   = (req: any) => req.headers["x-user-role"]  as string;
-
   function requireAdmin(reply: any, role: string): boolean {
     if (!["admin", "super_admin"].includes(role)) {
       reply.status(403).send({ success: false, error: { code: "FORBIDDEN", message: "Admin role required to manage dialer settings" } });

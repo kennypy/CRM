@@ -18,6 +18,8 @@ import { sendViaGmail }   from "../lib/gmail-send";
 import { sendViaOutlook } from "../lib/outlook-send";
 import { decrypt }        from "../lib/encrypt";
 import { suggestEmail, resolveProviderConfig } from "../lib/ai-suggest";
+import { tenantOf, userOf } from "../lib/auth-context";
+import { unsubscribeSigParams, verifyUnsubscribe } from "../lib/unsubscribe-sign";
 
 const APP_URL = () => process.env.APP_URL ?? "http://localhost:3000";
 
@@ -92,8 +94,8 @@ export async function emailRoutes(fastify: FastifyInstance) {
 
   // GET /email/threads — list threads for a user/contact/deal
   fastify.get("/threads", async (request, reply) => {
-    const tenantId = (request as any).headers["x-tenant-id"] as string;
-    const userId   = (request as any).headers["x-user-id"]   as string;
+    const tenantId = tenantOf(request);
+    const userId   = userOf(request);
 
     const parsed = ThreadsQuerySchema.safeParse(request.query);
     if (!parsed.success) {
@@ -130,8 +132,8 @@ export async function emailRoutes(fastify: FastifyInstance) {
 
   // GET /email/threads/:id/messages — messages in a thread
   fastify.get("/threads/:id/messages", async (request, reply) => {
-    const tenantId = (request as any).headers["x-tenant-id"] as string;
-    const userId   = (request as any).headers["x-user-id"]   as string;
+    const tenantId = tenantOf(request);
+    const userId   = userOf(request);
     const { id }   = request.params as { id: string };
 
     // Verify thread belongs to tenant and user has access
@@ -154,8 +156,8 @@ export async function emailRoutes(fastify: FastifyInstance) {
 
   // POST /email/send — compose and send (or save draft)
   fastify.post("/send", async (request, reply) => {
-    const tenantId = (request as any).headers["x-tenant-id"] as string;
-    const userId   = (request as any).headers["x-user-id"]   as string;
+    const tenantId = tenantOf(request);
+    const userId   = userOf(request);
 
     const parsed = SendEmailSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -230,7 +232,12 @@ export async function emailRoutes(fastify: FastifyInstance) {
     );
 
     // 6. Send via provider
-    const unsubUrl = `${APP_URL()}/unsubscribe?t=${encodeURIComponent(tenantId)}&e=${encodeURIComponent(body.to[0])}&ch=email`;
+    // Sign the unsubscribe link (HMAC over tenant|email|channel) so the public
+    // handler can reject forged/cross-tenant opt-out injections.
+    const unsubChannel = "email";
+    const unsubUrl = `${APP_URL()}/unsubscribe`
+      + `?t=${encodeURIComponent(tenantId)}&e=${encodeURIComponent(body.to[0])}&ch=${unsubChannel}`
+      + unsubscribeSigParams(tenantId, body.to[0], unsubChannel);
 
     try {
       let providerId: string;
@@ -310,7 +317,7 @@ export async function emailRoutes(fastify: FastifyInstance) {
 
   // POST /email/suggest — AI email suggestion (dual-window)
   fastify.post("/suggest", async (request, reply) => {
-    const tenantId = (request as any).headers["x-tenant-id"] as string;
+    const tenantId = tenantOf(request);
 
     const parsed = SuggestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -340,9 +347,12 @@ export async function emailRoutes(fastify: FastifyInstance) {
   });
 
   // GET /email/unsubscribe — one-click unsubscribe handler
+  // Public (no JWT). The link is HMAC-signed when built; we recompute and
+  // constant-time-verify the signature before recording an opt-out so a third
+  // party cannot inject an opt-out for an arbitrary tenant+email pair.
   fastify.get("/unsubscribe", { config: { skipAuth: true } } as any, async (request, reply) => {
-    const { t: tenantId, e: email, ch } = request.query as {
-      t?: string; e?: string; ch?: string;
+    const { t: tenantId, e: email, ch, sig, exp } = request.query as {
+      t?: string; e?: string; ch?: string; sig?: string; exp?: string;
     };
 
     if (!tenantId || !email) {
@@ -350,6 +360,12 @@ export async function emailRoutes(fastify: FastifyInstance) {
     }
 
     const channel = ch === "phone" ? "phone" : "email";
+    const expNum  = exp !== undefined && exp !== "" ? Number(exp) : undefined;
+
+    if (!sig || !verifyUnsubscribe(tenantId, email, channel, sig, expNum)) {
+      request.log.warn({ tenantId, channel }, "unsubscribe.signature_rejected");
+      return reply.status(403).send("Invalid or expired unsubscribe link");
+    }
 
     await recordOptOut({
       tenantId,

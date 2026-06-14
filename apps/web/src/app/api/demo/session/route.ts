@@ -4,10 +4,13 @@ import { accessCookieHeader, refreshCookieHeader } from "../../auth/_cookies";
 const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
 const IS_PROD = process.env.NODE_ENV === "production";
 
-// Demo tenant credentials — must match the demo seed data
+// Demo tenant credentials — must match the demo seed data.
+// The password is read from a server-side env var so it is never hardcoded in
+// source. The dev fallback matches the local demo seed; override DEMO_USER_PASSWORD
+// in any shared/staging/production environment.
 const DEMO_TENANT_SLUG = "demo";
 const DEMO_USER_EMAIL = "visitor@demo.nexcrm.io";
-const DEMO_USER_PASSWORD = "DemoVisitor@nexcrm1";
+const DEMO_USER_PASSWORD = process.env.DEMO_USER_PASSWORD ?? "DemoVisitor@nexcrm1";
 
 export async function POST() {
   let upstream: Response;

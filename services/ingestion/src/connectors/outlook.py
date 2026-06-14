@@ -17,6 +17,7 @@ normalizer worker converts them to canonical ActivityEvent.
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -145,6 +146,12 @@ class OutlookConnector:
             time.time() + 3 * 24 * 3600, tz=timezone.utc
         ).strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
 
+        # Per-subscription random secret. Graph echoes this back as `clientState`
+        # on every notification; the webhook handler compares it (constant-time)
+        # against the stored value to prove authenticity. NEVER use tenant_id here
+        # — it is not a secret and is trivially guessable/enumerable.
+        client_state_secret = secrets.token_urlsafe(32)
+
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(
@@ -158,7 +165,7 @@ class OutlookConnector:
                         "notificationUrl":    webhook_url,
                         "resource":           resource,
                         "expirationDateTime": expiry,
-                        "clientState":        tenant_id,   # verified in webhook handler
+                        "clientState":        client_state_secret,  # verified in webhook handler
                     },
                 )
             resp.raise_for_status()
@@ -168,9 +175,10 @@ class OutlookConnector:
             return None
 
         meta = {
-            "outlook_subscription_id": sub_data.get("id"),
-            "outlook_resource":        resource,
-            "outlook_sub_expires":     expiry,
+            "outlook_subscription_id":    sub_data.get("id"),
+            "outlook_resource":           resource,
+            "outlook_sub_expires":        expiry,
+            "outlook_client_state_secret": client_state_secret,
         }
         await self.db.execute(
             """

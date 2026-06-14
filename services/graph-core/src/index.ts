@@ -81,6 +81,37 @@ async function bootstrap() {
   // ── Service-token validation ────────────────────────────────────────────
   server.addHook("onRequest", validateServiceToken);
 
+  // ── Tenant-binding (GC1) ─────────────────────────────────────────────────
+  // The service token authenticates the *caller* (the gateway or a trusted
+  // worker), but tenant scoping has historically relied on a `?tenantId=` query
+  // param. For user-facing requests the gateway now mints a short-lived JWT
+  // bound to the verified tenant. When such a token is present we verify it and
+  // require the request's tenantId to match the signed claim — so a forged
+  // tenantId can never cross tenants. Worker calls (no bearer) keep relying on
+  // the service token as the trust boundary.
+  server.addHook("preValidation", async (request, reply) => {
+    const auth = request.headers["authorization"];
+    if (!auth || !auth.startsWith("Bearer ")) return; // worker / no user context
+    try {
+      await request.jwtVerify();
+    } catch {
+      return reply.status(401).send({
+        success: false,
+        error: { code: "UNAUTHORIZED", message: "Invalid internal token" },
+      });
+    }
+    const claimTenant = (request.user as { tenantId?: string } | undefined)?.tenantId;
+    const q = (request.query ?? {}) as Record<string, unknown>;
+    const reqTenant = typeof q.tenantId === "string" ? q.tenantId : undefined;
+    if (claimTenant && reqTenant && claimTenant !== reqTenant) {
+      request.log.warn({ claimTenant, reqTenant }, "graph_core.tenant_mismatch");
+      return reply.status(403).send({
+        success: false,
+        error: { code: "TENANT_MISMATCH", message: "Tenant does not match authenticated context" },
+      });
+    }
+  });
+
   // Health
   server.get("/health", async () => ({
     status: "ok",

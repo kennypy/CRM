@@ -19,7 +19,9 @@ import {
   consumeRefreshToken,
   revokeAllTokens,
   buildJWTPayload,
+  RefreshTokenReuseError,
 } from "../tokens";
+import { denyUserTokens } from "../lib/deny-list";
 import {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -206,7 +208,22 @@ export async function authRoutes(server: FastifyInstance) {
       });
     }
 
-    const userId = await consumeRefreshToken(body.data.refreshToken);
+    let userId: string | null;
+    try {
+      userId = await consumeRefreshToken(body.data.refreshToken);
+    } catch (err) {
+      if (err instanceof RefreshTokenReuseError) {
+        // Replay of a rotated token → treated as theft; the whole family is
+        // already revoked. Also deny-list any access tokens issued so far.
+        await denyUserTokens(err.userId);
+        server.log.warn({ userId: err.userId }, "auth.refresh.reuse_detected");
+        return reply.status(401).send({
+          success: false,
+          error: { code: "TOKEN_REUSE_DETECTED", message: "Token reuse detected. All sessions have been revoked; please log in again." },
+        });
+      }
+      throw err;
+    }
     if (!userId) {
       return reply.status(401).send({
         success: false,
@@ -333,8 +350,10 @@ export async function authRoutes(server: FastifyInstance) {
 
     await pool.query(`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, [newHash, tokenRow.user_id]);
     await pool.query(`UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1`, [tokenRow.id]);
-    // Revoke all existing sessions for security.
+    // Revoke all existing sessions for security: refresh tokens AND any access
+    // tokens already issued (deny-list) so the 15-min JWT cannot outlive the reset.
     await revokeAllTokens(tokenRow.user_id);
+    await denyUserTokens(tokenRow.user_id);
 
     server.log.info({ userId: tokenRow.user_id }, "auth.password_reset");
 
@@ -352,6 +371,9 @@ export async function authRoutes(server: FastifyInstance) {
     async (request, reply) => {
       const jwt = request.user as { sub: string };
       await revokeAllTokens(jwt.sub);
+      // Also invalidate the access token(s) already issued — without this the
+      // 15-min JWT stays usable after logout.
+      await denyUserTokens(jwt.sub);
       server.log.info({ userId: jwt.sub }, "auth.logout");
       return reply.send({ success: true });
     }

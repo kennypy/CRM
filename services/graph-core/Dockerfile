@@ -18,8 +18,10 @@ RUN npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
-COPY --from=builder /app/services/graph-core/dist ./dist
-COPY --from=builder /app/infra ./infra
-COPY --from=deps /app/node_modules ./node_modules
+# Run unprivileged using the "node" user (uid 1000) shipped by node:20-alpine.
+COPY --from=builder --chown=node:node /app/services/graph-core/dist ./dist
+COPY --from=builder --chown=node:node /app/infra ./infra
+COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+USER node
 EXPOSE 4002
 CMD ["node", "dist/index.js"]

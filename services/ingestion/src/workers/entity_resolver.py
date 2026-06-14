@@ -31,6 +31,53 @@ from ..config import settings
 log = logging.getLogger(__name__)
 
 CREATE_THRESHOLD = 0.85  # minimum confidence to auto-create a new node
+# Confidence applied to an unaligned/unverified sender. Deliberately below
+# CREATE_THRESHOLD so such senders are NOT auto-created — they fall through to
+# the review queue instead (M-ING2: senders are spoofable).
+UNALIGNED_CONFIDENCE = 0.5
+
+
+def _sender_is_aligned(activity: dict[str, Any]) -> bool | None:
+    """
+    Determine whether the activity's sender passed email authentication
+    (SPF/DKIM/DMARC alignment).
+
+    Returns:
+      True  — at least one authentication signal is present AND passing, and
+              none are explicitly failing.
+      False — at least one authentication signal is present and explicitly failing.
+      None  — the normalized event carries no authentication signals at all
+              (schema does not surface them yet); the caller must treat this
+              conservatively (do not auto-create).
+
+    Accepts a few common shapes so this stays forward-compatible with whatever
+    the normalizer eventually emits:
+      activity["auth_results"] = {"spf": "pass", "dkim": "pass", "dmarc": "pass"}
+      activity["spf_pass"] / ["dkim_pass"] / ["dmarc_pass"] = bool
+    """
+    flags: list[bool] = []
+
+    auth = activity.get("auth_results")
+    if isinstance(auth, dict):
+        for key in ("spf", "dkim", "dmarc"):
+            val = auth.get(key)
+            if val is None:
+                continue
+            if isinstance(val, bool):
+                flags.append(val)
+            elif isinstance(val, str):
+                flags.append(val.strip().lower() == "pass")
+
+    for key in ("spf_pass", "dkim_pass", "dmarc_pass"):
+        val = activity.get(key)
+        if isinstance(val, bool):
+            flags.append(val)
+
+    if not flags:
+        return None
+    # Aligned only if every present signal passes (a single explicit fail ->
+    # not aligned).
+    return all(flags)
 
 
 class EntityResolver:
@@ -46,19 +93,33 @@ class EntityResolver:
         tenant_id = activity["tenant_id"]
         emails = self._collect_emails(activity)
 
+        # Sender authenticity signal. The sender (from_email) is the only
+        # spoofable-via-header participant whose mere presence we'd otherwise
+        # treat as ground truth, so auto-creation is gated on it being aligned.
+        sender = (activity.get("from_email") or "").lower().strip()
+        sender_aligned = _sender_is_aligned(activity)
+
         resolved: dict[str, dict[str, Any]] = {}
 
         for email in emails:
             if not email or "@" not in email:
                 continue
-            result = await self._resolve_email(tenant_id, email)
+            # Only the sender carries the spoofability concern. For recipient
+            # addresses (to/cc/participants) there is no sender-alignment signal,
+            # so we treat them as aligned for the purposes of this gate.
+            is_sender = email == sender
+            aligned = sender_aligned if is_sender else True
+            result = await self._resolve_email(tenant_id, email, aligned=aligned)
             resolved[email] = result
 
-        # Also resolve the domain to a Company node
+        # Also resolve the domain to a Company node. Gate the sender's domain on
+        # the same alignment signal.
         company_resolutions: dict[str, dict[str, Any]] = {}
+        sender_domain = sender.split("@")[1] if "@" in sender else None
         domains = {e.split("@")[1] for e in emails if "@" in e}
         for domain in domains:
-            result = await self._resolve_domain(tenant_id, domain)
+            aligned = sender_aligned if domain == sender_domain else True
+            result = await self._resolve_domain(tenant_id, domain, aligned=aligned)
             company_resolutions[domain] = result
 
         return {
@@ -71,7 +132,7 @@ class EntityResolver:
     # ── Email → Person node ──────────────────────────────────────────────────
 
     async def _resolve_email(
-        self, tenant_id: str, email: str
+        self, tenant_id: str, email: str, aligned: bool | None = True
     ) -> dict[str, Any]:
         email = email.lower().strip()
 
@@ -90,19 +151,46 @@ class EntityResolver:
             return {"node_id": row["node_id"], "email": email,
                     "is_new": False, "confidence": 1.0, "match_type": "exact_email"}
 
-        # 2. No match — create a new Person node stub
+        # 2. No match — decide whether to auto-create a new Person node stub.
         # We create it with low confidence fields; the LLM extraction worker
         # will enrich name/title/role from the email content.
-        if await self._should_create(email):
-            node_id = await self._create_person_stub(tenant_id, email)
-            return {"node_id": node_id, "email": email,
-                    "is_new": True, "confidence": CREATE_THRESHOLD, "match_type": "created"}
+        if not await self._should_create(email):
+            return {"node_id": None, "email": email,
+                    "is_new": False, "confidence": 0.0, "match_type": "no_match"}
 
-        return {"node_id": None, "email": email,
-                "is_new": False, "confidence": 0.0, "match_type": "no_match"}
+        # M-ING2: senders are spoofable. Only auto-create when the sender is
+        # cryptographically aligned (SPF/DKIM/DMARC pass). If alignment is
+        # unknown (flags absent from the event) or failing, lower confidence
+        # below CREATE_THRESHOLD and route to the review queue instead.
+        if aligned is not True:
+            log.info(
+                "entity_resolver.person_unaligned email=%s aligned=%s -> review",
+                email, aligned,
+            )
+            await self._enqueue_review(
+                tenant_id, kind="person", identifier=email,
+                reason="sender_not_aligned" if aligned is False else "no_auth_signal",
+            )
+            return {"node_id": None, "email": email, "is_new": False,
+                    "confidence": UNALIGNED_CONFIDENCE, "match_type": "review_unaligned"}
+
+        # Per-tenant rate limit on auto-creation (defence-in-depth against a
+        # flood of spoofed-but-aligned-looking senders).
+        if not await self._within_create_limit(tenant_id):
+            log.warning("entity_resolver.create_rate_limited tenant=%s email=%s",
+                        tenant_id, email)
+            await self._enqueue_review(
+                tenant_id, kind="person", identifier=email, reason="rate_limited",
+            )
+            return {"node_id": None, "email": email, "is_new": False,
+                    "confidence": UNALIGNED_CONFIDENCE, "match_type": "review_rate_limited"}
+
+        node_id = await self._create_person_stub(tenant_id, email)
+        return {"node_id": node_id, "email": email,
+                "is_new": True, "confidence": CREATE_THRESHOLD, "match_type": "created"}
 
     async def _resolve_domain(
-        self, tenant_id: str, domain: str
+        self, tenant_id: str, domain: str, aligned: bool | None = True
     ) -> dict[str, Any]:
         row = await self.db.fetchrow(
             """SELECT node_id FROM company_domain_index
@@ -115,14 +203,36 @@ class EntityResolver:
             return {"node_id": row["node_id"], "domain": domain,
                     "is_new": False, "confidence": 0.95, "match_type": "exact_domain"}
 
-        # Create company stub if it looks like a real business domain
-        if not _is_free_email_provider(domain):
-            node_id = await self._create_company_stub(tenant_id, domain)
-            return {"node_id": node_id, "domain": domain,
-                    "is_new": True, "confidence": CREATE_THRESHOLD, "match_type": "created"}
+        # Only consider real business domains for creation.
+        if _is_free_email_provider(domain):
+            return {"node_id": None, "domain": domain,
+                    "is_new": False, "confidence": 0.0, "match_type": "free_provider"}
 
-        return {"node_id": None, "domain": domain,
-                "is_new": False, "confidence": 0.0, "match_type": "free_provider"}
+        # M-ING2: gate auto-creation of the sender's company on sender alignment.
+        if aligned is not True:
+            log.info(
+                "entity_resolver.company_unaligned domain=%s aligned=%s -> review",
+                domain, aligned,
+            )
+            await self._enqueue_review(
+                tenant_id, kind="company", identifier=domain,
+                reason="sender_not_aligned" if aligned is False else "no_auth_signal",
+            )
+            return {"node_id": None, "domain": domain, "is_new": False,
+                    "confidence": UNALIGNED_CONFIDENCE, "match_type": "review_unaligned"}
+
+        if not await self._within_create_limit(tenant_id):
+            log.warning("entity_resolver.create_rate_limited tenant=%s domain=%s",
+                        tenant_id, domain)
+            await self._enqueue_review(
+                tenant_id, kind="company", identifier=domain, reason="rate_limited",
+            )
+            return {"node_id": None, "domain": domain, "is_new": False,
+                    "confidence": UNALIGNED_CONFIDENCE, "match_type": "review_rate_limited"}
+
+        node_id = await self._create_company_stub(tenant_id, domain)
+        return {"node_id": node_id, "domain": domain,
+                "is_new": True, "confidence": CREATE_THRESHOLD, "match_type": "created"}
 
     # ── Graph node creation ──────────────────────────────────────────────────
 
@@ -207,6 +317,61 @@ class EntityResolver:
                 if e:
                     emails.add(e.lower())
         return list(emails)
+
+    async def _within_create_limit(self, tenant_id: str) -> bool:
+        """
+        Per-tenant rolling-window rate limit on node auto-creation.
+
+        Uses a Redis counter keyed per tenant + time bucket. Fails OPEN if Redis
+        is unavailable so a Redis outage never silently blocks legitimate
+        ingestion (the alignment gate remains the primary control).
+        """
+        limit = settings.ENTITY_AUTO_CREATE_LIMIT
+        window = settings.ENTITY_AUTO_CREATE_WINDOW_SECONDS
+        if limit <= 0:
+            return True
+        try:
+            bucket = int(datetime.now(timezone.utc).timestamp()) // window
+            key = f"nexcrm:entity-create-rate:{tenant_id}:{bucket}"
+            count = await self.redis.incr(key)
+            if count == 1:
+                await self.redis.expire(key, window)
+            return count <= limit
+        except Exception as e:
+            log.warning("entity_resolver.rate_limit_check_failed tenant=%s error=%s",
+                        tenant_id, e)
+            return True
+
+    async def _enqueue_review(
+        self, tenant_id: str, kind: str, identifier: str, reason: str
+    ) -> None:
+        """
+        Route a candidate that was NOT auto-created into the human review queue
+        instead of silently dropping it. Best-effort: failures are logged, never
+        raised, so resolution of the rest of the activity proceeds.
+        """
+        extraction_id = f"entity-create:{kind}:{identifier}"
+        summary = f"Proposed new {kind} '{identifier}' held for review ({reason})"
+        proposed = {
+            "operation": "create_node",
+            "kind": kind,
+            "identifier": identifier,
+            "reason": reason,
+        }
+        try:
+            await self.db.execute(
+                """
+                INSERT INTO review_queue
+                    (tenant_id, extraction_id, status, confidence, summary,
+                     proposed_changes, evidence)
+                VALUES ($1, $2, 'pending', $3, $4, $5::jsonb, $6)
+                """,
+                tenant_id, extraction_id, UNALIGNED_CONFIDENCE, summary,
+                json.dumps(proposed), f"auto_create_blocked:{reason}",
+            )
+        except Exception as e:
+            log.warning("entity_resolver.review_enqueue_failed kind=%s id=%s error=%s",
+                        kind, identifier, e)
 
     async def _should_create(self, email: str) -> bool:
         """Don't create nodes for no-reply, automated, or free-email addresses."""

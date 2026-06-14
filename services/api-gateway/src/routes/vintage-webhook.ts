@@ -162,6 +162,27 @@ export async function vintageWebhookRoutes(fastify: FastifyInstance) {
 
       const signatureValid = verifyVintageSignature(bytes, signature, secret);
 
+      // Replay protection (M-VINT): Vintage signs only the raw body and does not
+      // retry, so an identical (body, signature) pair re-POSTed is a replay. If
+      // we have already successfully processed this exact body, ack idempotently
+      // instead of re-applying it (the un-deduped ticket.user_reopened transition
+      // could otherwise be replayed to flip CLOSED→NEW repeatedly). The orphan
+      // sweeper replays stored bodies via routeEvent() directly, bypassing this
+      // HTTP-layer check, so legitimate healing is unaffected.
+      if (signatureValid) {
+        const dup = await pool.query<{ id: string }>(
+          `SELECT id FROM support_webhook_deliveries
+            WHERE source = $1 AND body_digest = $2 AND signature_valid = TRUE
+              AND status_code = 200
+            LIMIT 1`,
+          [VINTAGE_SOURCE, bodyDigest],
+        );
+        if (dup.rowCount && dup.rowCount > 0) {
+          fastify.log.info({ bodyDigest }, "vintage.webhook.replay_ignored");
+          return reply.status(200).send({ ok: true, duplicate: true });
+        }
+      }
+
       if (!signatureValid) {
         fastify.log.warn({ bodyDigest, sigLen: signature.length }, "vintage.webhook.invalid_signature");
         await logDelivery({
