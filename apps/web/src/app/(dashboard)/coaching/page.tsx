@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewGate } from "@/components/layout/preview-gate";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/permissions";
@@ -208,6 +209,14 @@ function ProgressBar({ value, target, color }: { value: number; target: number; 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CoachingPage() {
+  return (
+    <PreviewGate title="Coaching">
+      <CoachingPageInner />
+    </PreviewGate>
+  );
+}
+
+function CoachingPageInner() {
   const permissions = usePermissions();
   const [activeTab, setActiveTab] = useState<TabKey>("alerts");
   const [expandedAlert, setExpandedAlert] = useState<number | null>(null);

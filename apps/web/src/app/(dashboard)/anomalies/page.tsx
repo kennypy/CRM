@@ -93,19 +93,19 @@ export default function AnomaliesPage() {
       ]);
       if (aRes.ok) {
         const json = await aRes.json();
-        setAlerts(json.data?.length ? json.data : DEMO_ALERTS);
+        setAlerts(json.data ?? []);
       } else {
-        setAlerts(DEMO_ALERTS);
+        setAlerts([]);
       }
       if (sRes.ok) {
         const sJson = await sRes.json();
-        setSummary(sJson.data?.open_count != null ? sJson.data : { open_count: 5, critical_count: 1, high_count: 1, medium_count: 2, low_count: 1 });
+        setSummary(sJson.data ?? { open_count: 0, critical_count: 0, high_count: 0, medium_count: 0, low_count: 0 });
       } else {
-        setSummary({ open_count: 5, critical_count: 1, high_count: 1, medium_count: 2, low_count: 1 });
+        setSummary({ open_count: 0, critical_count: 0, high_count: 0, medium_count: 0, low_count: 0 });
       }
     } catch {
-      setAlerts(DEMO_ALERTS);
-      setSummary({ open_count: 5, critical_count: 1, high_count: 1, medium_count: 2, low_count: 1 });
+      setAlerts([]);
+      setSummary({ open_count: 0, critical_count: 0, high_count: 0, medium_count: 0, low_count: 0 });
     } finally {
       setLoading(false);
     }

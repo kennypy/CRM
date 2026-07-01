@@ -109,19 +109,19 @@ export default function ForecastingPage() {
       ]);
       if (fRes.ok) {
         const fJson = await fRes.json();
-        setForecasts(fJson.data?.length ? fJson.data : DEMO_FORECASTS);
+        setForecasts(fJson.data ?? []);
       } else {
-        setForecasts(DEMO_FORECASTS);
+        setForecasts([]);
       }
       if (sRes.ok) {
         const sJson = await sRes.json();
-        setSummary(sJson.data?.totalDeals ? sJson.data : DEMO_SUMMARY);
+        setSummary(sJson.data ?? null);
       } else {
-        setSummary(DEMO_SUMMARY);
+        setSummary(null);
       }
     } catch {
-      setForecasts(DEMO_FORECASTS);
-      setSummary(DEMO_SUMMARY);
+      setForecasts([]);
+      setSummary(null);
     } finally {
       setLoading(false);
     }

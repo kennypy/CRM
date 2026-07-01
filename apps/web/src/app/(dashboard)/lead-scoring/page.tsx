@@ -134,11 +134,11 @@ export default function LeadScoringPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const data = json.data ?? [];
-      setScores(data.length > 0 ? data : DEMO_SCORES);
-      setTotal((json.pagination?.total ?? data.length) || DEMO_SCORES.length);
+      setScores(data);
+      setTotal(json.pagination?.total ?? data.length);
     } catch {
-      setScores(DEMO_SCORES);
-      setTotal(DEMO_SCORES.length);
+      setScores([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }

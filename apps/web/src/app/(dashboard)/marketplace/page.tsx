@@ -167,12 +167,12 @@ export default function MarketplacePage() {
       const res = await api.get(`${endpoint}${params}`);
       if (res.ok) {
         const json = await res.json();
-        setApps(json.data?.length ? json.data : (tab === "browse" ? DEMO_APPS : []));
+        setApps(json.data ?? []);
       } else {
-        setApps(tab === "browse" ? DEMO_APPS : []);
+        setApps([]);
       }
     } catch {
-      setApps(tab === "browse" ? DEMO_APPS : []);
+      setApps([]);
     } finally {
       setLoading(false);
     }

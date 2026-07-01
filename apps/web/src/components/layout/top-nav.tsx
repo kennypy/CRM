@@ -18,6 +18,7 @@ import { clearAuth, getStoredUser } from "@/lib/auth";
 import { useCommandBarStore } from "@/stores/command-bar-store";
 import { usePermissions } from "@/lib/permissions";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
+import { isRouteEnabled } from "@/lib/feature-flags";
 import type { StoredUser } from "@/lib/auth";
 
 const PRIMARY_NAV = [
@@ -49,7 +50,7 @@ const MORE_NAV = [
   { href: "/anomalies",    icon: ShieldAlert,   labelKey: "anomalies"     },
   { href: "/marketplace",  icon: Store,         labelKey: "marketplace"   },
   { href: "/admin",        icon: Cog,           labelKey: "admin"         },
-];
+].filter((item) => isRouteEnabled(item.href));
 
 interface Notification {
   id: string; type: string; title: string; body: string; time: string; read: boolean;

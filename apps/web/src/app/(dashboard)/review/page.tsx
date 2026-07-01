@@ -231,26 +231,14 @@ export default function ReviewQueuePage() {
       const json = await res.json();
 
       const decisions = loadDecisions();
-      let items: ReviewItem[] = (json.data ?? []).map((item: ReviewItem) =>
+      const items: ReviewItem[] = (json.data ?? []).map((item: ReviewItem) =>
         decisions[item.id] ? { ...item, status: decisions[item.id] as ReviewStatus } : item
       );
-
-      // If API returns nothing, show demo items so the queue is usable
-      if (items.length === 0) {
-        items = DEMO_ITEMS.map((item) =>
-          decisions[item.id] ? { ...item, status: decisions[item.id] as ReviewStatus } : item
-        );
-      }
 
       setAllItems(items);
     } catch (e: any) {
-      // API failed — show demo items with localStorage decisions applied
-      const decisions = loadDecisions();
-      const items = DEMO_ITEMS.map((item) =>
-        decisions[item.id] ? { ...item, status: decisions[item.id] as ReviewStatus } : item
-      );
-      setAllItems(items);
-      setError("Could not reach the server — showing local data. Decisions will sync when reconnected.");
+      setAllItems([]);
+      setError("Could not reach the server. Please retry.");
     } finally {
       setLoading(false);
     }

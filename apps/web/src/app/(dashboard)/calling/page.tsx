@@ -18,6 +18,7 @@
  * - Contact info sidebar
  */
 
+import { PreviewGate } from "@/components/layout/preview-gate";
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -261,6 +262,14 @@ const DTMF_KEYS = [
 /* ------------------------------------------------------------------ */
 
 export default function CallingPage() {
+  return (
+    <PreviewGate title="Calling">
+      <CallingPageInner />
+    </PreviewGate>
+  );
+}
+
+function CallingPageInner() {
   const t = useTranslations("calling");
   const tenant = useTenant();
 

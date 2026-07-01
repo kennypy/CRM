@@ -340,8 +340,8 @@ export default function TerritoriesPage() {
   const currency = tenant?.defaultCurrency ?? "USD";
   const locale = tenant?.locale ?? "en-US";
 
-  const [territories, setTerritories] = useState<Territory[]>(DEMO_TERRITORIES);
-  const [rules, setRules] = useState<AssignmentRule[]>(DEMO_RULES);
+  const [territories, setTerritories] = useState<Territory[]>([]);
+  const [rules, setRules] = useState<AssignmentRule[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [searchQuery, setSearchQuery] = useState("");

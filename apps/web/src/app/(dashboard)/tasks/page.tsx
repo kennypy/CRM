@@ -269,9 +269,9 @@ export default function TasksPage() {
           linkedEntity: t.linkedEntity ?? (t.linked_entity_id ? { type: t.linked_entity_type, id: t.linked_entity_id, name: t.linked_entity_name ?? "" } : undefined),
           createdAt:    t.createdAt ?? t.created_at,
         }));
-        setTasks(data.length ? data : DEMO_TASKS);
+        setTasks(data);
       })
-      .catch(() => setTasks(DEMO_TASKS))
+      .catch(() => setTasks([]))
       .finally(() => setLoading(false));
   }, []);
 

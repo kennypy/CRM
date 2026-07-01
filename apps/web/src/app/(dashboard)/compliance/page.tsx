@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewGate } from "@/components/layout/preview-gate";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -1489,6 +1490,14 @@ const TABS: { id: Tab; label: string; icon: typeof Shield }[] = [
 ];
 
 export default function CompliancePage() {
+  return (
+    <PreviewGate title="Compliance">
+      <CompliancePageInner />
+    </PreviewGate>
+  );
+}
+
+function CompliancePageInner() {
   const t = useTranslations("compliance");
   const [activeTab, setActiveTab] = useState<Tab>("soc2");
   const { isAdmin } = usePermissions();

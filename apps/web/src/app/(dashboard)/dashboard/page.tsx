@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { previewEnabled } from "@/lib/feature-flags";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
 import { api } from "@/lib/api";
@@ -425,16 +426,18 @@ export default function DashboardPage() {
   const fetchedRef = useRef(false);
   const perms = usePermissions();
 
-  // Auto-detect persona from role
-  const defaultPersona: Persona = perms.isSuperAdmin || perms.isAdmin ? "admin" : perms.isManager ? "manager" : "rep";
-  const [persona, setPersona] = useState<Persona>(defaultPersona);
-
-  // Available personas based on role
-  const availablePersonas: Persona[] = perms.isSuperAdmin || perms.isAdmin
+  // The rep dashboard is backed by real data. The manager/exec/admin persona
+  // dashboards still render illustrative/hardcoded figures, so they are gated
+  // behind preview mode — otherwise a manager or admin in a pilot tenant would
+  // land on fabricated numbers. Real admin tooling lives at /admin.
+  const rolePersonas: Persona[] = perms.isSuperAdmin || perms.isAdmin
     ? ["rep", "manager", "exec", "admin"]
     : perms.isManager
     ? ["rep", "manager", "exec"]
     : ["rep"];
+  const availablePersonas: Persona[] = previewEnabled() ? rolePersonas : ["rep"];
+  const defaultPersona: Persona = availablePersonas[0];
+  const [persona, setPersona] = useState<Persona>(defaultPersona);
 
   const [userName, setUserName] = useState("");
   useEffect(() => {

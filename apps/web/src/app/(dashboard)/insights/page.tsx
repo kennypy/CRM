@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewGate } from "@/components/layout/preview-gate";
 import { useState, useMemo, useCallback } from "react";
 import { api } from "@/lib/api";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -1159,6 +1160,14 @@ function AIInsightsPanel() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function InsightsPage() {
+  return (
+    <PreviewGate title="Insights">
+      <InsightsPageInner />
+    </PreviewGate>
+  );
+}
+
+function InsightsPageInner() {
   const t = useTranslations("insights");
   const { tenant } = useTenant();
   const permissions = usePermissions();
