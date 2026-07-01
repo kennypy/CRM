@@ -270,6 +270,38 @@ services:
     depends_on: [postgres, redis]
     profiles: [full-stack]
 
+  # AI-engine background consumers (LLM extraction, Zoom meeting summaries).
+  ai-worker:
+    build: { context: ., dockerfile: services/ai-engine/Dockerfile }
+    container_name: nexcrm-ai-worker
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "src.worker"]
+    depends_on: [postgres, redis]
+    profiles: [full-stack]
+
+  # Ingestion HTTP surface (Gmail/Outlook/GCal webhooks + OAuth callbacks).
+  ingestion:
+    build: { context: ., dockerfile: services/ingestion/Dockerfile }
+    container_name: nexcrm-ingestion
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:5002:5002"
+    depends_on: [postgres, redis]
+    profiles: [full-stack]
+
+  # Ingestion pipeline consumers (normalizer, resolver, persisters, crm-writer).
+  # This is the process that actually turns captured signals into CRM records.
+  ingestion-worker:
+    build: { context: ., dockerfile: services/ingestion/Dockerfile }
+    container_name: nexcrm-ingestion-worker
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "src.worker"]
+    depends_on: [postgres, redis]
+    profiles: [full-stack]
+
   web:
     build: { context: ., dockerfile: apps/web/Dockerfile }
     container_name: nexcrm-web

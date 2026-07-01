@@ -38,7 +38,10 @@ log = structlog.get_logger()
 async def lifespan(app: FastAPI):
     setup_telemetry(app)
     log.info("ingestion_service.starting", version="0.1.0")
-    # Workers are started via Celery separately; this service handles HTTP
+    # This process serves the HTTP webhook/OAuth endpoints only. The async
+    # pipeline consumers (normalizer, resolver, persisters, crm-writer) run in a
+    # separate `ingestion-worker` process — see src/worker.py and the
+    # ingestion-worker service in docker-compose.yml.
     yield
     log.info("ingestion_service.stopping")
 

@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://nexcrm:nexcrm_dev@localhost:5432/nexcrm"
     API_GATEWAY_URL: str = "http://localhost:4000"
     AI_ENGINE_URL: str = "http://localhost:5001"
+    GRAPH_CORE_URL: str = "http://localhost:4002"
 
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""

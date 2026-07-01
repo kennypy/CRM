@@ -23,6 +23,7 @@ import redis.asyncio as aioredis
 
 from ..config import settings
 from ..models import RawSignalEvent
+from ..connectors.gmail import GmailConnector
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -90,7 +91,7 @@ async def _resolve_owner(email_address: str | None) -> dict | None:
     try:
         row = await db.fetchrow(
             """
-            SELECT tenant_id, user_id
+            SELECT tenant_id, user_id, metadata->>'gmail_history_id' AS gmail_history_id
             FROM oauth_tokens
             WHERE provider = 'google'
               AND lower(metadata->>'gmail_email_address') = lower($1)
@@ -103,7 +104,11 @@ async def _resolve_owner(email_address: str | None) -> dict | None:
 
     if not row:
         return None
-    return {"tenant_id": str(row["tenant_id"]), "user_id": str(row["user_id"])}
+    return {
+        "tenant_id": str(row["tenant_id"]),
+        "user_id": str(row["user_id"]),
+        "gmail_history_id": row["gmail_history_id"],
+    }
 
 
 @router.post("/push")
@@ -136,23 +141,45 @@ async def gmail_push_notification(request: Request):
             log.warning("gmail.unresolved_mailbox", email=email_address)
             return {"status": "ignored", "reason": "unknown_mailbox"}
 
+        # The push notification carries only {emailAddress, historyId} — NOT the
+        # message itself. Pull the actual new messages via the Gmail history API,
+        # starting from the last history id we synced (falling back to the push's
+        # id on first notification), then publish one raw signal per real message
+        # so the normalizer receives a full Gmail payload (id/internalDate/payload).
+        start_history_id = owner.get("gmail_history_id") or str(history_id)
+        db = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=2)
+        try:
+            connector = GmailConnector(
+                db_pool=db,
+                google_client_id=settings.GOOGLE_CLIENT_ID,
+                google_client_secret=settings.GOOGLE_CLIENT_SECRET,
+                pubsub_topic="",
+            )
+            messages = await connector.fetch_new_messages(
+                owner["tenant_id"], owner["user_id"], start_history_id
+            )
+        finally:
+            await db.close()
+
         redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        try:
+            for message in messages:
+                raw_event = RawSignalEvent(
+                    tenant_id=owner["tenant_id"],
+                    user_id=owner["user_id"],
+                    source="gmail",
+                    source_event_id=str(message.get("id", history_id)),
+                    raw_payload=message,
+                )
+                await redis.xadd(
+                    settings.STREAM_RAW_SIGNALS,
+                    {"data": raw_event.model_dump_json()},
+                )
+        finally:
+            await redis.aclose()
 
-        raw_event = RawSignalEvent(
-            tenant_id=owner["tenant_id"],
-            user_id=owner["user_id"],
-            source="gmail",
-            source_event_id=str(history_id),
-            raw_payload=data,
-        )
-
-        await redis.xadd(
-            settings.STREAM_RAW_SIGNALS,
-            {"data": raw_event.model_dump_json()},
-        )
-        await redis.aclose()
-
-        return {"status": "ok"}
+        log.info("gmail.push_processed", email=email_address, messages=len(messages))
+        return {"status": "ok", "messages": len(messages)}
 
     except HTTPException:
         raise
