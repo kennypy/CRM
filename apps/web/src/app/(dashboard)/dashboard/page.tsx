@@ -300,9 +300,9 @@ async function fetchDashboardData(): Promise<DashboardData> {
 
 // ── KPI Cards ─────────────────────────────────────────────────────────────────
 
-function KpiCard({ label, value, sub, icon: Icon, color, href }: {
+function KpiCard({ label, value, sub, icon: Icon, color, href, delta }: {
   label: string; value: string; sub?: string;
-  icon: React.FC<{ className?: string }>; color: string; href?: string;
+  icon: React.FC<{ className?: string }>; color: string; href?: string; delta?: number;
 }) {
   const inner = (
     <div className={cn("rounded-xl border bg-card p-5 transition-shadow", href && "hover:shadow-md cursor-pointer")}>
@@ -310,6 +310,11 @@ function KpiCard({ label, value, sub, icon: Icon, color, href }: {
         <div>
           <p className="text-sm text-muted-foreground">{label}</p>
           <p className="mt-1 text-2xl font-bold">{value}</p>
+          {typeof delta === "number" && (
+            <p className={cn("text-xs mt-0.5", delta >= 0 ? "text-green-600" : "text-red-600")}>
+              {delta >= 0 ? "+" : ""}{delta}%
+            </p>
+          )}
           {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
         </div>
         <div className={cn("rounded-lg p-2.5", color)}>
@@ -804,7 +809,7 @@ function RepDashboard({ currency, locale }: { currency: string; locale: string }
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Coverage Ratio</span>
-              <span className={cn("font-bold", 2.8 >= 3 ? "text-green-600" : "text-yellow-600")}>2.8x</span>
+              <span className={cn("font-bold", "text-yellow-600")}>2.8x</span>
             </div>
           </div>
         </div>
@@ -1100,7 +1105,7 @@ function AdminDashboard() {
 
       {/* Render persona-specific dashboard */}
       {persona === "rep" && <RepDashboard currency={currency} locale={locale} />}
-      {persona === "manager" && <ManagerDashboard currency={currency} locale={locale} />}
+      {persona === "manager" && <ExecDashboard currency={currency} locale={locale} />}
       {persona === "exec" && <ExecDashboard currency={currency} locale={locale} />}
       {persona === "admin" && <AdminDashboard />}
     </div>

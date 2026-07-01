@@ -26,8 +26,9 @@ export function CustomFieldsForm({ entityType, values, onChange, columns = 2 }: 
 
   useEffect(() => {
     api.get(`/api/v1/custom-fields?entityType=${entityType}`)
-      .then((res) => {
-        setFields(res.data ?? []);
+      .then((res) => res.ok ? res.json() : { data: [] })
+      .then((json) => {
+        setFields(json.data ?? []);
         setLoaded(true);
       })
       .catch(() => setLoaded(true));

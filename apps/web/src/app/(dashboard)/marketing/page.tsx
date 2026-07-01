@@ -115,7 +115,7 @@ export default function MarketingPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const fetchCampaigns = useCallback(async (p = page, q = search, status = statusFilter) => {
     setLoading(true);
@@ -218,7 +218,7 @@ export default function MarketingPage() {
           <button onClick={() => fetchCampaigns()} className="rounded-lg border p-2 hover:bg-muted">
             <RefreshCw className="h-4 w-4" />
           </button>
-          <ColumnPicker columns={COL_DEFS} visible={visible} onToggle={toggle} />
+          <ColumnPicker defs={COL_DEFS} visible={visible} toggle={toggle} />
           {canWrite && (
             <button
               onClick={() => setShowCreate(true)}

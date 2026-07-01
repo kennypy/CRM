@@ -26,7 +26,9 @@ export function ForecastPanel() {
     setError("");
     try {
       const res = await api.get("/api/v1/ai/forecast?period=quarter");
-      setForecast(res.data);
+      if (!res.ok) throw new Error(`Failed to load forecast (${res.status})`);
+      const json = await res.json();
+      setForecast(json.data);
     } catch (e: any) {
       setError(e.message ?? "Failed to load forecast");
     }

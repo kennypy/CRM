@@ -25,6 +25,8 @@ interface Subscription {
 interface ReportRow {
   id: string;
   name: string;
+  /** Aliased from r.name in the join query (SELECT r.name AS report_name). */
+  report_name: string;
   spec: Record<string, unknown>;
   tenant_id: string;
 }

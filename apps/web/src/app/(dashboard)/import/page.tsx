@@ -45,7 +45,7 @@ export default function ImportPage() {
   };
 
   useEffect(() => {
-    api.get("/api/v1/import").then((res) => setJobs(res.data ?? [])).catch(() => {});
+    api.get("/api/v1/import").then((res) => res.ok ? res.json() : { data: [] }).then((json) => setJobs(json.data ?? [])).catch(() => {});
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,14 +86,16 @@ export default function ImportPage() {
       setMapping(autoMap);
 
       try {
-        const res = await api.post("/api/v1/import/upload", {
+        const uploadRes = await api.post("/api/v1/import/upload", {
           entity_type: entityType,
           file_name: file.name,
           file_format: format,
           total_rows: totalRows,
           columns: cols,
         });
-        setJobId(res.data.id);
+        if (!uploadRes.ok) throw new Error(`Upload failed (${uploadRes.status})`);
+        const uploadJson = await uploadRes.json();
+        setJobId(uploadJson.data.id);
         setStep("mapping");
       } catch (err: any) {
         setError(err.message ?? "Upload failed");
@@ -118,8 +120,10 @@ export default function ImportPage() {
     const interval = setInterval(async () => {
       try {
         const res = await api.get(`/api/v1/import/${jobId}`);
-        setJob(res.data);
-        if (["completed", "failed", "cancelled"].includes(res.data.status)) {
+        if (!res.ok) return;
+        const json = await res.json();
+        setJob(json.data);
+        if (["completed", "failed", "cancelled"].includes(json.data.status)) {
           clearInterval(interval);
           setStep("done");
         }

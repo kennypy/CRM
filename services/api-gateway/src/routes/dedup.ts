@@ -8,7 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
-import { requireManager } from "../middleware/auth";
+import { requireManager } from "../middleware/rbac";
 import { denyApiKeys } from "../middleware/scope";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";

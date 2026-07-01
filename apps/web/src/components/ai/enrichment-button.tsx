@@ -18,11 +18,13 @@ export function EnrichmentButton({ entityType, entityId, onEnriched }: Enrichmen
     setLoading(true);
     try {
       const res = await api.post(`/api/v1/ai/enrich/${entityType}/${entityId}`, {});
+      if (!res.ok) throw new Error(`Enrichment failed (${res.status})`);
+      const json = await res.json();
       setResult({
-        fields: res.data?.enrichedFields ?? [],
-        confidence: res.data?.confidence ?? 0,
+        fields: json.data?.enrichedFields ?? [],
+        confidence: json.data?.confidence ?? 0,
       });
-      onEnriched?.(res.data?.enrichedFields ?? []);
+      onEnriched?.(json.data?.enrichedFields ?? []);
     } catch (e: any) {
       alert(`Enrichment failed: ${e.message}`);
     }

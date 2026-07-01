@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { lookupApiKey } from "../routes/api-keys";
+import { isTokenDenied } from "../lib/deny-list";
 
 // Public paths that don't require authentication
 const PUBLIC_PATHS = new Set([
@@ -53,6 +54,20 @@ export async function authMiddleware(
     return reply.status(401).send({
       success: false,
       error: { code: "UNAUTHORIZED", message: "Valid authentication required" },
+    });
+  }
+
+  // ── Access-token deny-list (M-AUTH7) ────────────────────────────────────────
+  // Reject tokens issued before the user logged out / reset their password /
+  // had a token-reuse revocation, even though the JWT is still within its
+  // 15-minute validity window. Without this the data plane would honour a
+  // stolen token until natural expiry.
+  const claims = request.user as { sub?: string; iat?: number } | undefined;
+  if (claims?.sub && (await isTokenDenied(claims.sub, claims.iat))) {
+    request.log.warn({ userId: claims.sub }, "auth.token_denied");
+    return reply.status(401).send({
+      success: false,
+      error: { code: "TOKEN_REVOKED", message: "Session has been revoked. Please log in again." },
     });
   }
 }

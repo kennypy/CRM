@@ -135,7 +135,7 @@ export default function ForecastingPage() {
     finally { setComputing(false); }
   };
 
-  const fmt = (v: number) => formatCurrency(v, currency, locale);
+  const fmt = (v: number) => formatCurrency(v, currency, false, locale);
 
   return (
     <div className="flex h-full flex-col gap-4">

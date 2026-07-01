@@ -65,7 +65,7 @@ nexcrm/
 │   ├── graph-client/           # Graph query client library
 │   └── ui-components/          # Shared React components (Tailwind + CVA)
 ├── infra/
-│   ├── db/                     # DB init scripts + migrations (27 migrations)
+│   ├── db/                     # DB init scripts + migrations (36 migrations)
 │   ├── otel/                   # OpenTelemetry collector config
 │   ├── grafana/                # Grafana dashboards + provisioning
 │   ├── prometheus/             # Prometheus scrape config
@@ -142,7 +142,7 @@ Services will be available at:
 | Mobile | Flutter (Dart) | Cross-platform iOS + Android from single codebase |
 | Styling | Tailwind CSS + CVA | Fast, accessible, composable utility-first components |
 | API Gateway | Fastify | 2–3× faster than Express, schema-first |
-| Graph DB | PostgreSQL 16 + Apache AGE | SQL + Cypher on one engine; pgvector for embeddings |
+| Graph DB | PostgreSQL 16 + Apache AGE | SQL + Cypher on one engine (fully wired); pgvector extension + embedding schema scaffolded, semantic search not yet populated |
 | Cache/Streams | Redis 7 | Streams for event bus, sorted sets for scoring |
 | File Storage | S3-compatible (MinIO dev, S3 prod) | Standard, portable |
 | Search | Typesense | Fast, typo-tolerant, self-hostable |
@@ -159,7 +159,7 @@ Services will be available at:
 ### Completed
 - [x] Project scaffold + monorepo (Turborepo, Docker Compose, OTel)
 - [x] Graph schema + migrations (core schema, entity-resolution indexes, Reality Score table, Stripe billing columns)
-- [x] Auth service (JWT access/refresh tokens, Google OAuth2 PKCE, RBAC middleware)
+- [x] Auth service (JWT access/refresh tokens with rotation + reuse detection + access-token deny-list; Google OAuth2 with CSRF `state` + confidential client; RBAC middleware)
 - [x] Core CRM entities — Contacts, Companies, Deals, Activities (REST CRUD + web UI)
 - [x] Leads and Tasks pages (added scope)
 - [x] Email ingestion — Gmail connector (full), Outlook connector (basic)

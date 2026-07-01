@@ -1561,7 +1561,8 @@ function CustomFieldsTab() {
     setLoading(true);
     try {
       const res = await api.get(`/api/v1/custom-fields?entityType=${entityType}`);
-      setFields(res.data ?? []);
+      const json = res.ok ? await res.json() : { data: [] };
+      setFields(json.data ?? []);
     } catch { setFields([]); }
     setLoading(false);
   };
@@ -1666,7 +1667,8 @@ function CustomObjectsTab() {
     setLoading(true);
     try {
       const res = await api.get("/api/v1/custom-objects");
-      setObjects(res.data ?? []);
+      const json = res.ok ? await res.json() : { data: [] };
+      setObjects(json.data ?? []);
     } catch { setObjects([]); }
     setLoading(false);
   };
@@ -1792,7 +1794,8 @@ function PermissionsTab() {
     setLoading(true);
     try {
       const res = await api.get(`/api/v1/permissions/fields?entityType=${entityType}`);
-      setPerms(res.data ?? []);
+      const json = res.ok ? await res.json() : { data: [] };
+      setPerms(json.data ?? []);
     } catch { setPerms([]); }
     setLoading(false);
   };
@@ -1801,7 +1804,8 @@ function PermissionsTab() {
     setLoading(true);
     try {
       const res = await api.get("/api/v1/permissions/defaults");
-      setDefaults(res.data ?? []);
+      const json = res.ok ? await res.json() : { data: [] };
+      setDefaults(json.data ?? []);
     } catch { setDefaults([]); }
     setLoading(false);
   };

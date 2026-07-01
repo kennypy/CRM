@@ -263,7 +263,6 @@ const DTMF_KEYS = [
 export default function CallingPage() {
   const t = useTranslations("calling");
   const tenant = useTenant();
-  const { can } = usePermissions();
 
   /* ---- queue state ---- */
   const [queue, setQueue] = useState<Contact[]>(DEMO_CONTACTS);

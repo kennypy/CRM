@@ -101,14 +101,31 @@ async function bootstrap() {
       });
     }
     const claimTenant = (request.user as { tenantId?: string } | undefined)?.tenantId;
+    // A user-context token MUST carry a tenant claim; otherwise there is no
+    // trustworthy tenant to bind to and we must not fall back to the client param.
+    if (!claimTenant) {
+      request.log.warn("graph_core.missing_tenant_claim");
+      return reply.status(403).send({
+        success: false,
+        error: { code: "TENANT_REQUIRED", message: "Internal token missing tenant claim" },
+      });
+    }
     const q = (request.query ?? {}) as Record<string, unknown>;
     const reqTenant = typeof q.tenantId === "string" ? q.tenantId : undefined;
-    if (claimTenant && reqTenant && claimTenant !== reqTenant) {
+    if (reqTenant && reqTenant !== claimTenant) {
       request.log.warn({ claimTenant, reqTenant }, "graph_core.tenant_mismatch");
       return reply.status(403).send({
         success: false,
         error: { code: "TENANT_MISMATCH", message: "Tenant does not match authenticated context" },
       });
+    }
+    // Bind the effective tenant to the signed claim. Overriding (rather than only
+    // comparing) means a handler that reads tenantId from the query/header can
+    // never be pointed at a foreign tenant, even via a second/aliased param.
+    q.tenantId = claimTenant;
+    (request as any).query = q;
+    if (request.headers["x-tenant-id"] && request.headers["x-tenant-id"] !== claimTenant) {
+      request.headers["x-tenant-id"] = claimTenant;
     }
   });
 

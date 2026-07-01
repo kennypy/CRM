@@ -336,8 +336,7 @@ function conditionLabel(c: RuleCondition): string {
 
 export default function TerritoriesPage() {
   const t = useTranslations("territories");
-  const tenant = useTenant();
-  const { can } = usePermissions();
+  const { tenant } = useTenant();
   const currency = tenant?.defaultCurrency ?? "USD";
   const locale = tenant?.locale ?? "en-US";
 
@@ -406,11 +405,13 @@ export default function TerritoriesPage() {
     setLoading(true);
     try {
       const [terr, rls] = await Promise.all([
-        api.get("/territories"),
-        api.get("/territories/rules"),
+        api.get("/api/v1/territories"),
+        api.get("/api/v1/territories/rules"),
       ]);
-      if (terr?.data) setTerritories(terr.data);
-      if (rls?.data) setRules(rls.data);
+      const terrJson = terr.ok ? await terr.json() : null;
+      const rlsJson = rls.ok ? await rls.json() : null;
+      if (terrJson?.data) setTerritories(terrJson.data);
+      if (rlsJson?.data) setRules(rlsJson.data);
     } catch {
       // keep demo data on error
     } finally {
@@ -433,9 +434,10 @@ export default function TerritoriesPage() {
       quota: number;
     }) => {
       try {
-        const res = await api.post("/territories", data);
-        if (res?.data) {
-          setTerritories((prev) => [...prev, res.data]);
+        const res = await api.post("/api/v1/territories", data);
+        const json = res.ok ? await res.json() : null;
+        if (json?.data) {
+          setTerritories((prev) => [...prev, json.data]);
         }
       } catch {
         // fallback: add locally
@@ -533,17 +535,17 @@ export default function TerritoriesPage() {
         <SummaryCard
           icon={<BarChart3 className="h-4 w-4 text-blue-600" />}
           label="Total Pipeline"
-          value={formatCurrency(aggregateStats.totalPipeline, currency, locale)}
+          value={formatCurrency(aggregateStats.totalPipeline, currency, false, locale)}
         />
         <SummaryCard
           icon={<Target className="h-4 w-4 text-green-600" />}
           label="Total Revenue"
-          value={formatCurrency(aggregateStats.totalRevenue, currency, locale)}
+          value={formatCurrency(aggregateStats.totalRevenue, currency, false, locale)}
         />
         <SummaryCard
           icon={<Globe className="h-4 w-4 text-purple-600" />}
           label="Total Quota"
-          value={formatCurrency(aggregateStats.totalQuota, currency, locale)}
+          value={formatCurrency(aggregateStats.totalQuota, currency, false, locale)}
         />
         <SummaryCard
           icon={<Target className="h-4 w-4 text-amber-600" />}
@@ -695,6 +697,7 @@ export default function TerritoriesPage() {
                       .flatMap((sr) => sr.territories)
                       .reduce((s, t) => s + t.pipelineValue, 0),
                     currency,
+                    false,
                     locale
                   )}{" "}
                   pipeline
@@ -746,7 +749,7 @@ export default function TerritoriesPage() {
                                 </div>
                                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                   <span>{t.accountCount} accounts</span>
-                                  <span>{formatCurrency(t.pipelineValue, currency, locale)}</span>
+                                  <span>{formatCurrency(t.pipelineValue, currency, false, locale)}</span>
                                   <span className={attainmentColor(t.attainment)}>
                                     {t.attainment}% attainment
                                   </span>
@@ -953,8 +956,8 @@ function TerritoryCard({
 
       {/* Performance Metrics */}
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <MetricCell label="Pipeline" value={formatCurrency(t.pipelineValue, currency, locale)} />
-        <MetricCell label="Revenue" value={formatCurrency(t.revenue, currency, locale)} />
+        <MetricCell label="Pipeline" value={formatCurrency(t.pipelineValue, currency, false, locale)} />
+        <MetricCell label="Revenue" value={formatCurrency(t.revenue, currency, false, locale)} />
         <MetricCell label="Win Rate" value={`${t.winRate}%`} />
         <MetricCell label="Coverage" value={`${t.accountCoverage}%`} />
       </div>
@@ -963,7 +966,7 @@ function TerritoryCard({
       <div className="mt-4 border-t pt-3">
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            Quota: {formatCurrency(t.quota, currency, locale)}
+            Quota: {formatCurrency(t.quota, currency, false, locale)}
           </span>
           <span className={cn("font-bold", attainmentColor(t.attainment))}>
             {t.attainment}% attainment

@@ -41,9 +41,11 @@ export default function CustomObjectRecordsPage() {
         api.get(`/api/v1/custom-objects/${objectKey}/records?page=${meta.page}&limit=${meta.limit}`),
         api.get(`/api/v1/custom-fields?entityType=custom_object`),
       ]);
-      setRecords(recRes.data ?? []);
-      setMeta(recRes.meta ?? meta);
-      setFields(fieldRes.data ?? []);
+      const recJson = recRes.ok ? await recRes.json() : { data: [], meta };
+      const fieldJson = fieldRes.ok ? await fieldRes.json() : { data: [] };
+      setRecords(recJson.data ?? []);
+      setMeta(recJson.meta ?? meta);
+      setFields(fieldJson.data ?? []);
     } catch {}
     setLoading(false);
   };
