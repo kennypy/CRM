@@ -56,7 +56,7 @@ async def scan(tenant_id: str = Query(..., alias="tenantId")):
             WITH deal_ids AS (
               SELECT DISTINCT entity_id, MIN(created_at) AS created_at
               FROM crm_events
-              WHERE tenant_id = $1 AND event_type = 'deal.created'
+              WHERE tenant_id = $1::uuid AND event_type = 'deal.created'
               GROUP BY entity_id
             ),
             latest_stage AS (
@@ -65,13 +65,13 @@ async def scan(tenant_id: str = Query(..., alias="tenantId")):
                      payload->>'name'  AS name,
                      (payload->>'value')::numeric AS value
               FROM crm_events
-              WHERE tenant_id = $1 AND event_type = 'deal.stage_changed'
+              WHERE tenant_id = $1::uuid AND event_type = 'deal.stage_changed'
               ORDER BY entity_id, created_at DESC
             ),
             last_touch AS (
               SELECT entity_id, MAX(created_at) AS last_activity_at, COUNT(*) AS event_count
               FROM crm_events
-              WHERE tenant_id = $1 AND entity_type = 'deal'
+              WHERE tenant_id = $1::uuid AND entity_type = 'deal'
               GROUP BY entity_id
             )
             SELECT d.entity_id,
@@ -98,7 +98,7 @@ async def scan(tenant_id: str = Query(..., alias="tenantId")):
 
             if not has_activity and float(d["age_days"] or 0) >= GHOST_DAYS:
                 created += await _upsert_alert(
-                    conn, tenant_id, "deal", d["entity_id"], "ghost_deal",
+                    conn, tenant_id, "deal", str(d["entity_id"]), "ghost_deal",
                     severity="high",
                     title=f"Ghost deal: {d['name']}",
                     description=(
@@ -112,7 +112,7 @@ async def scan(tenant_id: str = Query(..., alias="tenantId")):
                 )
             elif days >= STALLED_DAYS:
                 created += await _upsert_alert(
-                    conn, tenant_id, "deal", d["entity_id"], "stalled_deal",
+                    conn, tenant_id, "deal", str(d["entity_id"]), "stalled_deal",
                     severity=_severity_for_days(days, warn=STALLED_DAYS, high=30, critical=45),
                     title=f"Stalled deal: {d['name']}",
                     description=(
@@ -132,7 +132,7 @@ async def scan(tenant_id: str = Query(..., alias="tenantId")):
                    MAX(created_at) AS last_activity_at,
                    EXTRACT(EPOCH FROM (NOW() - MAX(created_at))) / 86400.0 AS days_dark
             FROM crm_events
-            WHERE tenant_id = $1 AND entity_type = 'company'
+            WHERE tenant_id = $1::uuid AND entity_type = 'company'
             GROUP BY entity_id
             HAVING MAX(created_at) < NOW() - ($2 || ' days')::interval
             """,
@@ -141,7 +141,7 @@ async def scan(tenant_id: str = Query(..., alias="tenantId")):
         for a in accounts:
             days = float(a["days_dark"] or 0)
             created += await _upsert_alert(
-                conn, tenant_id, "company", a["entity_id"], "at_risk_account",
+                conn, tenant_id, "company", str(a["entity_id"]), "at_risk_account",
                 severity=_severity_for_days(days, warn=DARK_DAYS, high=60, critical=90),
                 title="Account has gone dark",
                 description=f"No engagement with this account for {int(days)} days.",
@@ -159,7 +159,7 @@ async def _upsert_alert(
     entity. Returns 1 if a new row was created, else 0."""
     exists = await conn.fetchval(
         """SELECT 1 FROM anomaly_alerts
-           WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+           WHERE tenant_id = $1::uuid AND entity_type = $2 AND entity_id = $3
              AND alert_type = $4 AND status = 'open'
            LIMIT 1""",
         tenant_id, entity_type, entity_id, alert_type,
@@ -169,7 +169,7 @@ async def _upsert_alert(
     await conn.execute(
         """INSERT INTO anomaly_alerts
              (tenant_id, entity_type, entity_id, alert_type, severity, title, description, evidence)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)""",
+           VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::jsonb)""",
         tenant_id, entity_type, entity_id, alert_type, severity, title, description,
         json.dumps(evidence),
     )

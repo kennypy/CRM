@@ -94,7 +94,7 @@ async def start_activity_persister(pool: asyncpg.Pool):
         await pool.execute(
             """INSERT INTO crm_events
                  (tenant_id, event_type, source, actor_id, entity_type, entity_id, payload, metadata)
-               VALUES ($1, $2, $3, NULL, $4, $5, $6, $7)""",
+               VALUES ($1::uuid, $2, $3, NULL, $4, $5::uuid, $6::jsonb, $7::jsonb)""",
             activity["tenant_id"],
             f"activity.{activity.get('activity_type', 'event')}",
             activity.get("source", "ingestion"),
@@ -121,7 +121,7 @@ async def start_review_persister(pool: asyncpg.Pool):
         await pool.execute(
             """INSERT INTO review_queue
                  (tenant_id, extraction_id, confidence, summary, proposed_changes, evidence)
-               VALUES ($1, $2, $3, $4, $5::jsonb, $6)""",
+               VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6)""",
             item["tenant_id"],
             item["extraction_id"],
             float(item.get("confidence", 0.0)),
@@ -181,7 +181,7 @@ async def start_crm_writer(pool: asyncpg.Pool):
             await pool.execute(
                 """INSERT INTO crm_events
                      (tenant_id, event_type, source, actor_id, entity_type, entity_id, payload, metadata)
-                   VALUES ($1, 'entity.created', 'ingestion', NULL, $2, $3, $4, '{}'::jsonb)""",
+                   VALUES ($1::uuid, 'entity.created', 'ingestion', NULL, $2, $3::uuid, $4::jsonb, '{}'::jsonb)""",
                 tenant_id,
                 _ENTITY_TYPE.get(op.get("label"), "contact"),
                 entity_id,
@@ -194,7 +194,7 @@ async def start_crm_writer(pool: asyncpg.Pool):
             await pool.execute(
                 """INSERT INTO crm_events
                      (tenant_id, event_type, source, actor_id, entity_type, entity_id, payload, metadata)
-                   VALUES ($1, 'signal.extracted', $2, NULL, 'activity', $3, $4, $5)""",
+                   VALUES ($1::uuid, 'signal.extracted', $2, NULL, 'activity', $3::uuid, $4::jsonb, $5::jsonb)""",
                 op["tenant_id"],
                 op.get("source", "extraction"),
                 op.get("activity_id"),
