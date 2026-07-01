@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, Building2, GitMerge, BarChart3, ArrowLeft } from "lucide-react";
+import { Shield, Building2, GitMerge, BarChart3, ArrowLeft, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ADMIN_NAV = [
   { href: "/admin", icon: Shield, label: "Overview" },
   { href: "/admin/workspaces", icon: Building2, label: "Workspaces" },
   { href: "/admin/merges", icon: GitMerge, label: "Merges" },
+  { href: "/admin/dedup", icon: Copy, label: "Dedup" },
   { href: "/admin/reports", icon: BarChart3, label: "Reports" },
 ];
 

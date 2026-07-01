@@ -69,10 +69,16 @@ async def scan(tenant_id: str = Query(..., alias="tenantId")):
               ORDER BY entity_id, created_at DESC
             ),
             last_touch AS (
-              SELECT entity_id, MAX(created_at) AS last_activity_at, COUNT(*) AS event_count
-              FROM crm_events
-              WHERE tenant_id = $1::uuid AND entity_type = 'deal'
-              GROUP BY entity_id
+              -- Any event on the deal entity counts as activity (deal.created,
+              -- deal.stage_changed, and any activity linked to the deal), not just
+              -- rows tagged entity_type='deal'.
+              SELECT e.entity_id,
+                     MAX(e.created_at) AS last_activity_at,
+                     COUNT(*) AS event_count
+              FROM crm_events e
+              JOIN deal_ids d ON d.entity_id = e.entity_id
+              WHERE e.tenant_id = $1::uuid
+              GROUP BY e.entity_id
             )
             SELECT d.entity_id,
                    d.created_at,

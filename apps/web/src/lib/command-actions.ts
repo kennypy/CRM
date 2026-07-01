@@ -24,7 +24,23 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
 
-export async function executeCommandAction(data: ActionData): Promise<ActionResult> {
+// The NL model may nest the payload under `params`/`fields`/`data`, or put the
+// action name under `intent`/`type`. Flatten defensively so the executor reads
+// a consistent shape regardless of how the model structured its output.
+function normalize(raw: ActionData): ActionData {
+  const nested =
+    (raw.params as ActionData) ??
+    (raw.fields as ActionData) ??
+    (raw.data as ActionData) ??
+    {};
+  const merged = { ...nested, ...raw };
+  merged.action =
+    str(raw.action) ?? str(raw.intent) ?? str(raw.type) ?? str(merged.action);
+  return merged;
+}
+
+export async function executeCommandAction(rawData: ActionData): Promise<ActionResult> {
+  const data = normalize(rawData);
   const action = data.action;
 
   try {
