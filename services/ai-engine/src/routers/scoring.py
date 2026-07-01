@@ -308,7 +308,34 @@ async def calculate_lead_score(contact_id: str, tenant_id: str):
         pass
 
     activity_pts = min(50, int(cnt) * 5)
-    recency_pts, _ = _recency_score(last_at)
-    score = min(100, round(activity_pts + recency_pts * 0.5))
+    recency_pts, recency_label = _recency_score(last_at)
+    recency_contribution = round(recency_pts * 0.5)
+    score = min(100, round(activity_pts + recency_contribution))
     tier = "hot" if score >= 70 else "warm" if score >= 30 else "cold"
-    return {"contact_id": contact_id, "score": score, "tier": tier, "factors": []}
+
+    # Explainable factor breakdown (previously returned as []). This is a
+    # transparent heuristic — recent engagement volume + recency — not an opaque
+    # ML model; the contributions below always sum to the score.
+    factors = [
+        {
+            "factor": "engagement_volume",
+            "label": "Engagement volume",
+            "points": activity_pts,
+            "weight_pct": 50,
+            "detail": f"{int(cnt)} activities in the last 90 days (5 pts each, capped at 50)",
+        },
+        {
+            "factor": "recency",
+            "label": "Recency of last touch",
+            "points": recency_contribution,
+            "weight_pct": 50,
+            "detail": f"Last activity: {recency_label}",
+        },
+    ]
+    return {
+        "contact_id": contact_id,
+        "score": score,
+        "tier": tier,
+        "method": "heuristic_v1",
+        "factors": factors,
+    }
