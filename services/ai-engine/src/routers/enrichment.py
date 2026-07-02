@@ -6,13 +6,10 @@ Uses company domain/website to look up public data and AI to infer additional fi
 import os
 import httpx
 import structlog
-from uuid import UUID
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
-from typing import Optional
 
 from ..db import get_pool
-from ..config import settings
 
 log = structlog.get_logger()
 router = APIRouter()

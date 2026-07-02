@@ -27,9 +27,8 @@ sentry_sdk.init(
     traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
     enabled=bool(os.getenv("SENTRY_DSN")),
 )
-from .routers import gmail, outlook, gcal, health
-from .workers.normalizer import start_normalizer_workers
-from .telemetry import setup_telemetry
+from .routers import gmail, outlook, gcal, health  # noqa: E402
+from .telemetry import setup_telemetry  # noqa: E402
 
 log = structlog.get_logger()
 

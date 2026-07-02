@@ -19,12 +19,18 @@ FAILED=0
 echo "=== Bundle Size Check ==="
 echo ""
 
-# Check total size of shared JS chunks (framework + commons)
-SHARED_SIZE=$(find "$BUILD_DIR/static/chunks" -name "*.js" -type f 2>/dev/null | \
+# Check total size of the shared runtime — the chunks loaded on EVERY route
+# (framework, main, main-app, webpack runtime, polyfills). We deliberately do
+# NOT sum every file under static/chunks: the numbered chunks there are per-route
+# and async code-split bundles, so counting them would conflate lazy-loaded page
+# code with the shared baseline (and grow unbounded with each new route).
+SHARED_SIZE=$(find "$BUILD_DIR/static/chunks" -maxdepth 1 -type f \
+  \( -name "framework-*.js" -o -name "main-*.js" -o -name "main-app-*.js" \
+     -o -name "webpack-*.js" -o -name "polyfills-*.js" \) 2>/dev/null | \
   xargs -I{} sh -c 'gzip -c "{}" | wc -c' | \
   awk '{s+=$1} END {print s+0}')
 
-echo "Shared JS (gzipped): $(( SHARED_SIZE / 1024 )) KB / $(( MAX_SHARED_JS / 1024 )) KB budget"
+echo "Shared runtime JS (gzipped): $(( SHARED_SIZE / 1024 )) KB / $(( MAX_SHARED_JS / 1024 )) KB budget"
 
 if [ "$SHARED_SIZE" -gt "$MAX_SHARED_JS" ]; then
   echo "  FAIL: Shared JS exceeds budget by $(( (SHARED_SIZE - MAX_SHARED_JS) / 1024 )) KB"

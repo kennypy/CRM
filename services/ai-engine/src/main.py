@@ -17,7 +17,6 @@ import structlog
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 
 from .config import settings
 
@@ -27,10 +26,9 @@ sentry_sdk.init(
     traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
     enabled=bool(os.getenv("SENTRY_DSN")),
 )
-from .routers import extraction, scoring, nl_command, health, enrichment, forecasting, anomalies
-from .workers.extraction_worker import start_extraction_worker
-from .telemetry import setup_telemetry
-from .db import get_pool, close_pool
+from .routers import extraction, scoring, nl_command, health, enrichment, forecasting, anomalies  # noqa: E402
+from .telemetry import setup_telemetry  # noqa: E402
+from .db import get_pool, close_pool  # noqa: E402
 
 log = structlog.get_logger()
 

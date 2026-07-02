@@ -10,7 +10,6 @@ import asyncio
 import httpx
 import structlog
 import redis.asyncio as aioredis
-from datetime import datetime
 
 from ..db import get_pool
 
