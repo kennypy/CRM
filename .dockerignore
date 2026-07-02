@@ -1,0 +1,9 @@
+# Keep `COPY . .` in the service Dockerfiles clean and reproducible.
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+.git
+.docker-data
+**/*.log
+coverage

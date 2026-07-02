@@ -100,5 +100,5 @@ CREATE INDEX IF NOT EXISTS idx_col_linked ON custom_object_links(linked_entity_t
 
 -- ── Add custom_fields JSONB to relational entity tables ─────────────────────────
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAULT '{}';
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAULT '{}';
+-- tasks.custom_fields moved to 020 (the tasks table is created there, not before this migration)
 -- Note: contacts/companies/deals are AGE graph nodes — custom_fields stored as node properties

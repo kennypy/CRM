@@ -1,25 +1,28 @@
-FROM node:22-alpine AS builder
+FROM node:20-alpine AS base
 WORKDIR /app
+RUN apk add --no-cache libc6-compat
 
-COPY package*.json ./
-COPY services/outreach/package*.json ./services/outreach/
-COPY packages/shared-types/package*.json ./packages/shared-types/
-RUN npm ci --workspace=@nexcrm/outreach --workspace=@nexcrm/shared-types
+# Full workspace install so hoisted deps resolve as in the monorepo dev env.
+FROM base AS deps
+COPY . .
+RUN npm install
 
-COPY packages/shared-types ./packages/shared-types
-COPY services/outreach ./services/outreach
-RUN npm run build --workspace=@nexcrm/outreach
+FROM base AS builder
+COPY --from=deps /app ./
+WORKDIR /app/services/outreach
+RUN npm run build
 
-# ── Runtime ───────────────────────────────────────────────────────────────────
-FROM node:22-alpine
-WORKDIR /app
+FROM base AS runner
 ENV NODE_ENV=production
-
-# Run unprivileged using the "node" user (uid 1000) shipped by node:22-alpine.
 COPY --from=builder --chown=node:node /app/services/outreach/dist ./dist
-COPY --from=builder --chown=node:node /app/services/outreach/package*.json ./
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
-
+COPY --from=builder --chown=node:node /app/services/outreach/package.json ./package.json
+RUN if [ -d dist/packages/shared-types/src ]; then \
+      rm -rf node_modules/@nexcrm/shared-types && \
+      cp -r dist/packages/shared-types/src node_modules/@nexcrm/shared-types && \
+      printf '{"name":"@nexcrm/shared-types","main":"index.js"}' > node_modules/@nexcrm/shared-types/package.json && \
+      chown -R node:node node_modules/@nexcrm; \
+    fi
 USER node
 EXPOSE 4003
 CMD ["node", "dist/index.js"]
