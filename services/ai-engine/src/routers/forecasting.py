@@ -7,12 +7,9 @@ import os
 import json
 import httpx
 import structlog
-from datetime import datetime, timedelta
 from fastapi import APIRouter, Query
-from typing import Optional
 
 from ..db import get_pool
-from ..config import settings
 
 log = structlog.get_logger()
 router = APIRouter()

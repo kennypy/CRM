@@ -12,7 +12,6 @@ Flow:
 """
 
 import hmac
-import json
 import structlog
 from fastapi import APIRouter, Request, Response, BackgroundTasks
 import redis.asyncio as aioredis
@@ -76,7 +75,6 @@ async def gcal_notifications(request: Request, background_tasks: BackgroundTasks
     """
     resource_state  = request.headers.get("X-Goog-Resource-State", "")
     channel_id      = request.headers.get("X-Goog-Channel-ID", "")
-    resource_id     = request.headers.get("X-Goog-Resource-ID", "")
     channel_token   = request.headers.get("X-Goog-Channel-Token", "")
 
     # Sync message — calendar is ready; no events to fetch yet

@@ -10,7 +10,7 @@ from typing import AsyncIterator
 
 import anthropic
 import structlog
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
