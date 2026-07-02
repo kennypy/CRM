@@ -17,6 +17,20 @@ const nextConfig: NextConfig = {
 
   async headers() {
     const isProd = process.env.NODE_ENV === "production";
+    // Whether the deployment is actually served over HTTPS. Controls the two
+    // transport-forcing headers (HSTS + CSP upgrade-insecure-requests). These
+    // break plain-HTTP LAN/self-hosted deploys: the browser upgrades every
+    // request to https:// on a port with no TLS listener, so login (and every
+    // API fetch) silently fails. `headers()` is evaluated at BUILD time, so this
+    // reads the COOKIE_SECURE build arg — mirror it to the runtime env too.
+    // COOKIE_SECURE=false → HTTP deploy (drop these); =true → HTTPS; unset →
+    // fall back to isProd (same default as the Secure-cookie gate).
+    const httpsEnforced =
+      process.env.COOKIE_SECURE === "false"
+        ? false
+        : process.env.COOKIE_SECURE === "true"
+          ? true
+          : isProd;
     return [
       {
         source: "/(.*)",
@@ -34,8 +48,8 @@ const nextConfig: NextConfig = {
           },
           // Disable DNS prefetching
           { key: "X-DNS-Prefetch-Control", value: "off" },
-          // HSTS — only over HTTPS in production
-          ...(isProd
+          // HSTS — only when actually served over HTTPS
+          ...(httpsEnforced
             ? [
                 {
                   key: "Strict-Transport-Security",
@@ -62,7 +76,7 @@ const nextConfig: NextConfig = {
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
-              ...(isProd ? ["upgrade-insecure-requests"] : []),
+              ...(httpsEnforced ? ["upgrade-insecure-requests"] : []),
             ].join("; "),
           },
         ],
