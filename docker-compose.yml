@@ -324,6 +324,16 @@ services:
     container_name: nexcrm-web
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Server-side base URLs the Next route handlers use to reach the backend
+      # over the compose network (service names, not localhost).
+      AUTH_SERVICE_URL: "http://auth:4001"
+      API_GATEWAY_URL: "http://api-gateway:4000"
+      APP_URL: "${APP_URL:-http://localhost:3000}"
+      # Self-hosted deploys are typically served over plain HTTP on a LAN, where
+      # browsers drop `Secure` cookies and login silently fails. Default to off;
+      # set COOKIE_SECURE=true when serving over HTTPS.
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
     ports:
       - "3000:3000"
     depends_on: [api-gateway]
