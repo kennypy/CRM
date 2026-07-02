@@ -32,3 +32,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_date
 
 CREATE TRIGGER tasks_updated_at BEFORE UPDATE ON tasks
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- custom_fields (moved here from 014: the tasks table must exist first)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAULT '{}';

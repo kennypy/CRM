@@ -2,24 +2,31 @@ FROM node:20-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
 
+# Full workspace install so hoisted deps (e.g. ioredis, otel, fastify plugins)
+# resolve exactly as they do in the monorepo dev env. Per-workspace installs
+# miss deps that services rely on via hoisting.
 FROM base AS deps
-COPY package*.json ./
-COPY services/auth/package*.json ./services/auth/
-COPY packages/shared-types/package*.json ./packages/shared-types/
-RUN npm ci --workspace=@nexcrm/auth --workspace=@nexcrm/shared-types
+COPY . .
+RUN npm install
 
 FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
-COPY packages/shared-types ./packages/shared-types
-COPY services/auth ./services/auth
+COPY --from=deps /app ./
 WORKDIR /app/services/auth
 RUN npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
-# Run unprivileged using the "node" user (uid 1000) shipped by node:20-alpine.
 COPY --from=builder --chown=node:node /app/services/auth/dist ./dist
-COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/services/auth/package.json ./package.json
+# @nexcrm/shared-types' package "main" points at .ts (unloadable at runtime).
+# Replace the workspace symlink with the compiled JS emitted alongside dist.
+RUN if [ -d dist/packages/shared-types/src ]; then \
+      rm -rf node_modules/@nexcrm/shared-types && \
+      cp -r dist/packages/shared-types/src node_modules/@nexcrm/shared-types && \
+      printf '{"name":"@nexcrm/shared-types","main":"index.js"}' > node_modules/@nexcrm/shared-types/package.json && \
+      chown -R node:node node_modules/@nexcrm; \
+    fi
 USER node
 EXPOSE 4001
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/services/auth/src/index.js"]

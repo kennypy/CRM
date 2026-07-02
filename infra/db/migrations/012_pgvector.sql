@@ -4,62 +4,75 @@
 -- retrieval in the AI Engine. Embeddings (1536-dim, voyage-3 compatible) are
 -- stored on the graph entity tables alongside their AGE node IDs.
 --
--- The apache/age:release_PG16_1.6.0 Docker image used in this project ships
--- pgvector; in production (CloudSQL/RDS) enable the extension manually first.
+-- pgvector is OPTIONAL: not every Postgres image ships it (the apache/age image
+-- used for local/pilot does not). This migration therefore guards the whole
+-- embedding schema behind an availability check — it is created in full when
+-- pgvector is present (prod: CloudSQL/RDS/self-hosted with the extension), and
+-- cleanly skipped otherwise. Semantic search is scaffold-only today, so skipping
+-- has no runtime impact.
 
--- ── Extension ─────────────────────────────────────────────────────────────────
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- ── Embeddings table (tenant-scoped, entity-generic) ─────────────────────────
--- Keeps embeddings out of the entity tables themselves so that:
---   a) the graph-core AGE queries aren't slowed by large VECTOR columns
---   b) embeddings can be re-generated without touching entity rows
---   c) a single index covers all entity types
-CREATE TABLE IF NOT EXISTS entity_embeddings (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  entity_type TEXT NOT NULL,                        -- 'contact' | 'company' | 'deal' | 'activity'
-  entity_id   UUID NOT NULL,
-  model       TEXT NOT NULL DEFAULT 'voyage-3',     -- embedding model used
-  embedding   VECTOR(1536) NOT NULL,
-  input_text  TEXT,                                  -- the text that was embedded (for audit/regen)
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-  UNIQUE (tenant_id, entity_type, entity_id, model)
-);
-
--- HNSW index for approximate nearest-neighbour search (cosine distance)
--- ef_construction=64, m=16 are good starting values for <1M vectors
-CREATE INDEX IF NOT EXISTS idx_entity_embeddings_hnsw
-  ON entity_embeddings
-  USING hnsw (embedding vector_cosine_ops)
-  WITH (m = 16, ef_construction = 64);
-
-CREATE INDEX IF NOT EXISTS idx_entity_embeddings_tenant_type
-  ON entity_embeddings (tenant_id, entity_type);
-
--- ── Review queue embeddings ───────────────────────────────────────────────────
--- Stores embeddings for review queue items so similar past decisions can be
--- surfaced to the rep during manual review (RAG-style context).
-ALTER TABLE review_queue
-  ADD COLUMN IF NOT EXISTS embedding VECTOR(1536);
-
-CREATE INDEX IF NOT EXISTS idx_review_queue_embedding
-  ON review_queue
-  USING hnsw (embedding vector_cosine_ops)
-  WITH (m = 16, ef_construction = 64)
-  WHERE embedding IS NOT NULL;
-
--- ── Helper: update embedding updated_at on upsert ────────────────────────────
-CREATE OR REPLACE FUNCTION set_embedding_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DO $mig$
 BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$;
+  IF NOT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
+    RAISE NOTICE 'pgvector not available — skipping embedding schema (012)';
+    RETURN;
+  END IF;
 
-CREATE TRIGGER trg_entity_embeddings_updated_at
-  BEFORE UPDATE ON entity_embeddings
-  FOR EACH ROW EXECUTE FUNCTION set_embedding_updated_at();
+  CREATE EXTENSION IF NOT EXISTS vector;
+
+  -- Vector-typed DDL is run via EXECUTE so it is only parsed when the extension
+  -- is present (the VECTOR type / hnsw operators do not exist otherwise).
+  EXECUTE $ddl$
+    CREATE TABLE IF NOT EXISTS entity_embeddings (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      entity_type TEXT NOT NULL,
+      entity_id   UUID NOT NULL,
+      model       TEXT NOT NULL DEFAULT 'voyage-3',
+      embedding   VECTOR(1536) NOT NULL,
+      input_text  TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (tenant_id, entity_type, entity_id, model)
+    )
+  $ddl$;
+
+  EXECUTE $ddl$
+    CREATE INDEX IF NOT EXISTS idx_entity_embeddings_hnsw
+      ON entity_embeddings USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 64)
+  $ddl$;
+
+  EXECUTE $ddl$
+    CREATE INDEX IF NOT EXISTS idx_entity_embeddings_tenant_type
+      ON entity_embeddings (tenant_id, entity_type)
+  $ddl$;
+
+  EXECUTE $ddl$
+    ALTER TABLE review_queue ADD COLUMN IF NOT EXISTS embedding VECTOR(1536)
+  $ddl$;
+
+  EXECUTE $ddl$
+    CREATE INDEX IF NOT EXISTS idx_review_queue_embedding
+      ON review_queue USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 64)
+      WHERE embedding IS NOT NULL
+  $ddl$;
+
+  CREATE OR REPLACE FUNCTION set_embedding_updated_at()
+  RETURNS TRIGGER LANGUAGE plpgsql AS $fn$
+  BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+  END;
+  $fn$;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_entity_embeddings_updated_at') THEN
+    EXECUTE $ddl$
+      CREATE TRIGGER trg_entity_embeddings_updated_at
+        BEFORE UPDATE ON entity_embeddings
+        FOR EACH ROW EXECUTE FUNCTION set_embedding_updated_at()
+    $ddl$;
+  END IF;
+END
+$mig$;

@@ -1,5 +1,3 @@
-version: "3.9"
-
 # NexCRM — Local development infrastructure stack
 # Starts all dependencies; services run via `npm run dev`
 #
@@ -7,6 +5,13 @@ version: "3.9"
 #   npm run docker:up       — start all infra
 #   npm run docker:down     — stop all infra
 #   docker compose logs -f  — tail logs
+
+# Containerised services must reach Postgres/Redis by their compose service
+# names (the .env defaults point at localhost for native `npm run dev`). This
+# anchor is merged into each app service's environment to override those.
+x-db-redis: &db-redis
+  DATABASE_URL: "postgresql://nexcrm:${POSTGRES_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
+  REDIS_URL: "redis://:${REDIS_PASSWORD:-nexcrm_redis_dev_password}@redis:6379"
 
 services:
   # ── PostgreSQL 16 with Apache AGE (graph) + pgvector ──────────────────────
@@ -213,6 +218,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      <<: *db-redis
       AUTH_SERVICE_URL: http://auth:4001
       GRAPH_CORE_URL: http://graph-core:4002
       OUTREACH_URL: http://outreach:4003
@@ -228,6 +234,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      <<: *db-redis
       AUTH_PORT: "4001"
     ports:
       - "127.0.0.1:4001:4001"
@@ -240,6 +247,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      <<: *db-redis
       GRAPH_CORE_PORT: "4002"
     ports:
       - "127.0.0.1:4002:4002"
@@ -252,6 +260,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      <<: *db-redis
       OUTREACH_PORT: "4003"
       # Internal: only API gateway should reach this service
       API_GATEWAY_URL: http://api-gateway:4000
@@ -265,6 +274,8 @@ services:
     container_name: nexcrm-ai-engine
     restart: unless-stopped
     env_file: .env
+    environment:
+      <<: *db-redis
     ports:
       - "127.0.0.1:5001:5001"
     depends_on: [postgres, redis]
@@ -276,6 +287,8 @@ services:
     container_name: nexcrm-ai-worker
     restart: unless-stopped
     env_file: .env
+    environment:
+      <<: *db-redis
     command: ["python", "-m", "src.worker"]
     depends_on: [postgres, redis]
     profiles: [full-stack]
@@ -286,6 +299,8 @@ services:
     container_name: nexcrm-ingestion
     restart: unless-stopped
     env_file: .env
+    environment:
+      <<: *db-redis
     ports:
       - "127.0.0.1:5002:5002"
     depends_on: [postgres, redis]
@@ -298,6 +313,8 @@ services:
     container_name: nexcrm-ingestion-worker
     restart: unless-stopped
     env_file: .env
+    environment:
+      <<: *db-redis
     command: ["python", "-m", "src.worker"]
     depends_on: [postgres, redis]
     profiles: [full-stack]
