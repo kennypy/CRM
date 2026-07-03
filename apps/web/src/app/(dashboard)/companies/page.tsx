@@ -7,7 +7,6 @@ import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { AddCompanyModal } from "@/components/modals/add-company-modal";
-import { ActionBar } from "@/components/action-bar/action-bar";
 import { EditCompanyModal } from "@/components/modals/edit-company-modal";
 import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
@@ -167,7 +166,6 @@ export default function CompaniesPage() {
               {total.toLocaleString()}
             </span>
           )}
-          <ActionBar context="companies" />
         </div>
         <div className="flex gap-2">
           <ColumnPicker defs={COL_DEFS} visible={visible} toggle={toggle} />

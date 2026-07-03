@@ -22,7 +22,8 @@ const CreateContactSchema = z.object({
   title:     z.string().max(200).optional(),
   phone:     z.string().max(30).optional(),
   seniority: z.enum(SeniorityValues).optional(),
-  companyId: z.string().uuid().optional(),
+  companyId: z.string().uuid().nullable().optional(),
+  ownerId:   z.string().uuid().nullable().optional(),
   isLead:    z.boolean().optional(),
   source:    z.string().max(50).optional(),
   customFields: z.record(z.unknown()).optional(),
@@ -48,6 +49,7 @@ const FETCH_ONE = `
     email: p.email, title: p.title, phone: p.phone,
     seniority: p.seniority, influence_score: p.influence_score,
     last_activity_at: p.last_activity_at, source: p.source,
+    owner_id: p.owner_id,
     custom_fields: p.custom_fields,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
@@ -93,6 +95,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     email: p.email, title: p.title, phone: p.phone,
     seniority: p.seniority, influence_score: p.influence_score,
     last_activity_at: p.last_activity_at, source: p.source,
+    owner_id: p.owner_id,
     custom_fields: p.custom_fields,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
@@ -125,7 +128,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     }
     const tenantId = tq.data.tenantId;
 
-    const { firstName, lastName, email, title, phone, seniority, companyId, isLead, source, customFields } = body.data;
+    const { firstName, lastName, email, title, phone, seniority, companyId, ownerId, isLead, source, customFields } = body.data;
     const id  = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -155,6 +158,7 @@ export async function contactsRoutes(server: FastifyInstance) {
         title:         $title,
         phone:         $phone,
         seniority:     $seniority,
+        owner_id:      $ownerId,
         is_lead:       $isLead,
         source:        $source,
         custom_fields: $customFields,
@@ -166,6 +170,7 @@ export async function contactsRoutes(server: FastifyInstance) {
         title:        title        ?? "",
         phone:        phone        ?? "",
         seniority:    seniority    ?? "",
+        ownerId:      ownerId      ?? "",
         isLead:       isLead       ?? false,
         source:       source       ?? "user",
         customFields: JSON.stringify(customFields ?? {}),
@@ -236,6 +241,7 @@ export async function contactsRoutes(server: FastifyInstance) {
          email: p.email, title: p.title, phone: p.phone,
          seniority: p.seniority, influence_score: p.influence_score,
          last_activity_at: p.last_activity_at,
+         owner_id: p.owner_id,
          custom_fields: p.custom_fields,
          created_at: p.created_at, updated_at: p.updated_at,
          company_id: co.id, company_name: co.name, company_domain: co.domain,
@@ -284,6 +290,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     if (fields.seniority) { setParts.push("p.seniority  = $seniority"); params.seniority = fields.seniority; }
     if (fields.isLead !== undefined) { setParts.push("p.is_lead = $isLead"); params.isLead = fields.isLead; }
     if (fields.source) { setParts.push("p.source = $source"); params.source = fields.source; }
+    if (fields.ownerId !== undefined) { setParts.push("p.owner_id = $ownerId"); params.ownerId = fields.ownerId ?? ""; }
     if (fields.customFields) { setParts.push("p.custom_fields = $customFields"); params.customFields = JSON.stringify(fields.customFields); }
 
     await cypher(
@@ -292,6 +299,24 @@ export async function contactsRoutes(server: FastifyInstance) {
        RETURN {id: p.id}`,
       params
     );
+
+    // Re-point the WORKS_AT edge when companyId is provided (null/"" clears it).
+    if (fields.companyId !== undefined) {
+      await cypher(
+        `MATCH (p:Person {id: $id, tenant_id: $tenantId})
+         OPTIONAL MATCH (p)-[w:WORKS_AT]->(:Company)
+         DELETE w`,
+        { id, tenantId }
+      ).catch((err) => { console.error("[contacts] company unlink failed:", err.message); });
+      if (fields.companyId) {
+        await cypher(
+          `MATCH (p:Person {id: $id, tenant_id: $tenantId}), (c:Company {id: $companyId, tenant_id: $tenantId})
+           MERGE (p)-[:WORKS_AT {is_current: true, created_at: $now}]->(c)
+           RETURN {ok: true}`,
+          { id, tenantId, companyId: fields.companyId, now: params.now }
+        ).catch((err) => { console.error("[contacts] company link failed:", err.message); });
+      }
+    }
 
     await emitEvent(tenantId, "contact.updated", "person", id, "user", fields);
 
@@ -363,6 +388,7 @@ function toContactResponse(row: Record<string, unknown>) {
     seniority:       row.seniority      || undefined,
     isLead:          row.is_lead === true,
     source:          (row.source as string) || "user",
+    ownerId:         (row.owner_id as string) || undefined,
     influenceScore:  row.influence_score,
     lastActivityAt:  row.last_activity_at,
     customFields:    row.custom_fields ? JSON.parse(row.custom_fields as string) : {},

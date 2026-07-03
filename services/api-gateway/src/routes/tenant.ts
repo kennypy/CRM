@@ -15,6 +15,15 @@ const UpdateSchema = z.object({
   defaultCurrency: z.string().regex(/^[A-Z]{3}$/, "Must be a 3-letter ISO 4217 code").optional(),
   locale:          z.string().min(2).max(20).optional(),
   timezone:        z.string().min(2).max(64).optional(),
+  // Discount-approval configuration edited in Settings → Quoting.
+  discountApprovalThreshold: z.number().min(0).max(100).optional(),
+  roleThresholds:  z.record(z.number().min(0).max(100)).optional(),
+  tcvTiers:        z.array(z.object({
+    label:       z.string().max(100).optional(),
+    maxTcv:      z.number().nullable().optional(),
+    maxDiscount: z.number().min(0).max(100).optional(),
+    approver:    z.string().max(50).optional(),
+  })).max(20).optional(),
 });
 
 export async function tenantRoutes(server: FastifyInstance) {
@@ -26,7 +35,8 @@ export async function tenantRoutes(server: FastifyInstance) {
     }
 
     const { rows } = await pool.query(
-      `SELECT id, name, slug, plan, default_currency, locale, timezone
+      `SELECT id, name, slug, plan, default_currency, locale, timezone,
+              discount_approval_threshold, discount_config
          FROM tenants
         WHERE id = $1 AND deleted_at IS NULL`,
       [tenantId]
@@ -37,6 +47,7 @@ export async function tenantRoutes(server: FastifyInstance) {
     }
 
     const t = rows[0];
+    const cfg = t.discount_config ?? {};
     return reply.send({
       success: true,
       data: {
@@ -47,6 +58,11 @@ export async function tenantRoutes(server: FastifyInstance) {
         defaultCurrency: t.default_currency,
         locale:          t.locale,
         timezone:        t.timezone,
+        discountApprovalThreshold:
+          cfg.discountApprovalThreshold ??
+          (t.discount_approval_threshold != null ? Number(t.discount_approval_threshold) : undefined),
+        roleThresholds:  cfg.roleThresholds ?? {},
+        tcvTiers:        cfg.tcvTiers ?? [],
       },
     });
   });
@@ -76,13 +92,29 @@ export async function tenantRoutes(server: FastifyInstance) {
       });
     }
 
-    const { defaultCurrency, locale, timezone } = parsed.data;
+    const { defaultCurrency, locale, timezone, discountApprovalThreshold, roleThresholds, tcvTiers } = parsed.data;
     const sets: string[] = ["updated_at = NOW()"];
     const vals: unknown[] = [tenantId];
 
     if (defaultCurrency !== undefined) { vals.push(defaultCurrency); sets.push(`default_currency = $${vals.length}`); }
     if (locale          !== undefined) { vals.push(locale);          sets.push(`locale = $${vals.length}`); }
     if (timezone        !== undefined) { vals.push(timezone);        sets.push(`timezone = $${vals.length}`); }
+
+    // Discount config: merge provided keys into the existing JSONB blob, and
+    // keep the flat discount_approval_threshold column in sync so the quotes
+    // engine's fallback path stays correct.
+    const discountPatch: Record<string, unknown> = {};
+    if (discountApprovalThreshold !== undefined) discountPatch.discountApprovalThreshold = discountApprovalThreshold;
+    if (roleThresholds            !== undefined) discountPatch.roleThresholds = roleThresholds;
+    if (tcvTiers                  !== undefined) discountPatch.tcvTiers = tcvTiers;
+    if (Object.keys(discountPatch).length > 0) {
+      vals.push(JSON.stringify(discountPatch));
+      sets.push(`discount_config = COALESCE(discount_config, '{}'::jsonb) || $${vals.length}::jsonb`);
+    }
+    if (discountApprovalThreshold !== undefined) {
+      vals.push(discountApprovalThreshold);
+      sets.push(`discount_approval_threshold = $${vals.length}`);
+    }
 
     if (sets.length === 1) {
       return reply.status(400).send({ success: false, error: { code: "NOTHING_TO_UPDATE" } });
@@ -91,7 +123,8 @@ export async function tenantRoutes(server: FastifyInstance) {
     const { rows } = await pool.query(
       `UPDATE tenants SET ${sets.join(", ")}
          WHERE id = $1 AND deleted_at IS NULL
-       RETURNING id, name, slug, plan, default_currency, locale, timezone`,
+       RETURNING id, name, slug, plan, default_currency, locale, timezone,
+                 discount_approval_threshold, discount_config`,
       vals
     );
 
@@ -100,6 +133,7 @@ export async function tenantRoutes(server: FastifyInstance) {
     }
 
     const t = rows[0];
+    const cfg = t.discount_config ?? {};
     return reply.send({
       success: true,
       data: {
@@ -110,6 +144,11 @@ export async function tenantRoutes(server: FastifyInstance) {
         defaultCurrency: t.default_currency,
         locale:          t.locale,
         timezone:        t.timezone,
+        discountApprovalThreshold:
+          cfg.discountApprovalThreshold ??
+          (t.discount_approval_threshold != null ? Number(t.discount_approval_threshold) : undefined),
+        roleThresholds:  cfg.roleThresholds ?? {},
+        tcvTiers:        cfg.tcvTiers ?? [],
       },
     });
   });

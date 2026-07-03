@@ -31,6 +31,11 @@ const CreateActivitySchema = z.object({
   durationSeconds: z.number().int().positive().max(86_400).optional(),
   occurredAt:      z.string().datetime(),
   participantIds:  z.array(z.string().uuid()).max(50).optional(),
+  // A contact/lead the activity is logged against — folded into the participant
+  // set below so the contact timeline (which joins activity_participants.contact_id)
+  // finds it. Leads are Person nodes, so they use the same association path.
+  contactId:       z.string().uuid().optional(),
+  leadId:          z.string().uuid().optional(),
   dealId:          z.string().uuid().optional(),
   companyId:       z.string().uuid().optional(),
   externalId:      z.string().max(255).optional(),
@@ -154,8 +159,17 @@ export async function activitiesRoutes(server: FastifyInstance) {
     const now = new Date().toISOString();
     const {
       type, direction, subject, summary, sentiment, durationSeconds,
-      occurredAt, participantIds, dealId, companyId, externalId, source,
+      occurredAt, participantIds, contactId, leadId, dealId, companyId, externalId, source,
     } = body.data;
+
+    // Fold an explicitly-linked contact/lead into the participant set. This is the
+    // key association: without it, a manually logged activity writes no
+    // activity_participants row and never appears on the contact's timeline.
+    const linkedIds = Array.from(new Set([
+      ...(participantIds ?? []),
+      ...(contactId ? [contactId] : []),
+      ...(leadId ? [leadId] : []),
+    ]));
 
     // Dedup: if externalId provided, check it hasn't been ingested already
     if (externalId && source !== "user") {
@@ -198,7 +212,7 @@ export async function activitiesRoutes(server: FastifyInstance) {
     );
 
     // Insert denormalized participant snapshots if we have known contact IDs
-    if (participantIds && participantIds.length > 0) {
+    if (linkedIds.length > 0) {
       const { rows: persons } = await pool.query(
         `SELECT id, first_name, last_name, email FROM ag_catalog.cypher(
            'graph',
@@ -206,17 +220,25 @@ export async function activitiesRoutes(server: FastifyInstance) {
              RETURN {id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email}$$,
            $1
          ) AS (props agtype)`,
-        [JSON.stringify({ ids: participantIds, tenantId })]
+        [JSON.stringify({ ids: linkedIds, tenantId })]
       ).catch(() => ({ rows: [] as { id: string; first_name: string; last_name: string; email: string }[] }));
 
+      // Index resolved persons by id so we can still write a participant row for
+      // a linked contact even if the graph lookup returned nothing (the read-side
+      // timeline join keys only on contact_id).
+      const byId = new Map<string, { id: string; first_name: string; last_name: string; email: string }>();
       for (const p of persons) {
         const props = typeof p.props === "string" ? JSON.parse(p.props) : p.props;
+        if (props?.id) byId.set(props.id, props);
+      }
+      for (const pid of linkedIds) {
+        const props = byId.get(pid);
         await pool.query(
           `INSERT INTO activity_participants
              (activity_id, occurred_at, contact_id, first_name, last_name, email, role)
            VALUES ($1,$2,$3,$4,$5,$6,'participant')
            ON CONFLICT DO NOTHING`,
-          [id, occurredAtTs, props.id ?? null, props.first_name ?? null, props.last_name ?? null, props.email ?? ""]
+          [id, occurredAtTs, pid, props?.first_name ?? null, props?.last_name ?? null, props?.email ?? ""]
         ).catch((err) => { console.error("[activities] non-fatal write failed:", err.message); });
       }
     }
@@ -250,7 +272,7 @@ export async function activitiesRoutes(server: FastifyInstance) {
     ).catch((err) => { console.error("[activities] AGE graph write failed:", err.message); });
 
     // Link participants in graph
-    for (const personId of (participantIds ?? [])) {
+    for (const personId of linkedIds) {
       await cypher(
         `MATCH (p:Person {id: $personId}), (a:Activity {id: $id})
          MERGE (p)-[:PARTICIPATED_IN {role: 'participant', linked_at: $now}]->(a)

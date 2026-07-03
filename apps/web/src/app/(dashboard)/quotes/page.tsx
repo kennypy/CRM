@@ -15,7 +15,6 @@ import {
 } from "@/lib/quotes";
 import { QuoteBuilderModal } from "@/components/modals/quote-builder-modal";
 import { generateQuotePDF } from "@/lib/quote-pdf";
-import { ActionBar } from "@/components/action-bar/action-bar";
 
 function useStatusFilterOptions() {
   const t = useTranslations("quotes");
@@ -291,7 +290,6 @@ export default function QuotesPage() {
           <FileText className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">{t("title")}</h1>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{quotes.length}</span>
-          <ActionBar context="quotes" onQuoteSaved={handleSaved} />
         </div>
         <button onClick={() => setShowBuilder(true)}
           className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">

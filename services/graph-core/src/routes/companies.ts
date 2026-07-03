@@ -18,6 +18,7 @@ const CreateCompanySchema = z.object({
   tier:      z.enum(["smb", "mid_market", "enterprise"]).optional(),
   website:   z.string().url().max(2048).optional(),
   country:   z.string().max(100).optional(),
+  ownerId:   z.string().uuid().nullable().optional(),
   customFields: z.record(z.unknown()).optional(),
 });
 
@@ -57,7 +58,7 @@ export async function companiesRoutes(server: FastifyInstance) {
     website: c.website, country: c.country,
     sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
     sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
-    created_by: c.created_by, custom_fields: c.custom_fields,
+    created_by: c.created_by, owner_id: c.owner_id, custom_fields: c.custom_fields,
     open_deals: open_deals, open_deal_value: open_deal_value,
     created_at: c.created_at, updated_at: c.updated_at
   }
@@ -88,7 +89,7 @@ export async function companiesRoutes(server: FastifyInstance) {
 
     const id  = crypto.randomUUID();
     const now = new Date().toISOString();
-    const { name, domain, industry, headcount, tier, website, country, customFields } = body.data;
+    const { name, domain, industry, headcount, tier, website, country, ownerId, customFields } = body.data;
 
     // Dedup by domain within tenant
     const existing = await cypher(
@@ -114,6 +115,7 @@ export async function companiesRoutes(server: FastifyInstance) {
         tier:          $tier,
         website:       $website,
         country:       $country,
+        owner_id:      $ownerId,
         custom_fields: $customFields,
         source:        'user',
         created_at:    $now,
@@ -126,6 +128,7 @@ export async function companiesRoutes(server: FastifyInstance) {
         tier:         tier         ?? "smb",
         website:      website      ?? "",
         country:      country      ?? "",
+        ownerId:      ownerId      ?? "",
         customFields: JSON.stringify(customFields ?? {}),
         now,
       }
@@ -142,7 +145,7 @@ export async function companiesRoutes(server: FastifyInstance) {
        RETURN {
          id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
          industry: c.industry, headcount: c.headcount, tier: c.tier,
-         website: c.website, country: c.country, custom_fields: c.custom_fields,
+         website: c.website, country: c.country, owner_id: c.owner_id, custom_fields: c.custom_fields,
          open_deals: 0, open_deal_value: 0,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -170,7 +173,7 @@ export async function companiesRoutes(server: FastifyInstance) {
          website: c.website, country: c.country,
          sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
          sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
-         created_by: c.created_by, custom_fields: c.custom_fields,
+         created_by: c.created_by, owner_id: c.owner_id, custom_fields: c.custom_fields,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -205,7 +208,9 @@ export async function companiesRoutes(server: FastifyInstance) {
     if (f.industry)  { setParts.push("c.industry  = $industry");  params.industry  = f.industry; }
     if (f.headcount) { setParts.push("c.headcount = $headcount"); params.headcount = f.headcount; }
     if (f.tier)      { setParts.push("c.tier      = $tier");      params.tier      = f.tier; }
+    if (f.website)   { setParts.push("c.website   = $website");   params.website   = f.website; }
     if (f.country)      { setParts.push("c.country       = $country");      params.country      = f.country; }
+    if (f.ownerId !== undefined) { setParts.push("c.owner_id = $ownerId"); params.ownerId = f.ownerId ?? ""; }
     if (f.customFields) { setParts.push("c.custom_fields = $customFields"); params.customFields = JSON.stringify(f.customFields); }
 
     await cypher(
@@ -222,7 +227,7 @@ export async function companiesRoutes(server: FastifyInstance) {
        RETURN {
          id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
          industry: c.industry, headcount: c.headcount, tier: c.tier,
-         website: c.website, country: c.country, custom_fields: c.custom_fields,
+         website: c.website, country: c.country, owner_id: c.owner_id, custom_fields: c.custom_fields,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -303,7 +308,7 @@ export async function companiesRoutes(server: FastifyInstance) {
          website: c.website, country: c.country,
          sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
          sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
-         created_by: c.created_by, custom_fields: c.custom_fields,
+         created_by: c.created_by, owner_id: c.owner_id, custom_fields: c.custom_fields,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -386,6 +391,7 @@ function toCompanyResponse(row: Record<string, unknown>) {
     tier:           row.tier           || undefined,
     website:        row.website        || undefined,
     country:        row.country        || undefined,
+    ownerId:        (row.owner_id as string) || undefined,
     subRegion:      row.sub_region     || undefined,
     region:         row.region         || undefined,
     linkedinUrl:    row.linkedin_url   || undefined,

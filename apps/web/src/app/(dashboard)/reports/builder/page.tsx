@@ -195,15 +195,15 @@ function StepIndicator({ step, total }: { step: number; total: number }) {
             <div className="flex items-center gap-2">
               <div className={cn(
                 "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold",
-                done ? "bg-violet-600 text-white" : curr ? "bg-violet-600 text-white ring-2 ring-violet-400/40" : "bg-white/10 text-white/30"
+                done ? "bg-violet-600 text-foreground" : curr ? "bg-violet-600 text-foreground ring-2 ring-violet-400/40" : "bg-muted text-muted-foreground"
               )}>
                 {done ? <Check className="h-3.5 w-3.5" /> : num}
               </div>
-              <span className={cn("text-xs font-medium hidden sm:block", curr ? "text-white" : done ? "text-violet-300" : "text-white/30")}>
+              <span className={cn("text-xs font-medium hidden sm:block", curr ? "text-foreground" : done ? "text-violet-300" : "text-muted-foreground")}>
                 {label}
               </span>
             </div>
-            {i < steps.length - 1 && <div className="mx-3 h-px w-8 bg-white/10" />}
+            {i < steps.length - 1 && <div className="mx-3 h-px w-8 bg-muted" />}
           </div>
         );
       })}
@@ -264,8 +264,8 @@ function Step1({ sources, setSources, joins, setJoins }: {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="mb-1 text-base font-semibold text-white">Select data sources</h2>
-        <p className="mb-4 text-xs text-white/40">Choose which objects to include. Joins are auto-suggested between related sources.</p>
+        <h2 className="mb-1 text-base font-semibold text-foreground">Select data sources</h2>
+        <p className="mb-4 text-xs text-muted-foreground">Choose which objects to include. Joins are auto-suggested between related sources.</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {(Object.keys(SOURCE_LABELS) as SourceId[]).map((s) => (
             <button
@@ -274,15 +274,15 @@ function Step1({ sources, setSources, joins, setJoins }: {
               className={cn(
                 "group relative rounded-xl border p-4 text-left transition-all",
                 sources.includes(s)
-                  ? "border-violet-500/60 bg-violet-500/10 text-white"
-                  : "border-white/10 bg-white/[0.02] text-white/50 hover:border-white/20 hover:text-white"
+                  ? "border-violet-500/60 bg-violet-500/10 text-foreground"
+                  : "border-border bg-muted text-muted-foreground hover:border-border hover:text-foreground"
               )}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">{SOURCE_LABELS[s]}</span>
                 {sources.includes(s) && <Check className="h-4 w-4 text-violet-400" />}
               </div>
-              <p className="mt-1 text-xs text-white/30">{SOURCE_FIELDS[s].length} fields</p>
+              <p className="mt-1 text-xs text-muted-foreground">{SOURCE_FIELDS[s].length} fields</p>
             </button>
           ))}
         </div>
@@ -291,43 +291,43 @@ function Step1({ sources, setSources, joins, setJoins }: {
       {sources.length >= 2 && (
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Joins</h3>
+            <h3 className="text-sm font-semibold text-foreground">Joins</h3>
             <button onClick={addJoin} className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300">
               <Plus className="h-3 w-3" />Add join
             </button>
           </div>
 
           {joins.length === 0 && (
-            <p className="text-xs text-white/30">No joins configured. Select a second source to auto-suggest joins, or add manually.</p>
+            <p className="text-xs text-muted-foreground">No joins configured. Select a second source to auto-suggest joins, or add manually.</p>
           )}
 
           <div className="space-y-2">
             {joins.map((j) => (
-              <div key={j.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <div key={j.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted p-3">
                 <select value={j.from} onChange={(e) => updateJoin(j.id, { from: e.target.value as SourceId })}
-                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                  className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                   {sources.map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
                 </select>
                 <select value={j.type} onChange={(e) => updateJoin(j.id, { type: e.target.value as JoinType })}
-                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                  className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                   <option value="LEFT">LEFT JOIN</option>
                   <option value="INNER">INNER JOIN</option>
                 </select>
                 <select value={j.to} onChange={(e) => updateJoin(j.id, { to: e.target.value as SourceId })}
-                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                  className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                   {sources.filter((s) => s !== j.from).map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
                 </select>
-                <span className="text-xs text-white/30">ON</span>
+                <span className="text-xs text-muted-foreground">ON</span>
                 <select value={j.on.left} onChange={(e) => updateJoin(j.id, { on: { ...j.on, left: e.target.value } })}
-                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                  className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                   {SOURCE_FIELDS[j.from].map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                 </select>
-                <span className="text-xs text-white/30">=</span>
+                <span className="text-xs text-muted-foreground">=</span>
                 <select value={j.on.right} onChange={(e) => updateJoin(j.id, { on: { ...j.on, right: e.target.value } })}
-                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                  className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                   {SOURCE_FIELDS[j.to].map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                 </select>
-                <button onClick={() => setJoins(joins.filter((x) => x.id !== j.id))} className="ml-auto text-white/30 hover:text-red-400">
+                <button onClick={() => setJoins(joins.filter((x) => x.id !== j.id))} className="ml-auto text-muted-foreground hover:text-red-400">
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -379,25 +379,25 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
     <div className="grid gap-8 lg:grid-cols-2">
       {/* Left: Field picker */}
       <div>
-        <h2 className="mb-1 text-base font-semibold text-white">Select fields</h2>
-        <p className="mb-4 text-xs text-white/40">Leave all unchecked to auto-include the top fields from each source.</p>
+        <h2 className="mb-1 text-base font-semibold text-foreground">Select fields</h2>
+        <p className="mb-4 text-xs text-muted-foreground">Leave all unchecked to auto-include the top fields from each source.</p>
 
         {/* Period filter */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <select value={period} onChange={(e) => setPeriod(e.target.value)}
-            className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+            className="rounded bg-popover px-2 py-1.5 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
             {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           {period === "custom" && (
             <input
               placeholder="e.g. last 24 hours, next 7 days, due today"
-              className="w-56 rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500"
+              className="w-56 rounded bg-popover px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500"
               onChange={(e) => setPeriod(e.target.value === "" ? "custom" : e.target.value)}
             />
           )}
           {period && period !== "custom" && dateFields.length > 0 && (
             <select value={periodField} onChange={(e) => setPeriodField(e.target.value)}
-              className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+              className="rounded bg-popover px-2 py-1.5 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
               {dateFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
             </select>
           )}
@@ -415,7 +415,7 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
                     SOURCE_FIELDS[s].forEach((f) => { all[`${s}.${f.key}`] = !allSelected; });
                     setSelectedFields(all);
                   }}
-                  className="text-xs text-white/30 hover:text-white/60"
+                  className="text-xs text-muted-foreground hover:text-muted-foreground"
                 >
                   {SOURCE_FIELDS[s].every((f) => selectedFields[`${s}.${f.key}`]) ? "Deselect all" : "Select all"}
                 </button>
@@ -424,7 +424,7 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
                 {SOURCE_FIELDS[s].map((f) => {
                   const key = `${s}.${f.key}`;
                   return (
-                    <label key={key} className="flex cursor-pointer items-center gap-2 text-xs text-white/60 hover:text-white">
+                    <label key={key} className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
                       <input type="checkbox" checked={!!selectedFields[key]} onChange={() => toggleField(s, f.key)} className="accent-violet-500" />
                       {f.label}
                     </label>
@@ -440,13 +440,13 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
       <div>
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-white">Filters</h2>
-            <p className="mt-0.5 text-xs text-white/40">All conditions must match (AND) or any (OR).</p>
+            <h2 className="text-base font-semibold text-foreground">Filters</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">All conditions must match (AND) or any (OR).</p>
           </div>
-          <div className="flex rounded-full bg-white/5 p-0.5 text-xs">
+          <div className="flex rounded-full bg-muted p-0.5 text-xs">
             {(["AND","OR"] as const).map((l) => (
               <button key={l} onClick={() => setFilterLogic(l)}
-                className={cn("rounded-full px-3 py-1 font-medium", filterLogic === l ? "bg-violet-600 text-white" : "text-white/40 hover:text-white")}>
+                className={cn("rounded-full px-3 py-1 font-medium", filterLogic === l ? "bg-violet-600 text-foreground" : "text-muted-foreground hover:text-foreground")}>
                 {l}
               </button>
             ))}
@@ -455,29 +455,29 @@ function Step2({ sources, selectedFields, setSelectedFields, filters, setFilters
 
         <div className="space-y-2">
           {filters.map((f, i) => (
-            <div key={f.id} className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+            <div key={f.id} className="rounded-lg border border-border bg-muted p-3">
               {i > 0 && (
                 <p className="mb-2 text-xs font-medium text-violet-400">{filterLogic}</p>
               )}
               <div className="flex flex-wrap items-center gap-2">
                 <select value={f.source}
                   onChange={(e) => updateFilter(f.id, { source: e.target.value as SourceId, field: SOURCE_FIELDS[e.target.value as SourceId][0].key })}
-                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                  className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                   {sources.map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
                 </select>
                 <select value={f.field} onChange={(e) => updateFilter(f.id, { field: e.target.value })}
-                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                  className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                   {SOURCE_FIELDS[f.source].map((fld) => <option key={fld.key} value={fld.key}>{fld.label}</option>)}
                 </select>
                 <select value={f.op} onChange={(e) => updateFilter(f.id, { op: e.target.value })}
-                  className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                  className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                   {FILTER_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
                 {!["is_null","not_null"].includes(f.op) && (
                   <input value={f.value} onChange={(e) => updateFilter(f.id, { value: e.target.value })} placeholder="value"
-                    className="w-28 rounded bg-white/5 px-2 py-1 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
+                    className="w-28 rounded bg-muted px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />
                 )}
-                <button onClick={() => setFilters(filters.filter((x) => x.id !== f.id))} className="ml-auto text-white/30 hover:text-red-400">
+                <button onClick={() => setFilters(filters.filter((x) => x.id !== f.id))} className="ml-auto text-muted-foreground hover:text-red-400">
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -553,9 +553,9 @@ function Step3({ spec, editId, onSaved }: {
       {/* Preview */}
       <div>
         <div className="mb-3 flex items-center gap-3">
-          <h2 className="text-base font-semibold text-white">Preview</h2>
+          <h2 className="text-base font-semibold text-foreground">Preview</h2>
           <button onClick={handlePreview} disabled={running}
-            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/10 disabled:opacity-50">
+            className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">
             {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
             Run preview (20 rows)
           </button>
@@ -564,48 +564,48 @@ function Step3({ spec, editId, onSaved }: {
         {error && <p className="text-xs text-red-400">{error}</p>}
 
         {previewResult ? (
-          <div className="overflow-x-auto rounded-lg border border-white/10">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-white/10 bg-white/5">
+                <tr className="border-b border-border bg-muted">
                   {previewResult.columns.map((col) => (
-                    <th key={col} className="px-3 py-2 text-left text-white/50 whitespace-nowrap">{col}</th>
+                    <th key={col} className="px-3 py-2 text-left text-muted-foreground whitespace-nowrap">{col}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {previewResult.rows.map((row, i) => (
-                  <tr key={i} className="border-b border-white/5 hover:bg-white/5">
+                  <tr key={i} className="border-b border-border hover:bg-muted">
                     {previewResult.columns.map((col) => (
-                      <td key={col} className="max-w-[200px] truncate px-3 py-1.5 text-white/80">
-                        {row[col] == null ? <span className="text-white/20">—</span> : String(row[col])}
+                      <td key={col} className="max-w-[200px] truncate px-3 py-1.5 text-muted-foreground">
+                        {row[col] == null ? <span className="text-muted-foreground">—</span> : String(row[col])}
                       </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="px-3 py-1.5 text-xs text-white/30">
+            <p className="px-3 py-1.5 text-xs text-muted-foreground">
               Preview: {previewResult.rowCount.toLocaleString()} rows total
             </p>
           </div>
         ) : (
-          <div className="flex items-center justify-center rounded-lg border border-white/10 bg-white/[0.02] py-10 text-xs text-white/30">
+          <div className="flex items-center justify-center rounded-lg border border-border bg-muted py-10 text-xs text-muted-foreground">
             Click "Run preview" to see your data
           </div>
         )}
       </div>
 
       {/* Save */}
-      <div className="max-w-md rounded-xl border border-white/10 bg-white/[0.02] p-5">
-        <h3 className="mb-4 text-sm font-semibold text-white">{editId ? "Update report" : "Save report"}</h3>
+      <div className="max-w-md rounded-xl border border-border bg-muted p-5">
+        <h3 className="mb-4 text-sm font-semibold text-foreground">{editId ? "Update report" : "Save report"}</h3>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Report name *"
-          className="mb-2 w-full rounded bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
+          className="mb-2 w-full rounded bg-muted px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" rows={2}
-          className="mb-4 w-full rounded bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500 resize-none" />
+          className="mb-4 w-full rounded bg-muted px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500 resize-none" />
         {saveError && <p className="mb-3 text-xs text-red-400">{saveError}</p>}
         <button onClick={handleSave} disabled={saving}
-          className="w-full rounded-lg bg-violet-600 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50 flex items-center justify-center gap-2">
+          className="w-full rounded-lg bg-violet-600 py-2 text-sm font-semibold text-foreground hover:bg-violet-500 disabled:opacity-50 flex items-center justify-center gap-2">
           {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : editId ? "Update Report" : "Save Report"}
         </button>
       </div>
@@ -702,7 +702,7 @@ function BuilderContent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-white/30">
+      <div className="flex items-center justify-center py-24 text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading report…
       </div>
     );
@@ -713,10 +713,10 @@ function BuilderContent() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <button onClick={() => router.push("/reports")}
-          className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:bg-white/5 hover:text-white">
+          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" />Back
         </button>
-        <h1 className="text-xl font-bold text-white">{editId ? "Edit Report" : t("reportBuilder")}</h1>
+        <h1 className="text-xl font-bold text-foreground">{editId ? "Edit Report" : t("reportBuilder")}</h1>
       </div>
 
       <StepIndicator step={step} total={3} />
@@ -742,11 +742,11 @@ function BuilderContent() {
       </div>
 
       {/* Navigation */}
-      <div className="flex items-center justify-between border-t border-white/10 pt-4">
+      <div className="flex items-center justify-between border-t border-border pt-4">
         <button
           onClick={() => setStep((p) => Math.max(1, p - 1))}
           disabled={step === 1}
-          className="flex items-center gap-1.5 rounded-lg border border-white/10 px-4 py-2 text-sm text-white/50 hover:bg-white/5 hover:text-white disabled:opacity-30"
+          className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
         >
           <ArrowLeft className="h-4 w-4" />Previous
         </button>
@@ -755,7 +755,7 @@ function BuilderContent() {
           <button
             onClick={() => { if (sources.length > 0) setStep((p) => Math.min(3, p + 1)); }}
             disabled={sources.length === 0}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-foreground hover:bg-violet-500 disabled:opacity-40"
           >
             Next<ArrowRight className="h-4 w-4" />
           </button>
@@ -768,7 +768,7 @@ function BuilderContent() {
 export default function BuilderPage() {
   return (
     <Suspense fallback={
-      <div className="flex items-center justify-center py-24 text-white/30">
+      <div className="flex items-center justify-center py-24 text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…
       </div>
     }>
