@@ -8,6 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import { randomBytes, createHash } from "crypto";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/rbac";
 import { denyApiKeys } from "../middleware/scope";
@@ -286,8 +287,25 @@ export async function usersRoutes(server: FastifyInstance) {
       [tenantId, email.toLowerCase(), role, email.split("@")[0]]
     );
 
-    // TODO: send invite email via outreach service
+    // Issue a single-use activation token (reuses the password-reset machinery
+    // consumed by POST /auth/reset-password). The invited user sets their own
+    // password on first login via /accept-invite?token=…
+    const rawToken  = randomBytes(32).toString("hex");
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    await pool.query(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + interval '7 days')`,
+      [rows[0].id, tokenHash]
+    );
 
-    return reply.status(201).send({ success: true, data: toUser(rows[0]) });
+    // Email delivery falls back to console logging when no provider is
+    // configured, so also return the activation link for the admin to share.
+    const activationPath = `/accept-invite?token=${rawToken}`;
+
+    return reply.status(201).send({
+      success: true,
+      data: toUser(rows[0]),
+      invite: { activationPath },
+    });
   });
 }

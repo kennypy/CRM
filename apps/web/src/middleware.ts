@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/register", "/landing", "/demo/enter", "/start"];
+const PUBLIC = ["/login", "/register", "/landing", "/demo/enter", "/start", "/accept-invite"];
 const SUPPORTED_LOCALES = ["en", "pt-BR"];
 const DEFAULT_LOCALE = "en";
 
