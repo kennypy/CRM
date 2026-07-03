@@ -17,6 +17,9 @@ export const PREVIEW_ROUTES: readonly string[] = [
   "/compliance",
   "/coaching",
   "/insights",
+  // No /templates route or backend exists yet — the nav link dead-ends on a
+  // blank page, so gate it until the feature is built.
+  "/templates",
 ];
 
 export function previewEnabled(): boolean {

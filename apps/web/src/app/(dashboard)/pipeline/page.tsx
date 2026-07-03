@@ -407,6 +407,7 @@ export default function PipelinePage() {
 
       {showAddDeal && (
         <AddDealModal
+          defaultCurrency={currency}
           onClose={() => setShowAddDeal(false)}
           onCreated={() => { setShowAddDeal(false); fetchDeals(); }}
         />

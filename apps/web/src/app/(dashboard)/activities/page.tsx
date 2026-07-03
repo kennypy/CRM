@@ -4,17 +4,16 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { ActionBar } from "@/components/action-bar/action-bar";
 import {
   Zap, RefreshCw, AlertCircle, Mail, Phone, Video,
-  FileText, MessageSquare, Users, Briefcase,
+  FileText, StickyNote, Users, Briefcase,
   ChevronLeft, ChevronRight, Filter, Plus, X, CheckCircle2, Search,
 } from "lucide-react";
 
 interface ContactOption { id: string; firstName: string; lastName: string; email: string; }
 interface LeadOption   { id: string; firstName: string; lastName: string; email: string; }
 
-type ActivityType = "email" | "call" | "meeting" | "document" | "chat";
+type ActivityType = "email" | "call" | "meeting" | "document" | "note";
 
 interface Participant { name?: string; email: string; }
 
@@ -39,7 +38,7 @@ const ACTIVITY_META: Record<ActivityType, { icon: React.FC<{ className?: string 
   call:     { icon: Phone,         label: "Call",    color: "bg-green-100 text-green-600"  },
   meeting:  { icon: Video,         label: "Meeting", color: "bg-purple-100 text-purple-600"},
   document: { icon: FileText,      label: "Doc",     color: "bg-orange-100 text-orange-600"},
-  chat:     { icon: MessageSquare, label: "Chat",    color: "bg-yellow-100 text-yellow-600"},
+  note:     { icon: StickyNote,    label: "Note",    color: "bg-yellow-100 text-yellow-600"},
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -473,7 +472,6 @@ export default function ActivitiesPage() {
         <div className="flex items-center gap-2">
           <Zap className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">{t("title")}</h1>
-          <ActionBar context="activities" />
           {!loading && activities.length > 0 && (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               {activities.length}{hasMore ? "+" : ""} {t("shown")}

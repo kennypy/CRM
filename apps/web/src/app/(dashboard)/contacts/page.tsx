@@ -6,7 +6,6 @@ import { formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { AddContactModal }  from "@/components/modals/add-contact-modal";
-import { ActionBar } from "@/components/action-bar/action-bar";
 import { EditContactModal } from "@/components/modals/edit-contact-modal";
 import { EmailDrawer }      from "@/components/email/EmailDrawer";
 import { PhoneDrawer }      from "@/components/phone/PhoneDrawer";
@@ -175,7 +174,6 @@ export default function ContactsPage() {
         <div className="flex items-center gap-2">
           <Users className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">{t("title")}</h1>
-          <ActionBar context="contacts" />
           {!loading && (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               {total.toLocaleString()}

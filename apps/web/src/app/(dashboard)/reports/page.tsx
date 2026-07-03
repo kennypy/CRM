@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { ActionBar } from "@/components/action-bar/action-bar";
 import { useTranslations } from "next-intl";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -268,58 +267,58 @@ function SubscribeModal({ state, onClose }: { state: SubscribeModalState; onClos
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-white/10 bg-[#0f0f1a] p-6 shadow-2xl">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">Subscribe — {state.reportName}</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-4 w-4" /></button>
+          <h2 className="text-sm font-semibold text-foreground">Subscribe — {state.reportName}</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
 
-        <label className="mb-1 block text-xs text-white/50">Schedule</label>
+        <label className="mb-1 block text-xs text-muted-foreground">Schedule</label>
         <div className="mb-2 flex flex-wrap gap-2">
           {PRESETS.map((p) => (
             <button key={p.value} onClick={() => setSchedule(p.value)}
-              className={cn("rounded px-2.5 py-1 text-xs", schedule === p.value ? "bg-violet-600 text-white" : "bg-white/5 text-white/60 hover:bg-white/10")}>
+              className={cn("rounded px-2.5 py-1 text-xs", schedule === p.value ? "bg-violet-600 text-foreground" : "bg-muted text-muted-foreground hover:bg-muted")}>
               {p.label}
             </button>
           ))}
           <button onClick={() => setSchedule("")}
-            className={cn("rounded px-2.5 py-1 text-xs", !isPreset && schedule === "" ? "bg-violet-600 text-white" : "bg-white/5 text-white/60 hover:bg-white/10")}>
+            className={cn("rounded px-2.5 py-1 text-xs", !isPreset && schedule === "" ? "bg-violet-600 text-foreground" : "bg-muted text-muted-foreground hover:bg-muted")}>
             Custom
           </button>
         </div>
         {!isPreset && (
           <input value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="cron e.g. 0 9 * * 1"
-            className="mb-3 w-full rounded bg-white/5 px-3 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
+            className="mb-3 w-full rounded bg-muted px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />
         )}
 
-        <label className="mb-1 block text-xs text-white/50">Channels</label>
+        <label className="mb-1 block text-xs text-muted-foreground">Channels</label>
         <div className="mb-3 flex gap-2">
           {["email","slack","teams","webhook"].map((ch) => (
             <button key={ch} onClick={() => setChannels((p) => p.includes(ch) ? p.filter((c) => c !== ch) : [...p, ch])}
-              className={cn("rounded px-2.5 py-1 text-xs capitalize", channels.includes(ch) ? "bg-violet-600 text-white" : "bg-white/5 text-white/60 hover:bg-white/10")}>
+              className={cn("rounded px-2.5 py-1 text-xs capitalize", channels.includes(ch) ? "bg-violet-600 text-foreground" : "bg-muted text-muted-foreground hover:bg-muted")}>
               {ch}
             </button>
           ))}
         </div>
-        {channels.includes("slack")   && <input value={slackUrl}  onChange={(e) => setSlackUrl(e.target.value)}  placeholder="Slack webhook URL"  className="mb-2 w-full rounded bg-white/5 px-3 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />}
-        {channels.includes("teams")   && <input value={teamsUrl}  onChange={(e) => setTeamsUrl(e.target.value)}  placeholder="Teams webhook URL"  className="mb-2 w-full rounded bg-white/5 px-3 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />}
-        {channels.includes("webhook") && <input value={webhook}   onChange={(e) => setWebhook(e.target.value)}   placeholder="Webhook URL"        className="mb-3 w-full rounded bg-white/5 px-3 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />}
+        {channels.includes("slack")   && <input value={slackUrl}  onChange={(e) => setSlackUrl(e.target.value)}  placeholder="Slack webhook URL"  className="mb-2 w-full rounded bg-muted px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />}
+        {channels.includes("teams")   && <input value={teamsUrl}  onChange={(e) => setTeamsUrl(e.target.value)}  placeholder="Teams webhook URL"  className="mb-2 w-full rounded bg-muted px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />}
+        {channels.includes("webhook") && <input value={webhook}   onChange={(e) => setWebhook(e.target.value)}   placeholder="Webhook URL"        className="mb-3 w-full rounded bg-muted px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />}
 
-        <label className="mb-1 block text-xs text-white/50">Only deliver if (optional)</label>
+        <label className="mb-1 block text-xs text-muted-foreground">Only deliver if (optional)</label>
         <div className="mb-4 flex gap-2">
           <input value={thField} onChange={(e) => setThField(e.target.value)} placeholder="field"
-            className="flex-1 rounded bg-white/5 px-2 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
+            className="flex-1 rounded bg-muted px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />
           <select value={thOp} onChange={(e) => setThOp(e.target.value)}
-            className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+            className="rounded bg-popover px-2 py-1.5 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
             {FILTER_OPS.slice(0,8).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <input value={thValue} onChange={(e) => setThValue(e.target.value)} placeholder="value"
-            className="w-20 rounded bg-white/5 px-2 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
+            className="w-20 rounded bg-muted px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />
         </div>
 
         {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
         <button onClick={handleSave} disabled={saving || saved}
-          className="w-full rounded-lg bg-violet-600 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50 flex items-center justify-center gap-2">
+          className="w-full rounded-lg bg-violet-600 py-2 text-xs font-semibold text-foreground hover:bg-violet-500 disabled:opacity-50 flex items-center justify-center gap-2">
           {saved ? <><Check className="h-3.5 w-3.5" />Subscribed!</> : saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</> : "Subscribe"}
         </button>
       </div>
@@ -356,18 +355,18 @@ function SaveReportModal({ spec, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-xl border border-white/10 bg-[#0f0f1a] p-6 shadow-2xl">
+      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">Save report</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-4 w-4" /></button>
+          <h2 className="text-sm font-semibold text-foreground">Save report</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Report name"
-          className="mb-2 w-full rounded bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
+          className="mb-2 w-full rounded bg-muted px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />
         <textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description (optional)" rows={2}
-          className="mb-4 w-full rounded bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500 resize-none" />
+          className="mb-4 w-full rounded bg-muted px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500 resize-none" />
         {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
         <button onClick={handleSave} disabled={saving}
-          className="w-full rounded-lg bg-violet-600 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50 flex items-center justify-center gap-2">
+          className="w-full rounded-lg bg-violet-600 py-2 text-sm font-semibold text-foreground hover:bg-violet-500 disabled:opacity-50 flex items-center justify-center gap-2">
           {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</> : "Save Report"}
         </button>
       </div>
@@ -384,18 +383,18 @@ function RowDetailModal({ row, columns, onClose }: {
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-xl border border-white/10 bg-[#0f0f1a] p-6 shadow-2xl max-h-[80vh] overflow-y-auto"
+      <div className="w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-2xl max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">Row detail</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-4 w-4" /></button>
+          <h2 className="text-sm font-semibold text-foreground">Row detail</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
         <div className="space-y-2">
           {columns.map((col) => (
-            <div key={col} className="grid grid-cols-[40%_60%] gap-2 rounded-lg bg-white/[0.03] px-3 py-2">
-              <span className="text-xs font-medium text-white/50 truncate">{col}</span>
-              <span className="text-xs text-white break-words">
-                {row[col] == null ? <span className="text-white/20 italic">empty</span> : String(row[col])}
+            <div key={col} className="grid grid-cols-[40%_60%] gap-2 rounded-lg bg-muted px-3 py-2">
+              <span className="text-xs font-medium text-muted-foreground truncate">{col}</span>
+              <span className="text-xs text-foreground break-words">
+                {row[col] == null ? <span className="text-muted-foreground italic">empty</span> : String(row[col])}
               </span>
             </div>
           ))}
@@ -431,18 +430,18 @@ function ResultsTable({ result, onDownload }: { result: QueryResult; onDownload:
   return (
     <div className="mt-4">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs text-white/40">{result.rowCount.toLocaleString()} rows · click a row to view full detail</span>
-        <button onClick={onDownload} className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs text-white/60 hover:bg-white/5 hover:text-white">
+        <span className="text-xs text-muted-foreground">{result.rowCount.toLocaleString()} rows · click a row to view full detail</span>
+        <button onClick={onDownload} className="flex items-center gap-1.5 rounded px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
           <Download className="h-3.5 w-3.5" />Download CSV
         </button>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-white/10">
+      <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-white/10 bg-white/5">
+            <tr className="border-b border-border bg-muted">
               {result.columns.map((col) => (
                 <th key={col} onClick={() => toggleSort(col)}
-                  className="cursor-pointer select-none px-3 py-2 text-left text-white/50 hover:text-white whitespace-nowrap">
+                  className="cursor-pointer select-none px-3 py-2 text-left text-muted-foreground hover:text-foreground whitespace-nowrap">
                   <span className="flex items-center gap-1">
                     {col}
                     {sortCol === col ? (sortAsc ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
@@ -454,11 +453,11 @@ function ResultsTable({ result, onDownload }: { result: QueryResult; onDownload:
           <tbody>
             {sorted.slice(0, 500).map((row, i) => (
               <tr key={i}
-                className="border-b border-white/5 hover:bg-white/10 cursor-pointer transition-colors"
+                className="border-b border-border hover:bg-muted cursor-pointer transition-colors"
                 onClick={() => setSelectedRow(row)}>
                 {result.columns.map((col) => (
-                  <td key={col} className="max-w-[240px] truncate px-3 py-1.5 text-white/80">
-                    {row[col] == null ? <span className="text-white/20">—</span> : String(row[col])}
+                  <td key={col} className="max-w-[240px] truncate px-3 py-1.5 text-muted-foreground">
+                    {row[col] == null ? <span className="text-muted-foreground">—</span> : String(row[col])}
                   </td>
                 ))}
               </tr>
@@ -466,7 +465,7 @@ function ResultsTable({ result, onDownload }: { result: QueryResult; onDownload:
           </tbody>
         </table>
         {sorted.length > 500 && (
-          <p className="px-3 py-2 text-xs text-white/30">Showing first 500 rows — download CSV for full data.</p>
+          <p className="px-3 py-2 text-xs text-muted-foreground">Showing first 500 rows — download CSV for full data.</p>
         )}
       </div>
       {selectedRow && (
@@ -555,12 +554,12 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
     <div className="space-y-5">
       {/* Sources */}
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/50">Sources</h3>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sources</h3>
         <div className="flex flex-wrap gap-2">
           {(Object.keys(SOURCE_LABELS) as SourceId[]).map((s) => (
             <button key={s} onClick={() => toggleSource(s)}
               className={cn("rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                sources.includes(s) ? "bg-violet-600 text-white" : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white")}>
+                sources.includes(s) ? "bg-violet-600 text-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground")}>
               {SOURCE_LABELS[s]}
             </button>
           ))}
@@ -576,19 +575,19 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
 
       {/* Fields */}
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/50">
-          Fields <span className="normal-case font-normal text-white/30">(leave unchecked to auto-select top 5 per source)</span>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Fields <span className="normal-case font-normal text-muted-foreground">(leave unchecked to auto-select top 5 per source)</span>
         </h3>
         <div className="grid grid-cols-2 gap-x-6 gap-y-1 md:grid-cols-3">
           {sources.flatMap((s) =>
             SOURCE_FIELDS[s].map((f) => {
               const key = `${s}.${f.key}`;
               return (
-                <label key={key} className="flex cursor-pointer items-center gap-2 text-xs text-white/60 hover:text-white">
+                <label key={key} className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
                   <input type="checkbox" checked={!!selectedFields[key]}
                     onChange={() => setSelectedFields((prev) => ({ ...prev, [key]: !prev[key] }))}
                     className="accent-violet-500" />
-                  <span className="text-white/30">{SOURCE_LABELS[s]}.</span>{f.label}
+                  <span className="text-muted-foreground">{SOURCE_LABELS[s]}.</span>{f.label}
                 </label>
               );
             })
@@ -599,11 +598,11 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
       {/* Filters */}
       <div>
         <div className="mb-2 flex items-center gap-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-white/50">Filters</h3>
-          <div className="flex rounded-full bg-white/5 p-0.5 text-xs">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Filters</h3>
+          <div className="flex rounded-full bg-muted p-0.5 text-xs">
             {(["AND","OR"] as const).map((l) => (
               <button key={l} onClick={() => setFilterLogic(l)}
-                className={cn("rounded-full px-2.5 py-0.5 font-medium", filterLogic === l ? "bg-violet-600 text-white" : "text-white/40 hover:text-white")}>
+                className={cn("rounded-full px-2.5 py-0.5 font-medium", filterLogic === l ? "bg-violet-600 text-foreground" : "text-muted-foreground hover:text-foreground")}>
                 {l}
               </button>
             ))}
@@ -615,25 +614,25 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
             <div key={f.id} className="flex items-center gap-2 flex-wrap">
               <select value={f.source}
                 onChange={(e) => setFilters((p) => p.map((r) => r.id === f.id ? { ...r, source: e.target.value as SourceId, field: SOURCE_FIELDS[e.target.value as SourceId][0].key } : r))}
-                className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                 {sources.map((s) => <option key={s} value={s}>{SOURCE_LABELS[s]}</option>)}
               </select>
               <select value={f.field}
                 onChange={(e) => setFilters((p) => p.map((r) => r.id === f.id ? { ...r, field: e.target.value } : r))}
-                className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                 {SOURCE_FIELDS[f.source].map((fld) => <option key={fld.key} value={fld.key}>{fld.label}</option>)}
               </select>
               <select value={f.op}
                 onChange={(e) => setFilters((p) => p.map((r) => r.id === f.id ? { ...r, op: e.target.value } : r))}
-                className="rounded bg-[#1a1a2e] px-2 py-1 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                className="rounded bg-popover px-2 py-1 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                 {FILTER_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               {!["is_null","not_null"].includes(f.op) && (
                 <input value={f.value} onChange={(e) => setFilters((p) => p.map((r) => r.id === f.id ? { ...r, value: e.target.value } : r))}
                   placeholder="value"
-                  className="w-32 rounded bg-white/5 px-2 py-1 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
+                  className="w-32 rounded bg-muted px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />
               )}
-              <button onClick={() => setFilters((p) => p.filter((r) => r.id !== f.id))} className="text-white/30 hover:text-red-400">
+              <button onClick={() => setFilters((p) => p.filter((r) => r.id !== f.id))} className="text-muted-foreground hover:text-red-400">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -644,31 +643,31 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
       {/* Period + Limit */}
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <label className="mb-1 block text-xs text-white/50">Period</label>
+          <label className="mb-1 block text-xs text-muted-foreground">Period</label>
           <div className="flex flex-wrap items-center gap-2">
             <select value={period} onChange={(e) => setPeriod(e.target.value)}
-              className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+              className="rounded bg-popover px-2 py-1.5 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
               {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             {period === "custom" && (
               <input
                 placeholder="e.g. last 24 hours, next 7 days, due today"
-                className="w-56 rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500"
+                className="w-56 rounded bg-popover px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500"
                 onChange={(e) => setPeriod(e.target.value === "" ? "custom" : e.target.value)}
               />
             )}
             {period && period !== "custom" && dateFields.length > 0 && (
               <select value={periodField} onChange={(e) => setPeriodField(e.target.value)}
-                className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+                className="rounded bg-popover px-2 py-1.5 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
                 {dateFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
               </select>
             )}
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-white/50">Row limit</label>
+          <label className="mb-1 block text-xs text-muted-foreground">Row limit</label>
           <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}
-            className="rounded bg-[#1a1a2e] px-2 py-1.5 text-xs text-white border border-white/10 focus:outline-none focus:border-violet-500 [&>option]:bg-[#1a1a2e]">
+            className="rounded bg-popover px-2 py-1.5 text-xs text-foreground border border-border focus:outline-none focus:border-violet-500 [&>option]:bg-popover">
             {[100,500,1000,2000,5000].map((n) => <option key={n} value={n}>{n.toLocaleString()}</option>)}
           </select>
         </div>
@@ -677,7 +676,7 @@ function QuickRunBuilder({ onSaved }: { onSaved: (r: SavedReport) => void }) {
       {/* Run */}
       <div className="flex items-center gap-3">
         <button onClick={handleRun} disabled={running}
-          className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50">
+          className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-foreground hover:bg-violet-500 disabled:opacity-50">
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           Run Query
         </button>
@@ -731,11 +730,11 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
   const sources = ((report.spec as { sources?: string[] })?.sources ?? []) as SourceId[];
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+    <div className="rounded-xl border border-border bg-muted p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-white">{report.name}</h3>
-          {report.description && <p className="mt-0.5 truncate text-xs text-white/40">{report.description}</p>}
+          <h3 className="truncate text-sm font-semibold text-foreground">{report.name}</h3>
+          {report.description && <p className="mt-0.5 truncate text-xs text-muted-foreground">{report.description}</p>}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {sources.map((s) => (
               <span key={s} className="rounded-full bg-violet-500/10 px-2 py-0.5 text-xs text-violet-300">
@@ -743,7 +742,7 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
               </span>
             ))}
             {report.lastSnapshot && (
-              <span className="text-xs text-white/30">
+              <span className="text-xs text-muted-foreground">
                 <Clock className="mr-0.5 inline h-3 w-3" />
                 {fmtRelative(report.lastSnapshot.taken_at)} · {report.lastSnapshot.row_count.toLocaleString()} rows
               </span>
@@ -752,23 +751,23 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button onClick={handleRun} disabled={running} title="Run"
-            className="flex h-7 w-7 items-center justify-center rounded hover:bg-white/10 text-white/50 hover:text-white disabled:opacity-40">
+            className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40">
             {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
           </button>
           <button onClick={handleSnapshot} disabled={snapping} title="Take snapshot"
-            className="flex h-7 w-7 items-center justify-center rounded hover:bg-white/10 text-white/50 hover:text-white disabled:opacity-40">
+            className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40">
             {snapping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
           </button>
           <button onClick={() => onSubscribe(report)} title="Subscribe"
-            className="flex h-7 w-7 items-center justify-center rounded hover:bg-white/10 text-white/50 hover:text-white">
+            className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground">
             <Bell className="h-3.5 w-3.5" />
           </button>
           <Link href={`/reports/builder?id=${report.id}`} title="Edit in builder"
-            className="flex h-7 w-7 items-center justify-center rounded hover:bg-white/10 text-white/50 hover:text-white text-sm">
+            className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground text-sm">
             ✎
           </Link>
           <button onClick={() => onDelete(report.id)} title="Delete"
-            className="flex h-7 w-7 items-center justify-center rounded hover:bg-white/10 text-white/30 hover:text-red-400">
+            className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-red-400">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -777,7 +776,7 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
       {expanded && result && (
         <div>
           <ResultsTable result={result} onDownload={() => downloadCSV(result.columns, result.rows, `${report.name}.csv`)} />
-          <button onClick={() => setExpanded(false)} className="mt-2 text-xs text-white/30 hover:text-white/60">Collapse ↑</button>
+          <button onClick={() => setExpanded(false)} className="mt-2 text-xs text-muted-foreground hover:text-muted-foreground">Collapse ↑</button>
         </div>
       )}
     </div>
@@ -819,31 +818,29 @@ export default function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <ActionBar />
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">{t("title")}</h1>
-          <p className="mt-0.5 text-xs text-white/40">
+          <h1 className="text-xl font-bold text-foreground">{t("title")}</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Cross-object analytics across Activities, Deals, Companies, Contacts &amp; Quotes
           </p>
         </div>
         <Link href="/reports/builder"
-          className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500">
+          className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-violet-500">
           <Plus className="h-3.5 w-3.5" />New Report
         </Link>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 rounded-xl bg-white/5 p-1 w-fit">
+      <div className="flex gap-1 rounded-xl bg-muted p-1 w-fit">
         {([
           { key: "saved" as const, label: "Saved Reports", Icon: Rows3 },
           { key: "quick" as const, label: "Quick Run",      Icon: Play  },
         ]).map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-              tab === key ? "bg-violet-600 text-white" : "text-white/50 hover:text-white")}>
+              tab === key ? "bg-violet-600 text-foreground" : "text-muted-foreground hover:text-foreground")}>
             <Icon className="h-3.5 w-3.5" />{label}
           </button>
         ))}
@@ -854,34 +851,34 @@ export default function ReportsPage() {
         <div>
           <div className="mb-4 flex items-center gap-3">
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/30" />
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search reports…"
-                className="w-full rounded-lg bg-white/5 pl-9 pr-4 py-2 text-sm text-white placeholder-white/30 border border-white/10 focus:outline-none focus:border-violet-500" />
+                className="w-full rounded-lg bg-muted pl-9 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-border focus:outline-none focus:border-violet-500" />
             </div>
             <button onClick={fetchReports}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/50 hover:text-white hover:bg-white/5">
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted">
               <RefreshCw className="h-3.5 w-3.5" />Refresh
             </button>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-16 text-white/30">
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-white/10 py-16 text-center">
-              <BarChart3 className="h-10 w-10 text-white/20" />
+            <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-border py-16 text-center">
+              <BarChart3 className="h-10 w-10 text-muted-foreground" />
               <div>
-                <p className="text-sm text-white/40">No saved reports yet</p>
-                <p className="mt-1 text-xs text-white/20">Use Quick Run to explore, then save — or build one from scratch.</p>
+                <p className="text-sm text-muted-foreground">No saved reports yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">Use Quick Run to explore, then save — or build one from scratch.</p>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setTab("quick")}
-                  className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-500">
+                  className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-foreground hover:bg-violet-500">
                   Quick Run
                 </button>
                 <Link href="/reports/builder"
-                  className="rounded-lg border border-white/10 px-4 py-2 text-xs font-medium text-white/60 hover:bg-white/5 hover:text-white">
+                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
                   Report Builder
                 </Link>
               </div>
@@ -902,7 +899,7 @@ export default function ReportsPage() {
 
       {/* Quick Run */}
       {tab === "quick" && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <div className="rounded-xl border border-border bg-muted p-5">
           <QuickRunBuilder onSaved={(r) => { setReports((prev) => [r, ...prev]); setTab("saved"); }} />
         </div>
       )}

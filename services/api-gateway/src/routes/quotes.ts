@@ -62,12 +62,19 @@ function maxLineDiscount(items: z.infer<typeof LineItemSchema>[]) {
   return Math.max(0, ...items.map((it) => it.discountPct));
 }
 
-async function getApprovalThreshold(tenantId: string): Promise<number> {
+async function getApprovalThreshold(tenantId: string, role?: string): Promise<number> {
   const { rows } = await pool.query(
-    `SELECT discount_approval_threshold FROM tenants WHERE id = $1`,
+    `SELECT discount_approval_threshold, discount_config FROM tenants WHERE id = $1`,
     [tenantId]
   );
-  return rows[0] ? parseFloat(rows[0].discount_approval_threshold) : 10;
+  const flat = rows[0] ? parseFloat(rows[0].discount_approval_threshold) : 10;
+  // Prefer a per-role threshold from the persisted discount config when present.
+  const cfg = rows[0]?.discount_config ?? {};
+  const roleThresholds = cfg?.roleThresholds ?? {};
+  if (role && roleThresholds[role] != null && !Number.isNaN(Number(roleThresholds[role]))) {
+    return Number(roleThresholds[role]);
+  }
+  return Number.isNaN(flat) ? 10 : flat;
 }
 
 function toQuote(r: Record<string, unknown>, items: Record<string, unknown>[] = []) {
@@ -160,7 +167,7 @@ export async function quotesRoutes(server: FastifyInstance) {
       return reply.status(403).send({ success: false, error: { code: "FORBIDDEN", message: "You don't have permission to create quotes" } });
     }
 
-    const threshold   = await getApprovalThreshold(tenantId);
+    const threshold   = await getApprovalThreshold(tenantId, u.role);
     const maxDiscount = maxLineDiscount(items);
     // Also check order-level discount if percent type
     const effectiveMax = discountType === "percent" ? Math.max(maxDiscount, discountValue) : maxDiscount;
@@ -372,6 +379,9 @@ export async function quotesRoutes(server: FastifyInstance) {
     if (!q) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
     if (q.status !== "pending_approval")
       return reply.status(400).send({ success: false, error: { code: "INVALID_STATE", message: "Quote is not pending approval" } });
+    // Separation of duties: the creator cannot approve their own quote.
+    if (q.created_by && q.created_by === userId)
+      return reply.status(403).send({ success: false, error: { code: "SELF_APPROVAL", message: "You cannot approve a quote you created — it must be approved by another manager or admin" } });
 
     await pool.query(
       `UPDATE quotes SET status='draft', approved_by=$2, approved_at=NOW(), approval_required=false, updated_at=NOW() WHERE id=$1`,
