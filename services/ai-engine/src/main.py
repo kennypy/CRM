@@ -39,7 +39,6 @@ log = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_telemetry(app)
     log.info("ai_engine.starting")
     await get_pool()   # warm up DB connection pool
     yield
@@ -63,6 +62,11 @@ app.add_middleware(
 
 from .middleware.service_token import ServiceTokenMiddleware  # noqa: E402
 app.add_middleware(ServiceTokenMiddleware)
+
+# Instrument at import time — newer Starlette forbids add_middleware (which OTEL
+# instrument_app does under the hood) once the app has started, so this must run
+# before the lifespan startup, not inside it.
+setup_telemetry(app)
 
 app.include_router(health.router)
 app.include_router(extraction.router, prefix="/extraction")

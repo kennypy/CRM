@@ -39,7 +39,6 @@ log = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_telemetry(app)
     log.info("ingestion_service.starting", version="0.1.0")
     # This process serves the HTTP webhook/OAuth endpoints only. The async
     # pipeline consumers (normalizer, resolver, persisters, crm-writer) run in a
@@ -65,6 +64,11 @@ app.add_middleware(
 
 from .middleware.service_token import ServiceTokenMiddleware  # noqa: E402
 app.add_middleware(ServiceTokenMiddleware)
+
+# Instrument at import time — newer Starlette forbids add_middleware (which OTEL
+# instrument_app does under the hood) once the app has started, so this must run
+# before the lifespan startup, not inside it.
+setup_telemetry(app)
 
 app.include_router(health.router)
 app.include_router(gmail.router,   prefix="/gmail")

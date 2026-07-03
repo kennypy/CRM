@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     STREAM_NORMALIZED: str = "nexcrm:normalized-signals"
     STREAM_RESOLVED: str = "nexcrm:resolved-signals"
     STREAM_CRM_WRITES: str = "nexcrm:crm-writes"
+    STREAM_REVIEW_QUEUE: str = "nexcrm:review-queue"
 
     # Per-tenant cap on auto-created graph nodes (Person/Company) within the
     # rolling window below. Beyond this, candidates are routed to the review
