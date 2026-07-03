@@ -21,12 +21,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 
-sentry_sdk.init(
-    dsn=os.getenv("SENTRY_DSN"),
-    environment=os.getenv("NODE_ENV", "development"),
-    traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
-    enabled=bool(os.getenv("SENTRY_DSN")),
-)
+# Only initialize Sentry when a DSN is configured. The `enabled` option was
+# removed from sentry-sdk, so passing it raises TypeError on init and crashes
+# the service on boot — guard on the DSN instead (no DSN → Sentry stays off).
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.getenv("NODE_ENV", "development"),
+        traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
+    )
 from .routers import gmail, outlook, gcal, health  # noqa: E402
 from .telemetry import setup_telemetry  # noqa: E402
 
@@ -35,7 +39,6 @@ log = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_telemetry(app)
     log.info("ingestion_service.starting", version="0.1.0")
     # This process serves the HTTP webhook/OAuth endpoints only. The async
     # pipeline consumers (normalizer, resolver, persisters, crm-writer) run in a
@@ -61,6 +64,11 @@ app.add_middleware(
 
 from .middleware.service_token import ServiceTokenMiddleware  # noqa: E402
 app.add_middleware(ServiceTokenMiddleware)
+
+# Instrument at import time — newer Starlette forbids add_middleware (which OTEL
+# instrument_app does under the hood) once the app has started, so this must run
+# before the lifespan startup, not inside it.
+setup_telemetry(app)
 
 app.include_router(health.router)
 app.include_router(gmail.router,   prefix="/gmail")

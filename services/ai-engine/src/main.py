@@ -20,12 +20,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 
-sentry_sdk.init(
-    dsn=os.getenv("SENTRY_DSN"),
-    environment=os.getenv("NODE_ENV", "development"),
-    traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
-    enabled=bool(os.getenv("SENTRY_DSN")),
-)
+# Only initialize Sentry when a DSN is configured. The `enabled` option was
+# removed from sentry-sdk, so passing it raises TypeError on init and crashes
+# the service on boot — guard on the DSN instead (no DSN → Sentry stays off).
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.getenv("NODE_ENV", "development"),
+        traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
+    )
 from .routers import extraction, scoring, nl_command, health, enrichment, forecasting, anomalies  # noqa: E402
 from .telemetry import setup_telemetry  # noqa: E402
 from .db import get_pool, close_pool  # noqa: E402
@@ -35,7 +39,6 @@ log = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_telemetry(app)
     log.info("ai_engine.starting")
     await get_pool()   # warm up DB connection pool
     yield
@@ -59,6 +62,11 @@ app.add_middleware(
 
 from .middleware.service_token import ServiceTokenMiddleware  # noqa: E402
 app.add_middleware(ServiceTokenMiddleware)
+
+# Instrument at import time — newer Starlette forbids add_middleware (which OTEL
+# instrument_app does under the hood) once the app has started, so this must run
+# before the lifespan startup, not inside it.
+setup_telemetry(app)
 
 app.include_router(health.router)
 app.include_router(extraction.router, prefix="/extraction")
