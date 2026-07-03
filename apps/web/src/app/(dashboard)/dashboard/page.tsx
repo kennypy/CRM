@@ -17,6 +17,7 @@ import {
   Eye, MessageSquare, Layers,
 } from "lucide-react";
 import { ForecastPanel } from "@/components/ai/forecast-panel";
+import { ApprovalsInbox } from "@/components/home/approvals-inbox";
 import { Skeleton } from "@nexcrm/ui-components";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -1105,6 +1106,9 @@ function AdminDashboard() {
           </button>
         </div>
       </div>
+
+      {/* What needs you — approvals waiting on the current user (self-gates) */}
+      <ApprovalsInbox />
 
       {/* Render persona-specific dashboard */}
       {persona === "rep" && <RepDashboard currency={currency} locale={locale} />}

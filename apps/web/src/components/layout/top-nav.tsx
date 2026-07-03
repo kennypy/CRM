@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
+import { ApprovalsBell } from "@/components/layout/approvals-bell";
 import { useCommandBarStore } from "@/stores/command-bar-store";
 import { usePermissions } from "@/lib/permissions";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
@@ -286,6 +287,9 @@ export function TopNav() {
         <span className="hidden md:block">{t("searchPlaceholder")}</span>
         <kbd className="hidden md:inline rounded border bg-background px-1.5 py-0.5 font-mono text-xs">⌘K</kbd>
       </button>
+
+      {/* Quotes awaiting your approval (approvers only) */}
+      <ApprovalsBell />
 
       {/* Admin — super_admin only */}
       {usePermissions().isSuperAdmin && (
