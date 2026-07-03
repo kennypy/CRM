@@ -8,6 +8,8 @@ import { useTenant } from "@/lib/tenant-context";
 import { usePermissions } from "@/lib/permissions";
 import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
+import { OwnerPicker } from "@/components/ui/owner-picker";
+import { CampaignContacts } from "@/components/marketing/campaign-contacts";
 import {
   Megaphone, Search, RefreshCw, AlertCircle, Plus,
   ChevronLeft, ChevronRight, X, MoreHorizontal,
@@ -572,6 +574,22 @@ export default function MarketingPage() {
                 {fmt(selectedCampaign.unsubscribed)}
               </div>
             </div>
+
+            {/* Owner */}
+            <div className="mb-5 flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">Owner:</span>
+              <OwnerPicker
+                value={selectedCampaign.ownerId ?? null}
+                onChange={async (uid) => {
+                  await api.patch(`/api/v1/campaigns/${selectedCampaign.id}`, { ownerId: uid });
+                  setSelectedCampaign({ ...selectedCampaign, ownerId: uid ?? undefined });
+                  fetchCampaigns();
+                }}
+              />
+            </div>
+
+            {/* Enrol existing contacts / leads */}
+            <CampaignContacts campaignId={selectedCampaign.id} />
           </div>
         </div>
       )}

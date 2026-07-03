@@ -8,11 +8,12 @@ import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
 import type { ColDef } from "@/components/ui/column-picker";
 import { TagInput } from "@/components/ui/tag-input";
 import { OwnerPicker } from "@/components/ui/owner-picker";
+import { AddToCampaignModal } from "@/components/marketing/add-to-campaign-modal";
 import {
   TrendingUp, Search, RefreshCw, AlertCircle, Plus,
   ChevronLeft, ChevronRight, Flame, Minus, Snowflake,
   ArrowRight, Building2, Mail, X, User, CheckCircle2,
-  Tag, UserCircle, Activity,
+  Tag, UserCircle, Activity, Megaphone,
 } from "lucide-react";
 
 const LIFECYCLE_STAGES = ["subscriber", "lead", "mql", "sql", "opportunity", "customer"] as const;
@@ -283,6 +284,7 @@ export default function LeadsPage() {
   const [showAdd, setShowAdd]       = useState(false);
   const [converting, setConverting] = useState<Lead | null>(null);
   const [selected, setSelected]     = useState<Set<string>>(new Set());
+  const [showAddCampaign, setShowAddCampaign] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleSelect = (id: string) => {
@@ -442,6 +444,9 @@ export default function LeadsPage() {
       {selected.size > 0 && (
         <div className="flex items-center gap-3 rounded-lg border bg-primary/5 px-4 py-2">
           <span className="text-sm font-medium">{tb("selected", { count: selected.size })}</span>
+          <button onClick={() => setShowAddCampaign(true)} className="flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+            <Megaphone className="h-3.5 w-3.5" /> Add to campaign
+          </button>
           <button onClick={handleBulkDelete} className="rounded-md bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200">
             {tb("deleteSelected")}
           </button>
@@ -579,6 +584,14 @@ export default function LeadsPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {showAddCampaign && (
+        <AddToCampaignModal
+          contactIds={[...selected]}
+          onClose={() => setShowAddCampaign(false)}
+          onDone={() => setSelected(new Set())}
+        />
       )}
     </div>
   );
