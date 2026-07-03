@@ -155,6 +155,9 @@
   },
   "companies": {
     "title": "Companies",
+    "company": "Company",
+    "source": "Source",
+    "contacts": "Contacts",
     "addCompany": "Add Company",
     "searchPlaceholder": "Search by name or domain…",
     "domain": "Domain",
