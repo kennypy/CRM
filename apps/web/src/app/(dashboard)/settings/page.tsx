@@ -17,6 +17,7 @@ import { useTheme } from "@/components/theme/theme-provider";
 import type { Theme } from "@/components/theme/theme-provider";
 import { useTranslations } from "next-intl";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
+import { InviteUserModal } from "@/components/settings/invite-user-modal";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -524,6 +525,7 @@ function UsersTab() {
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [showCreate,   setShowCreate]   = useState(false);
+  const [showInvite,   setShowInvite]   = useState(false);
   const [editUser,     setEditUser]     = useState<TeamUser | null>(null);
   const [deletingId,   setDeletingId]   = useState<string | null>(null);
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
@@ -607,6 +609,7 @@ function UsersTab() {
   return (
     <div className="space-y-4">
       {showCreate && <UserFormModal mode="create" allUsers={users} onClose={() => setShowCreate(false)} onSaved={handleCreated} />}
+      {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} onInvited={fetchUsers} />}
       {editUser   && <UserFormModal mode="edit" user={editUser} allUsers={users} onClose={() => setEditUser(null)} onSaved={handleUpdated} />}
 
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -621,6 +624,10 @@ function UsersTab() {
         </div>
         <div className="flex items-center gap-3">
           <p className="text-sm text-muted-foreground">{users.length} team member{users.length !== 1 ? "s" : ""}</p>
+          <button onClick={() => setShowInvite(true)}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+            <Mail className="h-4 w-4" /> Invite
+          </button>
           <button onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
             <Plus className="h-4 w-4" /> Create user
