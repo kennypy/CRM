@@ -11,7 +11,27 @@ const pool = new Pool({
     "postgresql://nexcrm:nexcrm_dev@localhost:5432/nexcrm",
 });
 
-const MIGRATIONS_DIR = path.resolve(__dirname, "../../../../infra/db/migrations");
+/**
+ * Resolve the migrations directory. The relative depth differs between the dev
+ * layout (services/graph-core/src/db) and the compiled Docker runner
+ * (/app/dist/db, with infra copied to /app/infra), so probe the known
+ * candidates and use the first that exists. MIGRATIONS_DIR env overrides all.
+ */
+function resolveMigrationsDir(): string {
+  const candidates = [
+    process.env.MIGRATIONS_DIR,
+    path.resolve(__dirname, "../../../../infra/db/migrations"), // dev: src/db → repo root
+    path.resolve(__dirname, "../../infra/db/migrations"),        // runner: dist/db → /app
+    path.resolve(process.cwd(), "infra/db/migrations"),          // cwd fallback
+  ].filter(Boolean) as string[];
+  for (const dir of candidates) {
+    if (fs.existsSync(dir)) return dir;
+  }
+  // Fall back to the dev path so the error message points somewhere sensible.
+  return candidates[1] ?? candidates[0];
+}
+
+const MIGRATIONS_DIR = resolveMigrationsDir();
 
 async function main() {
   const client = await pool.connect();
