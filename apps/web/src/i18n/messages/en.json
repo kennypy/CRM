@@ -529,6 +529,7 @@
     "language": "Language",
     "appearance": "Appearance",
     "theme": "Theme",
+    "font": "Font",
     "themeLight": "Light",
     "themeDark": "Dark",
     "themeSystem": "System",
