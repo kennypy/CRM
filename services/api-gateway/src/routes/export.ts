@@ -120,23 +120,32 @@ async function runExport(tenantId: string, format: "json" | "csv"): Promise<stri
 
   const key = `exports/${tenantId}/${Date.now()}.${format}`;
 
-  await s3.send(new PutObjectCommand({
-    Bucket:      S3_BUCKET,
-    Key:         key,
-    Body:        body,
-    ContentType: contentType,
-    // Auto-delete after 24 hours (requires lifecycle policy on the bucket)
-    Metadata:    { tenant_id: tenantId, exported_at: exportData.exported_at },
-  }));
+  // Prefer object storage (signed URL, deletes after 24h). But self-hosted
+  // deploys may not have a reachable/configured S3/minio — in that case fall
+  // back to returning the payload inline as a data: URL so the export always
+  // works instead of hard-failing.
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket:      S3_BUCKET,
+      Key:         key,
+      Body:        body,
+      ContentType: contentType,
+      // Auto-delete after 24 hours (requires lifecycle policy on the bucket)
+      Metadata:    { tenant_id: tenantId, exported_at: exportData.exported_at },
+    }));
 
-  // Generate a pre-signed download URL valid for 1 hour.
-  const url = await getSignedUrl(
-    s3,
-    new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
-    { expiresIn: 3600 },
-  );
-
-  return url;
+    // Generate a pre-signed download URL valid for 1 hour.
+    return await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
+      { expiresIn: 3600 },
+    );
+  } catch {
+    // Object storage unavailable — return the content inline. The browser can
+    // download a data: URL directly; API callers get the payload in the URL.
+    const b64 = Buffer.from(body, "utf-8").toString("base64");
+    return `data:${contentType};base64,${b64}`;
+  }
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
