@@ -59,7 +59,7 @@ const STANDARD_SYNONYMS: Record<string, string[]> = {
   billing_cycle: ["billing cycle", "billing", "billing frequency", "term", "frequency"],
 };
 
-const norm = (s: string) => s.trim().toLowerCase().replace(/[_\-]+/g, " ").replace(/\s+/g, " ");
+const norm = (s: string) => s.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 
 function matchStandard(header: string): string | null {
   const n = norm(header);
@@ -88,7 +88,7 @@ function inferType(samples: string[]): string {
 }
 
 const parseNumber = (v: string): number | null => {
-  const cleaned = v.replace(/[^0-9.\-]/g, "");
+  const cleaned = v.replace(/[^0-9.-]/g, "");
   if (cleaned === "" || cleaned === "-") return null;
   const n = Number(cleaned);
   return isNaN(n) ? null : n;

@@ -1,8 +1,10 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
+  # Manual-only for now. The staging step below is still a placeholder and the
+  # deployment target is the self-hosted LXC (deployed out-of-band), so there's
+  # nothing to auto-deploy on every push. Re-add `push: { branches: [main] }`
+  # once a real staging target + DATABASE_URL secret are configured.
   workflow_dispatch:
     inputs:
       environment:
@@ -42,7 +44,12 @@ jobs:
 
       - name: Compute image tag
         id: meta
-        run: echo "sha_tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "sha_tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          # GHCR repository names must be lowercase; ${{ github.repository }} can
+          # contain uppercase (e.g. kennypy/CRM), which made every build fail
+          # with "repository name must be lowercase". Lowercase it here.
+          echo "repo_lc=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Build and push — api-gateway
         uses: docker/build-push-action@v5
@@ -51,8 +58,8 @@ jobs:
           file: services/api-gateway/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/api-gateway:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ github.repository }}/api-gateway:latest
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/api-gateway:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/api-gateway:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -63,8 +70,8 @@ jobs:
           file: services/auth/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/auth:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ github.repository }}/auth:latest
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/auth:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/auth:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,8 +82,8 @@ jobs:
           file: services/graph-core/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/graph-core:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ github.repository }}/graph-core:latest
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/graph-core:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/graph-core:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -87,8 +94,8 @@ jobs:
           file: services/outreach/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/outreach:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ github.repository }}/outreach:latest
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/outreach:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/outreach:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -99,8 +106,8 @@ jobs:
           file: services/ai-engine/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/ai-engine:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ github.repository }}/ai-engine:latest
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/ai-engine:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/ai-engine:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -111,8 +118,8 @@ jobs:
           file: apps/web/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/web:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ github.repository }}/web:latest
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/web:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_lc }}/web:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
