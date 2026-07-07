@@ -12,7 +12,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
-import { requireAdmin } from "../middleware/rbac";
+import { requireAdmin, requireRep } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
 const LineItemSchema = z.object({
@@ -152,7 +152,7 @@ export async function quotesRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/quotes ──────────────────────────────────────────────────
-  server.post("/", { preHandler: [requireCrmWrite] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const parsed = CreateQuoteSchema.safeParse(request.body);
     if (!parsed.success)
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
@@ -245,7 +245,7 @@ export async function quotesRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/quotes/:id ─────────────────────────────────────────────
-  server.patch("/:id", { preHandler: [requireCrmWrite] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
 
@@ -337,7 +337,7 @@ export async function quotesRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /api/v1/quotes/:id ────────────────────────────────────────────
-  server.delete("/:id", { preHandler: [requireCrmWrite] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const { rows: [q] } = await pool.query(`SELECT status FROM quotes WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
@@ -350,7 +350,7 @@ export async function quotesRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/quotes/:id/send ─────────────────────────────────────────
-  server.post("/:id/send", { preHandler: [requireCrmWrite] }, async (request, reply) => {
+  server.post("/:id/send", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const { rows: [q] } = await pool.query(`SELECT * FROM quotes WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
@@ -366,7 +366,7 @@ export async function quotesRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/quotes/:id/approve ─────────────────────────────────────
-  server.post("/:id/approve", { preHandler: [requireCrmWrite] }, async (request, reply) => {
+  server.post("/:id/approve", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
 
@@ -392,7 +392,7 @@ export async function quotesRoutes(server: FastifyInstance) {
 
   // ── POST /api/v1/quotes/:id/status ──────────────────────────────────────
   // For external status transitions: viewed, accepted, rejected
-  server.post("/:id/status", { preHandler: [requireCrmWrite] }, async (request, reply) => {
+  server.post("/:id/status", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const { status } = request.body as { status: string };

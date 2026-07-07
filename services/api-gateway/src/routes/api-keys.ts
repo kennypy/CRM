@@ -17,6 +17,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { denyApiKeys } from "../middleware/scope";
+import { requireAdmin } from "../middleware/rbac";
 
 const KEY_PREFIX = "nxc_";
 
@@ -30,7 +31,7 @@ const CreateKeySchema = z.object({
 
 export async function apiKeysRoutes(server: FastifyInstance) {
   // GET /api/v1/api-keys
-  server.get("/", { preHandler: [denyApiKeys] }, async (request, reply) => {
+  server.get("/", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
       `SELECT id, name, key_prefix, scopes, last_used_at, expires_at, is_active, created_at
@@ -43,13 +44,28 @@ export async function apiKeysRoutes(server: FastifyInstance) {
   });
 
   // POST /api/v1/api-keys
-  server.post("/", { preHandler: [denyApiKeys] }, async (request, reply) => {
+  server.post("/", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const parsed = CreateKeySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
         success: false,
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
+      });
+    }
+
+    // Privilege cap: a key can never carry a scope the creator does not
+    // themselves hold — an admin can't mint a key more powerful than their own
+    // token. (Belt-and-suspenders now that key creation is admin-only.)
+    const callerScopes = new Set(request.user.scopes ?? []);
+    const overreach = parsed.data.scopes.filter((s) => !callerScopes.has(s));
+    if (overreach.length > 0) {
+      return reply.status(403).send({
+        success: false,
+        error: {
+          code: "SCOPE_OVERREACH",
+          message: `You cannot grant scopes you do not hold: ${overreach.join(", ")}`,
+        },
       });
     }
 
@@ -79,7 +95,7 @@ export async function apiKeysRoutes(server: FastifyInstance) {
   });
 
   // DELETE /api/v1/api-keys/:id
-  server.delete("/:id", { preHandler: [denyApiKeys] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { id }       = request.params as { id: string };
     const { tenantId } = request.user;
     const { rows: [key] } = await pool.query(

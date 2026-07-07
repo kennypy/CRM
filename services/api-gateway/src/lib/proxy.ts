@@ -6,6 +6,7 @@
 
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { mintInternalToken } from "./internal-fetch";
+import { getFieldPermissions, stripHiddenFields } from "../middleware/field-access";
 
 export interface ProxyOptions {
   baseUrl: string;
@@ -13,6 +14,14 @@ export interface ProxyOptions {
   stripPrefix?: string;
   /** Additional headers to inject */
   headers?: Record<string, string>;
+  /**
+   * Entity type (singular, e.g. "contact") for field-level access control. When
+   * set, fields the caller's role has marked `hidden` in field_permissions are
+   * stripped from the response `data` before it leaves the gateway. Admins and
+   * super_admins are never masked. Unconfigured fields default to read_write, so
+   * this is a no-op unless an admin has explicitly hidden a field.
+   */
+  maskEntity?: string;
 }
 
 export function createProxy(opts: ProxyOptions) {
@@ -90,6 +99,26 @@ export function createProxy(opts: ProxyOptions) {
 
       try {
         const parsed = JSON.parse(body);
+
+        // Field-level masking: strip fields the caller's role cannot see. Only
+        // on successful reads with a data payload; admins bypass. This is what
+        // makes the Permissions → Field Access tab actually enforce.
+        const role = jwt?.role ?? "";
+        if (
+          opts.maskEntity &&
+          resp.ok &&
+          role && role !== "admin" && role !== "super_admin" &&
+          parsed && typeof parsed === "object" && "data" in parsed && parsed.data
+        ) {
+          const perms = await getFieldPermissions(tenantId, opts.maskEntity, role);
+          if (perms.size > 0) {
+            parsed.data = stripHiddenFields(
+              parsed.data as Record<string, unknown> | Record<string, unknown>[],
+              perms,
+            );
+          }
+        }
+
         return reply.status(resp.status).type("application/json").send(parsed);
       } catch {
         request.log.warn({ status: resp.status, bodySnippet: body.slice(0, 200) }, "proxy.non_json_response");
