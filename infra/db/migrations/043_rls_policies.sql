@@ -45,10 +45,13 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON public.%I', t);
+    -- Compare as text so the policy works whether tenant_id is uuid or text
+    -- (activities.tenant_id is text; most others are uuid). The app's own
+    -- WHERE tenant_id = $1 still drives index use; RLS is the safety net.
     EXECUTE format(
       'CREATE POLICY tenant_isolation ON public.%I FOR ALL TO nexcrm_app '
-      || 'USING (tenant_id = current_setting(''app.current_tenant'', true)::uuid) '
-      || 'WITH CHECK (tenant_id = current_setting(''app.current_tenant'', true)::uuid)',
+      || 'USING (tenant_id::text = current_setting(''app.current_tenant'', true)) '
+      || 'WITH CHECK (tenant_id::text = current_setting(''app.current_tenant'', true))',
       t);
   END LOOP;
 END $$;
@@ -69,33 +72,33 @@ END $$;
 ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_self ON public.tenants;
 CREATE POLICY tenant_self ON public.tenants FOR ALL TO nexcrm_app
-  USING (id = current_setting('app.current_tenant', true)::uuid)
-  WITH CHECK (id = current_setting('app.current_tenant', true)::uuid);
+  USING (id::text = current_setting('app.current_tenant', true))
+  WITH CHECK (id::text = current_setting('app.current_tenant', true));
 
 -- ── Child tables (no tenant_id): scope via their tenant-bearing parent. ───────
 ALTER TABLE public.quote_items ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON public.quote_items;
 CREATE POLICY tenant_isolation ON public.quote_items FOR ALL TO nexcrm_app
   USING (EXISTS (SELECT 1 FROM public.quotes q WHERE q.id = quote_items.quote_id
-                 AND q.tenant_id = current_setting('app.current_tenant', true)::uuid))
+                 AND q.tenant_id::text = current_setting('app.current_tenant', true)))
   WITH CHECK (EXISTS (SELECT 1 FROM public.quotes q WHERE q.id = quote_items.quote_id
-                 AND q.tenant_id = current_setting('app.current_tenant', true)::uuid));
+                 AND q.tenant_id::text = current_setting('app.current_tenant', true)));
 
 ALTER TABLE public.entity_list_members ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON public.entity_list_members;
 CREATE POLICY tenant_isolation ON public.entity_list_members FOR ALL TO nexcrm_app
   USING (EXISTS (SELECT 1 FROM public.entity_lists l WHERE l.id = entity_list_members.list_id
-                 AND l.tenant_id = current_setting('app.current_tenant', true)::uuid))
+                 AND l.tenant_id::text = current_setting('app.current_tenant', true)))
   WITH CHECK (EXISTS (SELECT 1 FROM public.entity_lists l WHERE l.id = entity_list_members.list_id
-                 AND l.tenant_id = current_setting('app.current_tenant', true)::uuid));
+                 AND l.tenant_id::text = current_setting('app.current_tenant', true)));
 
 -- activity_participants is partitioned; scope via the activities parent by id.
 ALTER TABLE public.activity_participants ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON public.activity_participants;
 CREATE POLICY tenant_isolation ON public.activity_participants FOR ALL TO nexcrm_app
   USING (EXISTS (SELECT 1 FROM public.activities a WHERE a.id = activity_participants.activity_id
-                 AND a.tenant_id = current_setting('app.current_tenant', true)::uuid))
+                 AND a.tenant_id::text = current_setting('app.current_tenant', true)))
   WITH CHECK (EXISTS (SELECT 1 FROM public.activities a WHERE a.id = activity_participants.activity_id
-                 AND a.tenant_id = current_setting('app.current_tenant', true)::uuid));
+                 AND a.tenant_id::text = current_setting('app.current_tenant', true)));
 
 COMMIT;
