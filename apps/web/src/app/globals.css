@@ -70,8 +70,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
-    font-family: 'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', cursive;
+    @apply bg-background text-foreground font-sans;
   }
 }
 
