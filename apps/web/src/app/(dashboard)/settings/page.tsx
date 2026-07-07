@@ -2021,15 +2021,146 @@ function CommunicationsTab() {
 
 // ── Custom Fields Tab ────────────────────────────────────────────────────────
 
+// Objects a custom field can be created on (mirrors the backend ENTITY_TYPES,
+// minus custom_object which is managed on its own tab). Leads & Products included.
+const FIELD_ENTITIES: { key: string; label: string }[] = [
+  { key: "contact",  label: "Contacts" },
+  { key: "company",  label: "Companies" },
+  { key: "deal",     label: "Deals" },
+  { key: "lead",     label: "Leads" },
+  { key: "product",  label: "Products" },
+  { key: "activity", label: "Activities" },
+  { key: "task",     label: "Tasks" },
+];
+const FIELD_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "text", label: "Text" }, { value: "number", label: "Number" },
+  { value: "date", label: "Date" }, { value: "datetime", label: "Date & time" },
+  { value: "boolean", label: "Yes / No" }, { value: "enum", label: "Dropdown (single)" },
+  { value: "multi_enum", label: "Dropdown (multi-select)" }, { value: "url", label: "URL" },
+  { value: "email", label: "Email" }, { value: "phone", label: "Phone" },
+  { value: "currency", label: "Currency" },
+];
+
+/** Derive a snake_case field_key from a human label. */
+function toFieldKey(label: string): string {
+  return label.toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, "_")   // non-alphanumerics → underscore
+    .replace(/^_+|_+$/g, "")        // trim leading/trailing underscores
+    .replace(/^([0-9])/, "f_$1")    // must start with a letter
+    .slice(0, 100) || "field";
+}
+
+// ── Create-custom-field modal: click Create → pick the object → build the field.
+function CreateFieldModal({ defaultEntity, onClose, onCreated }: { defaultEntity: string; onClose: () => void; onCreated: () => void }) {
+  const [entity,   setEntity]   = useState(defaultEntity);
+  const [label,    setLabel]    = useState("");
+  const [keyEdited, setKeyEdited] = useState(false);
+  const [fieldKey, setFieldKey] = useState("");
+  const [fieldType, setFieldType] = useState("text");
+  const [required, setRequired] = useState(false);
+  const [options,  setOptions]  = useState<string[]>([""]);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const isEnum = fieldType === "enum" || fieldType === "multi_enum";
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+  const labelCls = "mb-1.5 block text-sm font-medium";
+
+  // Keep the key in sync with the label until the user hand-edits it.
+  const onLabelChange = (v: string) => { setLabel(v); if (!keyEdited) setFieldKey(toFieldKey(v)); };
+
+  const submit = async () => {
+    if (!label.trim()) { setError("Give the field a label"); return; }
+    const key = fieldKey.trim() || toFieldKey(label);
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) { setError("Key must be snake_case (letters, numbers, underscores; start with a letter)"); return; }
+    const opts = isEnum
+      ? options.map((o) => o.trim()).filter(Boolean).map((v) => ({ value: toFieldKey(v), label: v }))
+      : [];
+    if (isEnum && opts.length === 0) { setError("Add at least one dropdown option"); return; }
+    setSaving(true); setError(null);
+    try {
+      const res = await api.post("/api/v1/custom-fields", {
+        entity_type: entity, field_key: key, field_label: label.trim(),
+        field_type: fieldType, is_required: required, options: opts,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(json?.error?.message ?? "Failed to create field"); return; }
+      onCreated();
+      onClose();
+    } catch { setError("Network error — please try again"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2"><Columns3 className="h-5 w-5 text-primary" /><h2 className="font-semibold">Create custom field</h2></div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className={labelCls}>What is this field on?</label>
+            <select value={entity} onChange={(e) => setEntity(e.target.value)} className={inputCls}>
+              {FIELD_ENTITIES.map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Field label *</label>
+            <input value={label} onChange={(e) => onLabelChange(e.target.value)} className={inputCls} placeholder="e.g. Contract Value" />
+          </div>
+          <div>
+            <label className={labelCls}>Field key <span className="font-normal text-muted-foreground">(auto)</span></label>
+            <input value={fieldKey} onChange={(e) => { setKeyEdited(true); setFieldKey(e.target.value); }} className={cn(inputCls, "font-mono text-xs")} placeholder="contract_value" />
+          </div>
+          <div>
+            <label className={labelCls}>Field type</label>
+            <select value={fieldType} onChange={(e) => setFieldType(e.target.value)} className={inputCls}>
+              {FIELD_TYPE_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          {isEnum && (
+            <div>
+              <label className={labelCls}>Dropdown options</label>
+              <div className="space-y-2">
+                {options.map((o, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input value={o} onChange={(e) => setOptions((os) => os.map((x, j) => j === i ? e.target.value : x))}
+                      className={inputCls} placeholder={`Option ${i + 1}`} />
+                    <button type="button" onClick={() => setOptions((os) => os.filter((_, j) => j !== i))}
+                      className="rounded-md p-1.5 text-muted-foreground hover:text-red-600" disabled={options.length === 1}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setOptions((os) => [...os, ""])}
+                  className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"><Plus className="h-3.5 w-3.5" /> Add option</button>
+              </div>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} className="h-4 w-4 rounded border-border" />
+            Required field
+          </label>
+          {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Cancel</button>
+            <button type="button" onClick={submit} disabled={saving} className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+              {saving ? "Creating…" : "Create field"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CustomFieldsTab() {
   const [fields, setFields] = useState<any[]>([]);
   const [entityType, setEntityType] = useState("contact");
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ field_key: "", field_label: "", field_type: "text", is_required: false, options: [] as any[] });
-
-  const entityTypes = ["contact", "company", "deal", "activity", "task"];
-  const fieldTypes = ["text", "number", "date", "datetime", "boolean", "enum", "multi_enum", "url", "email", "phone", "currency"];
 
   const load = async () => {
     setLoading(true);
@@ -2042,71 +2173,42 @@ function CustomFieldsTab() {
   };
   useEffect(() => { load(); }, [entityType]);
 
-  const create = async () => {
-    try {
-      await api.post("/api/v1/custom-fields", { ...form, entity_type: entityType });
-      setShowCreate(false);
-      setForm({ field_key: "", field_label: "", field_type: "text", is_required: false, options: [] });
-      load();
-    } catch (e: any) { alert(e.message); }
-  };
-
   const remove = async (id: string) => {
     await api.delete(`/api/v1/custom-fields/${id}`);
     load();
   };
 
+  const entityLabel = FIELD_ENTITIES.find((e) => e.key === entityType)?.label ?? entityType;
+
   return (
     <div className="space-y-4">
+      {showCreate && (
+        <CreateFieldModal
+          defaultEntity={entityType}
+          onClose={() => setShowCreate(false)}
+          onCreated={() => { setShowCreate(false); load(); }}
+        />
+      )}
       <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          {entityTypes.map((t) => (
-            <button key={t} onClick={() => setEntityType(t)}
-              className={cn("rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors",
-                entityType === t ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
-              {t}
+        <div className="flex flex-wrap gap-2">
+          {FIELD_ENTITIES.map((t) => (
+            <button key={t.key} onClick={() => setEntityType(t.key)}
+              className={cn("rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                entityType === t.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
+              {t.label}
             </button>
           ))}
         </div>
-        <button onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> Add Field
+        <button onClick={() => setShowCreate(true)}
+          className="flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+          <Plus className="h-4 w-4" /> Create field
         </button>
       </div>
-
-      {showCreate && (
-        <div className="rounded-lg border p-4 space-y-3">
-          <div className="grid grid-cols-3 gap-3">
-            <input placeholder="field_key (snake_case)" value={form.field_key}
-              onChange={(e) => setForm({ ...form, field_key: e.target.value })}
-              className="rounded-lg border px-3 py-2 text-sm" />
-            <input placeholder="Display Label" value={form.field_label}
-              onChange={(e) => setForm({ ...form, field_label: e.target.value })}
-              className="rounded-lg border px-3 py-2 text-sm" />
-            <select value={form.field_type} onChange={(e) => setForm({ ...form, field_type: e.target.value })}
-              className="rounded-lg border px-3 py-2 text-sm">
-              {fieldTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.is_required}
-                onChange={(e) => setForm({ ...form, is_required: e.target.checked })} />
-              Required
-            </label>
-            <button onClick={create}
-              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-              Create
-            </button>
-            <button onClick={() => setShowCreate(false)} className="text-sm text-muted-foreground hover:underline">Cancel</button>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="h-20 rounded-lg bg-muted animate-pulse" />
       ) : fields.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-8 text-center">No custom fields for {entityType}. Click "Add Field" to create one.</p>
+        <p className="text-sm text-muted-foreground py-8 text-center">No custom fields on {entityLabel} yet. Click "Create field" to add one.</p>
       ) : (
         <div className="rounded-lg border divide-y">
           {fields.map((f: any) => (

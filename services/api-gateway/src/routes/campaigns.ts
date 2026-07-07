@@ -15,6 +15,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
+import { requireCapability } from "../middleware/capabilities";
 
 const CAMPAIGN_TYPES = ["email", "social", "event", "webinar", "content", "paid_search", "paid_social", "abm", "referral", "other"] as const;
 const CAMPAIGN_STATUSES = ["draft", "scheduled", "active", "paused", "completed", "archived"] as const;
@@ -183,7 +184,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/campaigns ──────────────────────────────────────────────
-  server.post("/", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireRep, requireCrmWrite, requireCapability("can_campaigns")] }, async (request, reply) => {
     const parsed = CreateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -304,7 +305,7 @@ export async function campaignsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/campaigns/:id/clone ────────────────────────────────────
-  server.post("/:id/clone", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
+  server.post("/:id/clone", { preHandler: [requireRep, requireCrmWrite, requireCapability("can_campaigns")] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
 

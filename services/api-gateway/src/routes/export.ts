@@ -18,6 +18,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Queue } from "bullmq";
 import { pool } from "../db";
 import { requireCrmRead } from "../middleware/scope";
+import { requireCapability } from "../middleware/capabilities";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
 const exportQueue = new Queue("export", { connection: { url: REDIS_URL } });
@@ -122,7 +123,7 @@ async function runExport(tenantId: string, format: "json" | "csv"): Promise<stri
 export async function exportRoutes(server: FastifyInstance) {
   // POST /api/v1/export — trigger an export (runs synchronously for now;
   // move to BullMQ background job for tenants with >100k records)
-  server.post("/", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireCrmRead, requireCapability("can_export")] }, async (request, reply) => {
     const { tenantId } = request.user;
     const parsed = z.object({
       format: z.enum(["json", "csv"]).default("json"),
