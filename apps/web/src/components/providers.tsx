@@ -5,6 +5,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useEffect, useState } from "react";
 import { TenantProvider } from "@/lib/tenant-context";
 import { ThemeProvider } from "@/components/theme/theme-provider";
+import { FontProvider } from "@/components/theme/font-provider";
 import { initPostHog, posthog } from "@/lib/posthog";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -41,6 +42,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeProvider>
+      <FontProvider>
       <QueryClientProvider client={queryClient}>
         <TenantProvider>
           <PostHogPageView />
@@ -50,6 +52,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <ReactQueryDevtools initialIsOpen={false} />
         )}
       </QueryClientProvider>
+      </FontProvider>
     </ThemeProvider>
   );
 }

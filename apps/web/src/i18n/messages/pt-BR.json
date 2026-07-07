@@ -526,6 +526,7 @@
     "language": "Idioma",
     "appearance": "Aparência",
     "theme": "Tema",
+    "font": "Fonte",
     "themeLight": "Claro",
     "themeDark": "Escuro",
     "themeSystem": "Sistema",

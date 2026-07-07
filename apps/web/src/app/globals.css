@@ -4,6 +4,9 @@
 
 @layer base {
   :root {
+    /* Per-user UI font stack (overridden inline on <html> by FontProvider). */
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
     /* NexCRM Design Tokens — Light Mode */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;

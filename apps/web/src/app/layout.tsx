@@ -26,6 +26,8 @@ export default async function RootLayout({
     <html lang={locale} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('nexcrm_theme')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark')}catch(e){}})()` }} />
+        {/* Apply the user's saved font before paint to avoid a flash of the default. */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var F={system:'system-ui, -apple-system, \\"Segoe UI\\", Roboto, Helvetica, Arial, sans-serif',grotesk:'\\"Segoe UI\\", \\"Helvetica Neue\\", Helvetica, Arial, sans-serif',rounded:'\\"Trebuchet MS\\", \\"Segoe UI\\", Verdana, sans-serif',serif:'Georgia, Cambria, \\"Times New Roman\\", Times, serif',mono:'\\"SF Mono\\", \\"Cascadia Code\\", \\"Consolas\\", ui-monospace, monospace'};var f=localStorage.getItem('nexcrm_font');if(f&&F[f])document.documentElement.style.setProperty('--font-sans',F[f]);}catch(e){}})()` }} />
         {/* Polyfill crypto.randomUUID for insecure (plain-HTTP) contexts. Browsers
             only expose it over HTTPS or localhost, so on a LAN IP over http it is
             undefined and any useState initializer that calls it throws on mount.

@@ -10,15 +10,17 @@ import {
   Settings, Users, Plug, CreditCard, Shield, User,
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
-  FileText, Package, ChevronDown, Columns3, Box, LockKeyhole, UsersRound,
+  FileText, Package, ChevronDown, Columns3, Box, LockKeyhole, UsersRound, Upload,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
 import type { Theme } from "@/components/theme/theme-provider";
+import { useFont, FONTS, type FontKey } from "@/components/theme/font-provider";
 import { useTranslations } from "next-intl";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { InviteUserModal } from "@/components/settings/invite-user-modal";
 import { TeamsTab } from "@/components/settings/teams-tab";
+import { ProductsImportModal } from "@/components/settings/products-import-modal";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -59,6 +61,23 @@ const SUPPORTED_TIMEZONES  = [
   "Asia/Tokyo", "Australia/Sydney",
 ];
 
+// Broader IANA list for the per-user profile timezone picker.
+const PROFILE_TIMEZONES = [
+  "UTC",
+  "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York",
+  "America/Sao_Paulo", "America/Mexico_City", "America/Toronto",
+  "Europe/London", "Europe/Dublin", "Europe/Lisbon", "Europe/Paris", "Europe/Berlin",
+  "Europe/Madrid", "Europe/Rome", "Europe/Amsterdam", "Europe/Stockholm", "Europe/Moscow",
+  "Africa/Johannesburg", "Africa/Lagos", "Africa/Cairo",
+  "Asia/Dubai", "Asia/Karachi", "Asia/Kolkata", "Asia/Bangkok", "Asia/Singapore",
+  "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Tokyo", "Asia/Seoul",
+  "Australia/Perth", "Australia/Sydney", "Pacific/Auckland",
+];
+
+function detectedTimezone(): string {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
+}
+
 type Tab = "profile" | "general" | "users" | "teams" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions";
 
 // ── Theme Selector ─────────────────────────────────────────────────────────────
@@ -92,6 +111,32 @@ function ThemeSelector() {
   );
 }
 
+// ── Font Selector ──────────────────────────────────────────────────────────────
+
+function FontSelector() {
+  const { font, setFont } = useFont();
+  const t = useTranslations("settings");
+  const keys = Object.keys(FONTS) as FontKey[];
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium">{t("font")}</label>
+      <div className="grid grid-cols-5 gap-2">
+        {keys.map((k) => (
+          <button key={k} onClick={() => setFont(k)}
+            style={{ fontFamily: FONTS[k].stack }}
+            className={cn(
+              "flex flex-col items-center gap-1 rounded-xl border py-3 text-xs font-medium transition-colors",
+              font === k ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground hover:bg-muted"
+            )}>
+            <span className="text-lg leading-none">Aa</span>
+            {FONTS[k].label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Tab: Profile ───────────────────────────────────────────────────────────────
 
 function ProfileTab({ user }: { user: StoredUser | null }) {
@@ -104,7 +149,6 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
   const [email,        setEmail]        = useState(user?.email     ?? "");
   const [country,      setCountry]      = useState("");
   const [timezone,     setTimezone]     = useState("");
-  const [language,     setLanguage]     = useState("");
   const [phone,        setPhone]        = useState("");
   const [twilioNumber, setTwilioNumber] = useState("");
   const [saving,       setSaving]       = useState(false);
@@ -117,8 +161,9 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
       const j = await r.json();
       const d = j.data;
       if (d.country)      setCountry(d.country);
-      if (d.timezone)     setTimezone(d.timezone);
-      if (d.language)     setLanguage(d.language);
+      // Prefill the timezone with the browser-detected zone when the user has
+      // none saved yet, so the picker isn't blank.
+      setTimezone(d.timezone || detectedTimezone());
       if (d.phone)        setPhone(d.phone);
       if (d.twilioNumber) setTwilioNumber(d.twilioNumber);
     }).catch(() => {});
@@ -133,7 +178,7 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
       const res = await api.patch("/api/v1/users/me", {
         firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(),
         country: country || null, timezone: timezone || null,
-        language: language || null, phone: phone || null, twilioNumber: twilioNumber || null,
+        phone: phone || null, twilioNumber: twilioNumber || null,
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
@@ -197,15 +242,12 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">{t("timezone")}</label>
-            <input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. Europe/London" className={inputCls} />
+            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls}>
+              {/* Ensure a saved value outside the curated list still shows. */}
+              {timezone && !PROFILE_TIMEZONES.includes(timezone) && <option value={timezone}>{timezone}</option>}
+              {PROFILE_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+            </select>
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">{t("language")}</label>
-            <input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="e.g. en" className={inputCls} />
-          </div>
-          <div>{/* spacer */}</div>
         </div>
         {error && (
           <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -224,6 +266,7 @@ function ProfileTab({ user }: { user: StoredUser | null }) {
       <div className="rounded-xl border bg-card p-5 space-y-4">
         <h3 className="font-semibold">{t("appearance")}</h3>
         <ThemeSelector />
+        <FontSelector />
       </div>
 
       <div className="rounded-xl border bg-card p-5 space-y-4">
@@ -962,14 +1005,17 @@ function ProductsTab() {
   const [loading,     setLoading]     = useState(true);
   const [showForm,    setShowForm]    = useState(false);
   const [editProduct, setEditProduct] = useState<Record<string, unknown> | null>(null);
+  const [showImport,  setShowImport]  = useState(false);
 
-  useEffect(() => {
+  const loadProducts = () => {
     api.get("/api/v1/products")
       .then((r) => r.json())
       .then((j) => setProducts(j.data?.length ? j.data : demoProd))
       .catch(() => setProducts(demoProd))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadProducts(); }, []);
 
   const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
 
@@ -980,8 +1026,9 @@ function ProductsTab() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{products.length} product{products.length !== 1 ? "s" : ""} in catalog</p>
         <div className="flex gap-2">
-          <button className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
-            Import CSV (coming soon)
+          <button onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted">
+            <Upload className="h-3.5 w-3.5" /> Import CSV
           </button>
           <button onClick={() => { setEditProduct(null); setShowForm(true); }}
             className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90">
@@ -1024,13 +1071,12 @@ function ProductsTab() {
         </table>
       </div>
 
-      <div className="rounded-lg border border-dashed border-border p-4 text-center">
-        <Package className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
-        <p className="text-sm font-medium text-muted-foreground">CSV / Excel import</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          Upload your product catalog from a spreadsheet. Field mapping will be available in a future release.
-        </p>
-      </div>
+      {showImport && (
+        <ProductsImportModal
+          onClose={() => setShowImport(false)}
+          onDone={loadProducts}
+        />
+      )}
     </div>
   );
 }

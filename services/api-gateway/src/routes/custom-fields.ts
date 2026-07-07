@@ -14,7 +14,7 @@ import { pool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 
-const ENTITY_TYPES = ["contact", "company", "deal", "activity", "task", "custom_object"] as const;
+const ENTITY_TYPES = ["contact", "company", "deal", "lead", "product", "activity", "task", "custom_object"] as const;
 const FIELD_TYPES = [
   "text", "number", "date", "datetime", "boolean", "enum", "multi_enum",
   "url", "email", "phone", "currency", "lookup", "formula",
@@ -52,7 +52,7 @@ function toField(row: Record<string, unknown>) {
     fieldKey:       row.field_key,
     fieldLabel:     row.field_label,
     fieldType:      row.field_type,
-    options:        row.options,
+    options:        row.field_options,
     validations:    row.validations,
     defaultValue:   row.default_value ?? null,
     sortOrder:      row.sort_order,
@@ -110,7 +110,7 @@ export async function customFieldsRoutes(server: FastifyInstance) {
     const { rows } = await pool.query(
       `INSERT INTO custom_field_definitions
          (tenant_id, entity_type, custom_object_id, field_key, field_label,
-          field_type, options, validations, default_value, sort_order, is_required, created_by)
+          field_type, field_options, validations, default_value, sort_order, is_required, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [
@@ -141,7 +141,7 @@ export async function customFieldsRoutes(server: FastifyInstance) {
 
     if (data.field_label  !== undefined) { vals.push(data.field_label);  sets.push(`field_label = $${vals.length}`); }
     if (data.field_type   !== undefined) { vals.push(data.field_type);   sets.push(`field_type = $${vals.length}`); }
-    if (data.options      !== undefined) { vals.push(JSON.stringify(data.options));     sets.push(`options = $${vals.length}`); }
+    if (data.options      !== undefined) { vals.push(JSON.stringify(data.options));     sets.push(`field_options = $${vals.length}`); }
     if (data.validations  !== undefined) { vals.push(JSON.stringify(data.validations)); sets.push(`validations = $${vals.length}`); }
     if (data.default_value !== undefined) { vals.push(data.default_value); sets.push(`default_value = $${vals.length}`); }
     if (data.sort_order   !== undefined) { vals.push(data.sort_order);   sets.push(`sort_order = $${vals.length}`); }
