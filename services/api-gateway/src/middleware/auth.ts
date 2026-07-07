@@ -20,11 +20,18 @@ const PUBLIC_PATHS = new Set([
   "/api/v1/integrations/slack/interactions",
 ]);
 
+// Public path PREFIXES for routes with dynamic segments that can't be listed
+// exactly. The customer portal (/portal/:slug/...) is fully public — the tenant
+// is resolved from the slug in the URL and only published KB content is served.
+const PUBLIC_PREFIXES = ["/portal/"];
+
 export async function authMiddleware(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  if (PUBLIC_PATHS.has(request.url.split("?")[0])) return;
+  const path = request.url.split("?")[0];
+  if (PUBLIC_PATHS.has(path)) return;
+  if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) return;
 
   // ── API key authentication (Authorization: ApiKey nxc_...) ─────────────────
   const authHeader = request.headers.authorization;
