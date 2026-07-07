@@ -11,7 +11,7 @@ import {
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
   Headphones, Target, Globe, GraduationCap, ShieldCheck,
   Cog, LineChart, MailPlus, ShieldAlert, Store, Megaphone,
-  LifeBuoy,
+  LifeBuoy, ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
@@ -50,6 +50,7 @@ const MORE_NAV = [
   { href: "/lead-scoring", icon: Target,        labelKey: "leadScoring"   },
   { href: "/anomalies",    icon: ShieldAlert,   labelKey: "anomalies"     },
   { href: "/marketplace",  icon: Store,         labelKey: "marketplace"   },
+  { href: "/audit-log",    icon: ScrollText,    labelKey: "auditLog", adminOnly: true },
   { href: "/admin",        icon: Cog,           labelKey: "admin"         },
 ].filter((item) => isRouteEnabled(item.href));
 
@@ -190,6 +191,7 @@ function MoreMenu({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const t = useTranslations("nav");
+  const { isAdmin } = usePermissions();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -197,7 +199,10 @@ function MoreMenu({ pathname }: { pathname: string }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const isActive = MORE_NAV.some((n) => pathname === n.href);
+  // Admin-only entries (e.g. audit log) are hidden from lower roles; the
+  // backend also enforces this, so this is purely to avoid dead 403 links.
+  const items = MORE_NAV.filter((n) => !("adminOnly" in n && n.adminOnly) || isAdmin);
+  const isActive = items.some((n) => pathname === n.href);
 
   return (
     <div ref={ref} className="relative">
@@ -209,7 +214,7 @@ function MoreMenu({ pathname }: { pathname: string }) {
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-xl border bg-card py-1 shadow-lg">
-          {MORE_NAV.map((n) => (
+          {items.map((n) => (
             <Link key={n.href} href={n.href} onClick={() => setOpen(false)}
               className={cn("flex items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted",
                 pathname === n.href ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground")}>
