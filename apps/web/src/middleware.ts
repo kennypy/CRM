@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/register", "/landing", "/demo/enter", "/start", "/accept-invite", "/portal"];
+const PUBLIC = ["/login", "/register", "/landing", "/demo/enter", "/start", "/accept-invite", "/portal", "/book"];
 const SUPPORTED_LOCALES = ["en", "pt-BR"];
 const DEFAULT_LOCALE = "en";
 
@@ -42,7 +42,7 @@ export function middleware(request: NextRequest) {
   // The customer portal is a public page that logged-in CRM users must ALSO be
   // able to view (e.g. "View portal" preview), so it's exempt from the
   // authed-user→home redirect below.
-  const isOpenToAll = pathname.startsWith("/portal");
+  const isOpenToAll = pathname.startsWith("/portal") || pathname.startsWith("/book");
   const token = request.cookies.get("nexcrm_token")?.value;
 
   if (!token && !isPublic) {
