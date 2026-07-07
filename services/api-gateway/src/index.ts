@@ -80,6 +80,7 @@ import { auditLogRoutes }                from "./routes/audit-log";
 import { searchRoutes }                  from "./routes/search";
 import { teamsRoutes }                   from "./routes/teams";
 import { redis }                        from "./lib/redis";
+import { setTenantContext, pool }       from "./db";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
 
 const server = Fastify({
@@ -205,6 +206,24 @@ async function bootstrap() {
 
   // ── Protected routes ──────────────────────────────────────────────────────
   server.addHook("preHandler", authMiddleware);
+
+  // Stamp the AsyncLocalStorage tenant context from the verified identity so the
+  // DB layer can scope every query via RLS (SET LOCAL app.current_tenant). Runs
+  // after authMiddleware, so request.user is populated. Only applies to routes
+  // registered below this hook (the public portal/book routes above are exempt).
+  server.addHook("preHandler", async (request) => {
+    const tenantId = (request.user as { tenantId?: string } | undefined)?.tenantId ?? null;
+    setTenantContext(tenantId);
+  });
+
+  // Diagnostic: confirms the AsyncLocalStorage → SET LOCAL chain end-to-end.
+  // Returns the JWT tenant and the DB-side app.current_tenant seen inside a
+  // wrapped query; they must match. Admin-only, read-only, cheap.
+  server.get("/api/v1/_diag/tenant-context", async (request) => {
+    const jwtTenant = (request.user as { tenantId?: string; role?: string } | undefined)?.tenantId ?? null;
+    const { rows } = await pool.query("SELECT current_setting('app.current_tenant', true) AS db_tenant, current_user AS db_role");
+    return { success: true, data: { jwtTenant, dbTenant: rows[0]?.db_tenant ?? null, dbRole: rows[0]?.db_role ?? null } };
+  });
 
   await server.register(contactsRoutes, { prefix: "/api/v1/contacts" });
   await server.register(companiesRoutes, { prefix: "/api/v1/companies" });
