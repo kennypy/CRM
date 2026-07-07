@@ -271,20 +271,22 @@ export async function activitiesRoutes(server: FastifyInstance) {
       }
     ).catch((err) => { console.error("[activities] AGE graph write failed:", err.message); });
 
-    // Link participants in graph
+    // Link participants in graph. Both nodes MUST be scoped to the caller's
+    // tenant so a caller cannot pass a foreign-tenant Person UUID and forge a
+    // cross-tenant edge (graph nodes are AGE, not covered by Postgres RLS).
     for (const personId of linkedIds) {
       await cypher(
-        `MATCH (p:Person {id: $personId}), (a:Activity {id: $id})
+        `MATCH (p:Person {id: $personId, tenant_id: $tenantId}), (a:Activity {id: $id, tenant_id: $tenantId})
          MERGE (p)-[:PARTICIPATED_IN {role: 'participant', linked_at: $now}]->(a)
          RETURN {ok: true}`,
-        { personId, id, now }
+        { personId, id, tenantId, now }
       ).catch((err) => { console.error("[activities] non-fatal write failed:", err.message); });
     }
 
     // Link to deal in graph
     if (dealId) {
       await cypher(
-        `MATCH (a:Activity {id: $id}), (d:Deal {id: $dealId, tenant_id: $tenantId})
+        `MATCH (a:Activity {id: $id, tenant_id: $tenantId}), (d:Deal {id: $dealId, tenant_id: $tenantId})
          MERGE (a)-[:RELATED_TO]->(d)
          RETURN {ok: true}`,
         { id, dealId, tenantId }

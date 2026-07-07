@@ -7,7 +7,7 @@ import os
 import json
 import httpx
 import structlog
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Header, HTTPException
 
 from ..db import get_pool
 
@@ -20,10 +20,21 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 @router.get("/forecast")
 async def get_forecast(
-    tenant_id: str = Query(..., alias="tenantId"),
+    tenant_id: str | None = Query(default=None, alias="tenantId"),
     period: str = Query("quarter", regex="^(month|quarter|year)$"),
+    x_tenant_id: str | None = Header(default=None, alias="x-tenant-id"),
 ):
     """Generate pipeline forecast with AI narrative."""
+    # Authoritative tenant is the verified x-tenant-id header (set by the gateway
+    # from the JWT); a client-supplied ?tenantId must match, and a header-less
+    # direct call is rejected.
+    header_tenant = (x_tenant_id or "").strip()
+    if not header_tenant:
+        raise HTTPException(status_code=401, detail="Missing tenant context")
+    if tenant_id and tenant_id != header_tenant:
+        raise HTTPException(status_code=403, detail="Tenant mismatch")
+    tenant_id = header_tenant
+
     pool = await get_pool()
 
     # Gather pipeline data from crm_events and deals

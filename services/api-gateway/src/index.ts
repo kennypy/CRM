@@ -218,8 +218,12 @@ async function bootstrap() {
 
   // Diagnostic: confirms the AsyncLocalStorage → SET LOCAL chain end-to-end.
   // Returns the JWT tenant and the DB-side app.current_tenant seen inside a
-  // wrapped query; they must match. Admin-only, read-only, cheap.
-  server.get("/api/v1/_diag/tenant-context", async (request) => {
+  // wrapped query; they must match. Admin/super_admin only, read-only, cheap.
+  server.get("/api/v1/_diag/tenant-context", async (request, reply) => {
+    const role = (request.user as { role?: string } | undefined)?.role;
+    if (role !== "admin" && role !== "super_admin") {
+      return reply.status(403).send({ success: false, error: { code: "FORBIDDEN" } });
+    }
     const jwtTenant = (request.user as { tenantId?: string; role?: string } | undefined)?.tenantId ?? null;
     const { rows } = await pool.query("SELECT current_setting('app.current_tenant', true) AS db_tenant, current_user AS db_role");
     return { success: true, data: { jwtTenant, dbTenant: rows[0]?.db_tenant ?? null, dbRole: rows[0]?.db_role ?? null } };

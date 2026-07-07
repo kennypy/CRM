@@ -10,7 +10,12 @@
 # names (the .env defaults point at localhost for native `npm run dev`). This
 # anchor is merged into each app service's environment to override those.
 x-db-redis: &db-redis
-  DATABASE_URL: "postgresql://nexcrm:${POSTGRES_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
+  # App services connect as the non-superuser nexcrm_service (BYPASSRLS) — NOT the
+  # nexcrm superuser — so a compromised service cannot do DDL/own tables. Cross-
+  # tenant workers rely on BYPASSRLS + their own tenant_id filters. api-gateway
+  # overrides this with role-split URLs (nexcrm_app request path is RLS-subject).
+  # Migrations run separately as the owner (nexcrm), not via this URL.
+  DATABASE_URL: "postgresql://nexcrm_service:${NEXCRM_SERVICE_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
   REDIS_URL: "redis://:${REDIS_PASSWORD:-nexcrm_redis_dev_password}@redis:6379"
 
 services:
@@ -223,9 +228,9 @@ services:
       # uses nexcrm_app (RLS-subject, SET LOCAL per request); the provider
       # console uses nexcrm_platform (metadata only); workers/cross-tenant use
       # nexcrm_service (BYPASSRLS). All default to DATABASE_URL if unset.
-      DATABASE_URL_APP: "postgresql://nexcrm_app:${POSTGRES_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
-      DATABASE_URL_PLATFORM: "postgresql://nexcrm_platform:${POSTGRES_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
-      DATABASE_URL_SERVICE: "postgresql://nexcrm_service:${POSTGRES_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
+      DATABASE_URL_APP: "postgresql://nexcrm_app:${NEXCRM_APP_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
+      DATABASE_URL_PLATFORM: "postgresql://nexcrm_platform:${NEXCRM_PLATFORM_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
+      DATABASE_URL_SERVICE: "postgresql://nexcrm_service:${NEXCRM_SERVICE_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
       AUTH_SERVICE_URL: http://auth:4001
       GRAPH_CORE_URL: http://graph-core:4002
       OUTREACH_URL: http://outreach:4003

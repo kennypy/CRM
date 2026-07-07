@@ -226,9 +226,12 @@ export async function dealsRoutes(server: FastifyInstance) {
     }
     const deal = toDealResponse(rows[0]) as Record<string, unknown>;
     if (deal.ownerId) {
+      // Scope to the deal's tenant so a foreign-tenant owner_id (there is no RLS
+      // backstop here — graph-core connects with a BYPASSRLS/owner role) cannot
+      // surface another tenant's user name + email.
       const { rows: uRows } = await pool.query(
-        `SELECT first_name, last_name, email FROM users WHERE id = $1`,
-        [deal.ownerId]
+        `SELECT first_name, last_name, email FROM users WHERE id = $1 AND tenant_id = $2`,
+        [deal.ownerId, tenantId]
       );
       if (uRows[0]) {
         deal.owner = {
