@@ -70,7 +70,7 @@ export function startWebhookDeliveryWorker(): void {
                 SET status = 'failed', last_error = $1, updated_at = NOW()
               WHERE webhook_id = $2 AND status = 'pending'`,
             [`blocked_url: ${err.message}`.slice(0, 500), webhookId],
-          ).catch(() => {});
+          ).catch((dbErr) => console.error("[webhook-delivery] failed to mark SSRF-blocked delivery:", dbErr.message));
           return; // do not throw → no BullMQ retry for a permanently-blocked URL
         }
         throw err;

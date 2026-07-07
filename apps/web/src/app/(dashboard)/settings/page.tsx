@@ -22,6 +22,7 @@ import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { InviteUserModal } from "@/components/settings/invite-user-modal";
 import { TeamsTab } from "@/components/settings/teams-tab";
 import { ProductsImportModal } from "@/components/settings/products-import-modal";
+import { previewEnabled } from "@/lib/feature-flags";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1583,66 +1584,192 @@ function IntegrationsTab() {
 // ── Tab: Billing ───────────────────────────────────────────────────────────────
 
 function BillingTab() {
+  const [status, setStatus] = useState<{ plan?: string; subscriptionStatus?: string | null; periodEnd?: string | null } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [portalBusy, setPortalBusy] = useState(false);
+
+  useEffect(() => {
+    api.get("/api/v1/billing/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setStatus(j?.data ?? null))
+      .catch(() => setStatus(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const openPortal = async () => {
+    setPortalBusy(true);
+    try {
+      const r = await api.post("/api/v1/billing/portal", { returnUrl: window.location.href });
+      const j = r.ok ? await r.json() : null;
+      if (j?.data?.url) window.location.href = j.data.url;
+      else alert("Billing portal is not configured for this workspace yet.");
+    } catch { alert("Could not open the billing portal."); }
+    setPortalBusy(false);
+  };
+
+  const plan = (status?.plan ?? "").toUpperCase() || "—";
+  const subStatus = status?.subscriptionStatus ?? null;
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="rounded-xl border bg-gradient-to-r from-primary/5 to-accent/5 p-6">
         <div className="flex items-start justify-between">
           <div>
-            <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">GROWTH</span>
-            <p className="mt-3 text-2xl font-bold">$49 <span className="text-base font-normal text-muted-foreground">/ user / month</span></p>
-            <p className="text-sm text-muted-foreground mt-1">5 users · Billed monthly · Next billing Mar 15</p>
+            <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">{loading ? "…" : plan}</span>
+            {subStatus
+              ? <p className="text-sm text-muted-foreground mt-3 capitalize">Subscription: {subStatus}
+                  {status?.periodEnd ? ` · renews ${new Date(status.periodEnd).toLocaleDateString()}` : ""}</p>
+              : <p className="text-sm text-muted-foreground mt-3">
+                  {loading ? "Loading billing status…" : "No active subscription on file. Manage billing in the customer portal."}
+                </p>}
           </div>
-          <button className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5">Upgrade to Enterprise</button>
+          <button onClick={openPortal} disabled={portalBusy}
+            className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50">
+            {portalBusy ? "Opening…" : "Manage billing"}
+          </button>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-4">
-          {[
-            { label: "AI extractions", used: "8,432", limit: "Unlimited" },
-            { label: "Contacts",       used: "1,247", limit: "Unlimited" },
-            { label: "Storage",        used: "2.3 GB", limit: "50 GB"   },
-          ].map(({ label, used, limit }) => (
-            <div key={label} className="rounded-lg bg-background/60 p-3">
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="text-sm font-semibold">{used}</p>
-              <p className="text-xs text-muted-foreground">of {limit}</p>
-            </div>
-          ))}
-        </div>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Payment methods, invoices, and plan changes are handled securely in the billing portal.
+        </p>
       </div>
-      <div className="rounded-xl border bg-card p-5">
-        <h3 className="font-semibold mb-3">Payment method</h3>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded bg-muted px-3 py-2 font-mono text-xs">VISA •••• 4242</div>
-            <span className="text-xs text-muted-foreground">Expires 12/26</span>
+
+      {/* Usage metering and stored payment method are not yet wired to real data —
+          shown only in preview builds so a pilot never sees fabricated figures. */}
+      {previewEnabled() && (
+        <div className="rounded-xl border bg-card p-5">
+          <p className="text-xs font-medium text-amber-600 mb-3">Preview — sample data, not real usage</p>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: "AI extractions", used: "8,432", limit: "Unlimited" },
+              { label: "Contacts",       used: "1,247", limit: "Unlimited" },
+              { label: "Storage",        used: "2.3 GB", limit: "50 GB"   },
+            ].map(({ label, used, limit }) => (
+              <div key={label} className="rounded-lg bg-background/60 p-3">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="text-sm font-semibold">{used}</p>
+                <p className="text-xs text-muted-foreground">of {limit}</p>
+              </div>
+            ))}
           </div>
-          <button className="text-sm text-primary hover:underline">Update</button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 // ── Tab: Security ──────────────────────────────────────────────────────────────
 
-function SecurityTab() {
-  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
-  const [pwSaved, setPwSaved] = useState(false);
-  const [twoFa, setTwoFa]    = useState(false);
+interface RealApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  last_used_at: string | null;
+  created_at: string;
+}
 
-  const DEMO_SESSIONS = [
-    { id: "s1", device: "Chrome · Windows",   ip: "192.168.1.10", lastActive: "Active now",  current: true  },
-    { id: "s2", device: "Safari · macOS",      ip: "81.103.45.21", lastActive: "2 hours ago", current: false },
-    { id: "s3", device: "NexCRM Mobile · iOS", ip: "81.103.45.21", lastActive: "1 day ago",   current: false },
-  ];
-  const DEMO_KEYS = [
-    { id: "k1", name: "CI/CD Integration",  created: "2026-01-12", lastUsed: "3 days ago", prefix: "nxc_ci_••••••" },
-    { id: "k2", name: "Internal Reporting", created: "2026-02-01", lastUsed: "Today",       prefix: "nxc_rp_••••••" },
-  ];
-  const [sessions, setSessions] = useState(DEMO_SESSIONS);
-  const [apiKeys,  setApiKeys]  = useState(DEMO_KEYS);
+function SecurityTab() {
+  const [apiKeys, setApiKeys] = useState<RealApiKey[]>([]);
+  const [keysLoading, setKeysLoading] = useState(true);
+  const [keysError, setKeysError] = useState<string | null>(null);
+  const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
+
+  const loadKeys = async () => {
+    setKeysLoading(true);
+    try {
+      const r = await api.get("/api/v1/api-keys");
+      if (r.status === 403) { setKeysError("Only workspace admins can manage API keys."); setApiKeys([]); }
+      else if (r.ok) { const j = await r.json(); setApiKeys(j.data ?? []); setKeysError(null); }
+      else setKeysError("Could not load API keys.");
+    } catch { setKeysError("Could not load API keys."); }
+    setKeysLoading(false);
+  };
+
+  useEffect(() => { loadKeys(); }, []);
+
+  const createKey = async () => {
+    const name = window.prompt("Name this API key (e.g. CI/CD Integration):");
+    if (!name?.trim()) return;
+    try {
+      const r = await api.post("/api/v1/api-keys", { name: name.trim(), scopes: ["crm:read"] });
+      if (r.status === 403) { alert("Only workspace admins can create API keys."); return; }
+      const j = r.ok ? await r.json() : null;
+      if (j?.data?.key) { setNewKeySecret(j.data.key); loadKeys(); }
+      else alert("Could not create the API key.");
+    } catch { alert("Could not create the API key."); }
+  };
+
+  const revokeKey = async (id: string) => {
+    if (!window.confirm("Revoke this API key? Any integration using it will stop working.")) return;
+    try {
+      const r = await api.delete(`/api/v1/api-keys/${id}`);
+      if (r.ok || r.status === 204) loadKeys();
+      else if (r.status === 403) alert("Only workspace admins can revoke API keys.");
+      else alert("Could not revoke the API key.");
+    } catch { alert("Could not revoke the API key."); }
+  };
 
   return (
     <div className="space-y-8 max-w-lg">
+      {/* Password change, 2FA and session management are not yet backed by real
+          endpoints; shown only in preview builds so a pilot never sees controls
+          that appear to work but don't. Password reset is available via the
+          "Forgot password" flow on the login page. */}
+      {previewEnabled() && <SecurityDemoSections />}
+
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold flex items-center gap-2"><Key className="h-4 w-4" /> API Keys</h3>
+          <button onClick={createKey} className="text-xs text-primary hover:underline">+ New key</button>
+        </div>
+
+        {newKeySecret && (
+          <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:bg-amber-950/30">
+            <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Copy this key now — it is shown only once:</p>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="flex-1 break-all rounded bg-background px-2 py-1 font-mono text-xs">{newKeySecret}</code>
+              <button onClick={() => { navigator.clipboard?.writeText(newKeySecret); }} className="text-xs text-primary hover:underline">Copy</button>
+              <button onClick={() => setNewKeySecret(null)} className="text-xs text-muted-foreground hover:underline">Dismiss</button>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {keysLoading && <p className="text-sm text-muted-foreground text-center py-6">Loading…</p>}
+          {!keysLoading && keysError && <p className="text-sm text-muted-foreground text-center py-6">{keysError}</p>}
+          {!keysLoading && !keysError && apiKeys.map((k) => (
+            <div key={k.id} className="flex items-center justify-between rounded-lg border bg-card p-3">
+              <div>
+                <p className="text-sm font-medium">{k.name}</p>
+                <p className="text-xs text-muted-foreground font-mono">{k.key_prefix}••••</p>
+                <p className="text-xs text-muted-foreground">
+                  Created {new Date(k.created_at).toLocaleDateString()} · {k.last_used_at ? `Last used ${new Date(k.last_used_at).toLocaleDateString()}` : "Never used"}
+                </p>
+              </div>
+              <button onClick={() => revokeKey(k.id)} className="text-muted-foreground hover:text-red-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
+            </div>
+          ))}
+          {!keysLoading && !keysError && apiKeys.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No API keys. Create one above.</p>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// Preview-only demo controls (no backend yet): password change, 2FA, sessions.
+function SecurityDemoSections() {
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [pwSaved, setPwSaved] = useState(false);
+  const [twoFa, setTwoFa]    = useState(false);
+  const DEMO_SESSIONS = [
+    { id: "s1", device: "Chrome · Windows",   ip: "192.168.1.10", lastActive: "Active now",  current: true  },
+    { id: "s2", device: "Safari · macOS",      ip: "81.103.45.21", lastActive: "2 hours ago", current: false },
+  ];
+  const [sessions, setSessions] = useState(DEMO_SESSIONS);
+
+  return (
+    <>
+      <p className="text-xs font-medium text-amber-600">Preview — these controls are not yet wired to a backend.</p>
       <section>
         <h3 className="text-base font-semibold mb-4 flex items-center gap-2"><Lock className="h-4 w-4" /> Change Password</h3>
         <div className="space-y-3">
@@ -1697,28 +1824,7 @@ function SecurityTab() {
           ))}
         </div>
       </section>
-
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold flex items-center gap-2"><Key className="h-4 w-4" /> API Keys</h3>
-          <button className="text-xs text-primary hover:underline">+ New key</button>
-        </div>
-        <div className="space-y-2">
-          {apiKeys.map((k) => (
-            <div key={k.id} className="flex items-center justify-between rounded-lg border bg-card p-3">
-              <div>
-                <p className="text-sm font-medium">{k.name}</p>
-                <p className="text-xs text-muted-foreground font-mono">{k.prefix}</p>
-                <p className="text-xs text-muted-foreground">Created {k.created} · Last used {k.lastUsed}</p>
-              </div>
-              <button onClick={() => setApiKeys((prev) => prev.filter((x) => x.id !== k.id))}
-                className="text-muted-foreground hover:text-red-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
-            </div>
-          ))}
-          {apiKeys.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No API keys. Create one above.</p>}
-        </div>
-      </section>
-    </div>
+    </>
   );
 }
 

@@ -144,10 +144,33 @@ export async function userProfilesRoutes(server: FastifyInstance) {
   server.delete("/:id", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
-    // Null out any users pointing at this profile so we don't leave dangling refs.
-    await pool.query(`UPDATE users SET profile_id = NULL WHERE profile_id = $1 AND tenant_id = $2`, [id, tenantId]).catch(() => {});
-    const { rowCount } = await pool.query(`DELETE FROM user_profiles WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
-    if (!rowCount) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
-    return reply.send({ success: true });
+
+    // Atomic: null out any users pointing at this profile AND delete the profile
+    // in one transaction. Previously the null-out swallowed its error and ran as
+    // a separate statement — a failed detach could leave users with a profile_id
+    // referencing a deleted profile (there is no FK ON DELETE SET NULL).
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `UPDATE users SET profile_id = NULL WHERE profile_id = $1 AND tenant_id = $2`,
+        [id, tenantId],
+      );
+      const { rowCount } = await client.query(
+        `DELETE FROM user_profiles WHERE id = $1 AND tenant_id = $2`,
+        [id, tenantId],
+      );
+      if (!rowCount) {
+        await client.query("ROLLBACK");
+        return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+      }
+      await client.query("COMMIT");
+      return reply.send({ success: true });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   });
 }
