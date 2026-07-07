@@ -16,8 +16,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
-import { requireRep } from "../middleware/rbac";
-import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
+import { requireRep, requireAdmin } from "../middleware/rbac";
+import { requireCrmRead, requireCrmWrite, denyApiKeys } from "../middleware/scope";
 import { slugify } from "./kb";
 
 const AvailabilitySchema = z.object({
@@ -37,6 +37,18 @@ const CreateSchema = z.object({
 });
 
 const UpdateSchema = CreateSchema.partial();
+
+// Admin batch/individual provisioning: title is optional (defaults per user).
+const ProvisionSchema = z.object({
+  userIds:         z.array(z.string().uuid()).min(1).max(500),
+  title:           z.string().max(160).optional(),
+  description:     z.string().max(1000).optional().nullable(),
+  durationMinutes: z.number().int().min(5).max(480).default(30),
+  timezone:        z.string().min(1).max(64).optional(),
+  availability:    AvailabilitySchema.optional(),
+  bufferMinutes:   z.number().int().min(0).max(120).optional(),
+  active:          z.boolean().optional(),
+});
 
 async function uniqueLinkSlug(base: string): Promise<string> {
   // booking_links.slug is globally unique; add a short random-ish suffix from
@@ -97,6 +109,45 @@ export async function bookingLinksRoutes(server: FastifyInstance) {
        d.bufferMinutes ?? 0, d.active ?? true]
     );
     return reply.status(201).send({ success: true, data: toLink({ ...rows[0], booking_count: 0 }) });
+  });
+
+  // ── POST /api/v1/booking-links/provision ──────────────────────────────────
+  // Admin bulk-assigns a booking link to one or more users. Each link is owned
+  // by its target user; the title defaults to that user's name. Skips users who
+  // already have a link with the same title so it's safe to re-run.
+  server.post("/provision", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
+    const parsed = ProvisionSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
+    const { tenantId } = request.user;
+    const d = parsed.data;
+
+    // Only provision for users that actually belong to this tenant.
+    const { rows: members } = await pool.query(
+      `SELECT id, first_name, last_name, timezone FROM users WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+      [tenantId, d.userIds]
+    );
+
+    const created: unknown[] = [];
+    const skipped: string[] = [];
+    for (const m of members) {
+      const title = d.title?.trim() || `Meet with ${[m.first_name, m.last_name].filter(Boolean).join(" ") || "me"}`;
+      const dup = await pool.query(
+        `SELECT 1 FROM booking_links WHERE tenant_id = $1 AND owner_id = $2 AND title = $3 LIMIT 1`,
+        [tenantId, m.id, title]
+      );
+      if (dup.rows.length) { skipped.push(m.id); continue; }
+      const slug = await uniqueLinkSlug(slugify(title));
+      const { rows } = await pool.query(
+        `INSERT INTO booking_links (tenant_id, owner_id, slug, title, description, duration_minutes, timezone, availability, buffer_minutes, active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [tenantId, m.id, slug, title, d.description ?? null, d.durationMinutes,
+         d.timezone ?? m.timezone ?? "UTC",
+         JSON.stringify(d.availability ?? { weekdays: [1,2,3,4,5], startTime: "09:00", endTime: "17:00" }),
+         d.bufferMinutes ?? 0, d.active ?? true]
+      );
+      created.push(toLink({ ...rows[0], booking_count: 0 }));
+    }
+    return reply.status(201).send({ success: true, data: { created, skipped, requested: d.userIds.length } });
   });
 
   server.get("/:id", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {

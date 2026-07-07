@@ -11,6 +11,7 @@ import {
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
   FileText, Package, ChevronDown, Columns3, Box, LockKeyhole, UsersRound, Upload,
+  Copy, Check, CalendarClock,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -30,7 +31,19 @@ interface TeamUser {
   lastLoginAt?: string; status: "active" | "invited";
   managerId?: string | null;
   canQuote?: boolean;
+  capabilities?: Record<string, boolean>;
+  profileId?: string | null;
+  timezone?: string | null;
 }
+
+interface UserProfile {
+  id: string; name: string; description?: string | null;
+  baseRole: "admin" | "manager" | "rep" | "read_only";
+  capabilities: Record<string, boolean>;
+  defaultTimezone?: string | null; defaultLanguage?: string | null;
+  isBuiltin: boolean; sortOrder: number;
+}
+interface Capability { key: string; label: string; }
 
 
 const INTEGRATIONS = [
@@ -375,6 +388,259 @@ interface UserFormProps {
   onSaved: (u: TeamUser) => void;
 }
 
+// ── Scheduler assignment (individual + batch, WS2) ──────────────────────────────
+
+function SchedulerAssignModal({ users, onClose }: { users: TeamUser[]; onClose: () => void }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [title,    setTitle]    = useState("");
+  const [duration, setDuration] = useState(30);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+  const [result,   setResult]   = useState<{ created: number; skipped: number } | null>(null);
+
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSelected = selected.size === users.length && users.length > 0;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(users.map((u) => u.id)));
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+  const labelCls = "mb-1.5 block text-sm font-medium";
+
+  const submit = async () => {
+    if (!selected.size) { setError("Select at least one user"); return; }
+    setSaving(true); setError(null);
+    try {
+      const res = await api.post("/api/v1/booking-links/provision", {
+        userIds: [...selected], title: title.trim() || undefined, durationMinutes: duration,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(json?.error?.message ?? "Failed to assign scheduler"); return; }
+      setResult({ created: json.data?.created?.length ?? 0, skipped: json.data?.skipped?.length ?? 0 });
+    } catch { setError("Network error — please try again"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold">Assign Scheduler</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+
+        {result ? (
+          <div className="p-6 space-y-3">
+            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              Created {result.created} booking link{result.created !== 1 ? "s" : ""}{result.skipped > 0 && `, skipped ${result.skipped} already-assigned`}.
+            </div>
+            <p className="text-xs text-muted-foreground">Each user now has a personal booking link they can share and manage under Meetings.</p>
+            <button onClick={onClose} className="w-full rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Done</button>
+          </div>
+        ) : (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-muted-foreground">Give one or more users a personal booking link. Select the users, then set a title and default duration.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Title <span className="font-normal text-muted-foreground">(optional)</span></label>
+                <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} placeholder="Defaults per user" />
+              </div>
+              <div>
+                <label className={labelCls}>Duration (min)</label>
+                <input type="number" min={5} max={480} value={duration} onChange={(e) => setDuration(Number(e.target.value))} className={inputCls} />
+              </div>
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="text-sm font-medium">Users ({selected.size} selected)</label>
+                <button type="button" onClick={toggleAll} className="text-xs font-medium text-primary hover:underline">
+                  {allSelected ? "Clear all" : "Select all"}
+                </button>
+              </div>
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+                {users.map((u) => (
+                  <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted">
+                    <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggle(u.id)} className="h-4 w-4 rounded border-border" />
+                    <span className="text-sm">{u.firstName} {u.lastName}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{u.email}</span>
+                  </label>
+                ))}
+                {users.length === 0 && <p className="px-2 py-4 text-center text-sm text-muted-foreground">No users to assign.</p>}
+              </div>
+            </div>
+            {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Cancel</button>
+              <button type="button" onClick={submit} disabled={saving || !selected.size} className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                {saving ? "Assigning…" : `Assign to ${selected.size || 0}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Profiles manager (built-in + editable presets, WS2) ─────────────────────────
+
+function ProfilesManagerModal({ onClose }: { onClose: () => void }) {
+  const ROLE_LABELS = useRoleLabels();
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [caps,     setCaps]     = useState<Capability[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState<string | null>(null);
+  const [editing,  setEditing]  = useState<Partial<UserProfile> | null>(null); // null = list view
+  const [saving,   setSaving]   = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [pj, cj] = await Promise.all([
+        api.get("/api/v1/user-profiles").then((r) => r.json()).catch(() => null),
+        api.get("/api/v1/user-profiles/capabilities").then((r) => r.json()).catch(() => null),
+      ]);
+      if (pj?.success) setProfiles(pj.data as UserProfile[]);
+      if (cj?.success) setCaps(cj.data as Capability[]);
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+  const labelCls = "mb-1.5 block text-sm font-medium";
+
+  const startNew = () => setEditing({ name: "", description: "", baseRole: "rep", capabilities: {}, defaultTimezone: null });
+  const startEdit = (p: UserProfile) => setEditing({ ...p, capabilities: { ...p.capabilities } });
+
+  const save = async () => {
+    if (!editing?.name?.trim()) { setError("Name is required"); return; }
+    setSaving(true); setError(null);
+    const body = {
+      name: editing.name, description: editing.description ?? null,
+      baseRole: editing.baseRole ?? "rep", capabilities: editing.capabilities ?? {},
+      defaultTimezone: editing.defaultTimezone ?? null,
+    };
+    try {
+      const res = editing.id
+        ? await api.patch(`/api/v1/user-profiles/${editing.id}`, body)
+        : await api.post("/api/v1/user-profiles", body);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(json?.error?.message ?? "Failed to save profile"); return; }
+      setEditing(null);
+      await load();
+    } catch { setError("Network error — please try again"); }
+    finally { setSaving(false); }
+  };
+
+  const remove = async (p: UserProfile) => {
+    if (!window.confirm(`Delete the "${p.name}" profile? Users keep their settings but lose the preset link.`)) return;
+    setError(null);
+    try {
+      const res = await api.delete(`/api/v1/user-profiles/${p.id}`);
+      if (res.ok || res.status === 404) await load();
+      else { const json = await res.json().catch(() => ({})); setError(json?.error?.message ?? "Failed to delete"); }
+    } catch { setError("Network error — could not delete"); }
+  };
+
+  const toggleCap = (key: string) =>
+    setEditing((e) => e ? { ...e, capabilities: { ...(e.capabilities ?? {}), [key]: !(e.capabilities ?? {})[key] } } : e);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <UsersRound className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold">{editing ? (editing.id ? "Edit Profile" : "New Profile") : "User Profiles"}</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+
+        {editing ? (
+          <div className="p-6 space-y-4">
+            <div>
+              <label className={labelCls}>Name *</label>
+              <input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className={inputCls} placeholder="e.g. Sales Rep" />
+            </div>
+            <div>
+              <label className={labelCls}>Description</label>
+              <input value={editing.description ?? ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} className={inputCls} placeholder="What this preset is for" />
+            </div>
+            <div>
+              <label className={labelCls}>Base role</label>
+              <select value={editing.baseRole ?? "rep"} onChange={(e) => setEditing({ ...editing, baseRole: e.target.value as UserProfile["baseRole"] })} className={inputCls}>
+                {(["admin", "manager", "rep", "read_only"] as const).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Default timezone</label>
+              <select value={editing.defaultTimezone ?? ""} onChange={(e) => setEditing({ ...editing, defaultTimezone: e.target.value || null })} className={inputCls}>
+                <option value="">— None —</option>
+                {PROFILE_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Default features</label>
+              <div className="space-y-1.5 rounded-lg border border-border p-2">
+                {caps.map((c) => (
+                  <label key={c.key} className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted">
+                    <span className="text-sm">{c.label}</span>
+                    <button type="button" onClick={() => toggleCap(c.key)}
+                      className={cn("relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none",
+                        (editing.capabilities ?? {})[c.key] ? "bg-primary" : "bg-muted-foreground/30")}>
+                      <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                        (editing.capabilities ?? {})[c.key] ? "translate-x-4" : "translate-x-0")} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => { setEditing(null); setError(null); }} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Back</button>
+              <button type="button" onClick={save} disabled={saving} className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">{saving ? "Saving…" : "Save Profile"}</button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 space-y-3">
+            <p className="text-sm text-muted-foreground">Presets bundle a role + default features + timezone. Pick one when creating a user to auto-fill everything.</p>
+            {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+            {loading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Loading profiles…</p>
+            ) : (
+              <div className="space-y-2">
+                {profiles.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{p.name}</p>
+                        {p.isBuiltin && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Built-in</span>}
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", ROLE_COLORS[p.baseRole])}>{ROLE_LABELS[p.baseRole]}</span>
+                      </div>
+                      {p.description && <p className="truncate text-xs text-muted-foreground">{p.description}</p>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button onClick={() => startEdit(p)} className="rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted">Edit</button>
+                      {!p.isBuiltin && <button onClick={() => remove(p)} className="rounded-md p-1 text-muted-foreground hover:text-red-600"><Trash2 className="h-4 w-4" /></button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={startNew} className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+              <Plus className="h-4 w-4" /> New profile
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps) {
   const ROLE_LABELS = useRoleLabels();
   const [firstName,   setFirstName]   = useState(user?.firstName ?? "");
@@ -384,8 +650,32 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
   const [password,    setPassword]    = useState("");
   const [canQuote,    setCanQuote]    = useState<boolean>(user?.canQuote ?? false);
   const [managerId,   setManagerId]   = useState<string | null>(user?.managerId ?? null);
+  const [timezone,    setTimezone]    = useState<string>(user?.timezone ?? (mode === "create" ? detectedTimezone() : ""));
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+
+  // Provisioning profiles + the capability catalog (WS2).
+  const [profiles,    setProfiles]    = useState<UserProfile[]>([]);
+  const [caps,        setCaps]        = useState<Capability[]>([]);
+  const [profileId,   setProfileId]   = useState<string | null>(user?.profileId ?? null);
+  const [capabilities, setCapabilities] = useState<Record<string, boolean>>(user?.capabilities ?? {});
+  // Create mode: default to issuing an invite link (no password) instead of setting one.
+  const [sendInvite,  setSendInvite]  = useState<boolean>(mode === "create");
+  const [inviteLink,  setInviteLink]  = useState<string | null>(null);
+  const [copied,      setCopied]      = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      api.get("/api/v1/user-profiles").then((r) => r.json()).catch(() => null),
+      api.get("/api/v1/user-profiles/capabilities").then((r) => r.json()).catch(() => null),
+    ]).then(([pj, cj]) => {
+      if (!alive) return;
+      if (pj?.success) setProfiles(pj.data as UserProfile[]);
+      if (cj?.success) setCaps(cj.data as Capability[]);
+    });
+    return () => { alive = false; };
+  }, []);
 
   // When role changes to admin/manager, auto-enable quoting
   const handleRoleChange = (r: TeamUser["role"]) => {
@@ -393,23 +683,49 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
     if (["admin", "manager"].includes(r)) setCanQuote(true);
   };
 
+  // Applying a profile pre-fills role + capabilities + timezone.
+  const applyProfile = (id: string) => {
+    setProfileId(id || null);
+    const p = profiles.find((x) => x.id === id);
+    if (!p) return;
+    setRole(p.baseRole);
+    setCapabilities({ ...p.capabilities });
+    if (["admin", "manager"].includes(p.baseRole) || p.capabilities.can_quote) setCanQuote(true);
+    if (p.defaultTimezone) setTimezone(p.defaultTimezone);
+  };
+
+  const toggleCap = (key: string) => setCapabilities((c) => ({ ...c, [key]: !c[key] }));
+
   const managerUser = allUsers.find((u) => u.id === managerId);
   const potentialManagers = allUsers.filter((u) => u.id !== user?.id && ["admin", "manager"].includes(u.role));
 
   const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
   const labelCls = "mb-1.5 block text-sm font-medium";
 
+  const copyInvite = async () => {
+    if (!inviteLink) return;
+    try { await navigator.clipboard.writeText(inviteLink); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* http clipboard may be blocked */ }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName.trim() || !email.trim()) return;
-    if (mode === "create" && !password.trim()) return;
+    if (mode === "create" && !sendInvite && !password.trim()) return;
     setSaving(true); setError(null);
     try {
       let res: Response;
       if (mode === "create") {
-        res = await api.post("/api/v1/users", { firstName, lastName, email, password, role, canQuote, managerId: managerId || null });
+        const body: Record<string, unknown> = {
+          firstName, lastName, email, role, canQuote, managerId: managerId || null,
+          profileId: profileId || null, capabilities, timezone: timezone || null,
+        };
+        if (sendInvite) body.sendInvite = true; else body.password = password;
+        res = await api.post("/api/v1/users", body);
       } else {
-        const body: Record<string, unknown> = { firstName, lastName, email, role, canQuote, managerId: managerId || null };
+        const body: Record<string, unknown> = {
+          firstName, lastName, email, role, canQuote, managerId: managerId || null,
+          profileId: profileId || null, capabilities, timezone: timezone || null,
+        };
         if (password.trim()) body.password = password;
         res = await api.patch(`/api/v1/users/${user!.id}`, body);
       }
@@ -419,7 +735,10 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
         return;
       }
       const saved = json.data as TeamUser;
-      onSaved({ ...saved, status: saved.status ?? (mode === "create" ? "active" : user?.status ?? "active") });
+      onSaved({ ...saved, status: saved.status ?? (mode === "create" ? (sendInvite ? "invited" : "active") : user?.status ?? "active") });
+      // If an invite link came back, surface it instead of closing immediately.
+      const path = json?.invite?.activationPath as string | undefined;
+      if (path) { setInviteLink(`${window.location.origin}${path}`); return; }
       onClose();
     } catch { setError("Network error — please try again"); }
     finally { setSaving(false); }
@@ -436,7 +755,37 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
         </div>
+
+        {inviteLink ? (
+          <div className="p-6 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              User created. Send this activation link to <span className="font-medium text-foreground">{email}</span> — it lets them set a password and sign in (expires in 7 days).
+            </p>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-2">
+              <input readOnly value={inviteLink} className="min-w-0 flex-1 bg-transparent text-xs outline-none" onFocus={(e) => e.currentTarget.select()} />
+              <button onClick={copyInvite} className="flex shrink-0 items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90">
+                {copied ? <><Check className="h-3.5 w-3.5" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+              </button>
+            </div>
+            <button onClick={onClose} className="w-full rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Done</button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Profile preset */}
+          {profiles.length > 0 && (
+            <div>
+              <label className={labelCls}>Profile preset</label>
+              <select value={profileId ?? ""} onChange={(e) => applyProfile(e.target.value)} className={inputCls}>
+                <option value="">— Custom (no preset) —</option>
+                {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              {profileId && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {profiles.find((p) => p.id === profileId)?.description ?? "Applies a role and default features."}
+                </p>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls}>First name *</label>
@@ -465,6 +814,15 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
               {role === "read_only" && "Read-only access to CRM data. Cannot create or edit."}
             </p>
           </div>
+          {/* Timezone (prefilled from browser / profile) */}
+          <div>
+            <label className={labelCls}>Timezone</label>
+            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls}>
+              <option value="">— Not set —</option>
+              {timezone && !PROFILE_TIMEZONES.includes(timezone) && <option value={timezone}>{timezone}</option>}
+              {PROFILE_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+            </select>
+          </div>
           {/* Manager */}
           <div>
             <label className={labelCls}>Reports to (manager)</label>
@@ -481,6 +839,32 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
               <p className="mt-1 text-xs text-muted-foreground">Reports to: {managerUser.firstName} {managerUser.lastName}</p>
             )}
           </div>
+          {/* Feature capabilities */}
+          {caps.length > 0 && (
+            <div>
+              <label className={labelCls}>Features</label>
+              <div className="space-y-1.5 rounded-lg border border-border p-2">
+                {caps.map((c) => (
+                  <label key={c.key} className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted">
+                    <span className="text-sm">{c.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleCap(c.key)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none",
+                        capabilities[c.key] ? "bg-primary" : "bg-muted-foreground/30"
+                      )}>
+                      <span className={cn(
+                        "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                        capabilities[c.key] ? "translate-x-4" : "translate-x-0"
+                      )} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Toggle the exact features this user can access.</p>
+            </div>
+          )}
           {/* Can Quote */}
           <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
             <div>
@@ -505,13 +889,36 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
           {["admin", "manager"].includes(role) && (
             <p className="text-xs text-muted-foreground -mt-2">Admins and managers always have quoting enabled.</p>
           )}
-          <div>
-            <label className={labelCls}>{mode === "create" ? "Password *" : "New password"} {mode === "edit" && <span className="font-normal text-muted-foreground">(leave blank to keep current)</span>}</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              required={mode === "create"} minLength={8}
-              placeholder={mode === "create" ? "Min. 8 characters" : "Leave blank to keep unchanged"}
-              className={inputCls} />
-          </div>
+          {/* Invite vs. set-password (create mode) */}
+          {mode === "create" && (
+            <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">Send activation link</p>
+                <p className="text-xs text-muted-foreground">User sets their own password on first login</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSendInvite(!sendInvite)}
+                className={cn(
+                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none",
+                  sendInvite ? "bg-primary" : "bg-muted"
+                )}>
+                <span className={cn(
+                  "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                  sendInvite ? "translate-x-5" : "translate-x-0"
+                )} />
+              </button>
+            </div>
+          )}
+          {!(mode === "create" && sendInvite) && (
+            <div>
+              <label className={labelCls}>{mode === "create" ? "Password *" : "New password"} {mode === "edit" && <span className="font-normal text-muted-foreground">(leave blank to keep current)</span>}</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                required={mode === "create" && !sendInvite} minLength={8}
+                placeholder={mode === "create" ? "Min. 8 characters" : "Leave blank to keep unchanged"}
+                className={inputCls} />
+            </div>
+          )}
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <AlertCircle className="h-4 w-4 shrink-0" />{error}
@@ -521,10 +928,11 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
             <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Cancel</button>
             <button type="submit" disabled={saving}
               className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
-              {saving ? "Saving…" : mode === "create" ? "Create User" : "Save Changes"}
+              {saving ? "Saving…" : mode === "create" ? (sendInvite ? "Create & get link" : "Create User") : "Save Changes"}
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );
@@ -570,6 +978,8 @@ function UsersTab() {
   const [error,        setError]        = useState<string | null>(null);
   const [showCreate,   setShowCreate]   = useState(false);
   const [showInvite,   setShowInvite]   = useState(false);
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [showScheduler, setShowScheduler] = useState(false);
   const [editUser,     setEditUser]     = useState<TeamUser | null>(null);
   const [deletingId,   setDeletingId]   = useState<string | null>(null);
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
@@ -652,9 +1062,11 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
-      {showCreate && <UserFormModal mode="create" allUsers={users} onClose={() => setShowCreate(false)} onSaved={handleCreated} />}
-      {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} onInvited={fetchUsers} />}
-      {editUser   && <UserFormModal mode="edit" user={editUser} allUsers={users} onClose={() => setEditUser(null)} onSaved={handleUpdated} />}
+      {showCreate   && <UserFormModal mode="create" allUsers={users} onClose={() => setShowCreate(false)} onSaved={handleCreated} />}
+      {showInvite   && <InviteUserModal onClose={() => setShowInvite(false)} onInvited={fetchUsers} />}
+      {showProfiles && <ProfilesManagerModal onClose={() => setShowProfiles(false)} />}
+      {showScheduler && <SchedulerAssignModal users={users} onClose={() => setShowScheduler(false)} />}
+      {editUser     && <UserFormModal mode="edit" user={editUser} allUsers={users} onClose={() => setEditUser(null)} onSaved={handleUpdated} />}
 
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
@@ -668,6 +1080,14 @@ function UsersTab() {
         </div>
         <div className="flex items-center gap-3">
           <p className="text-sm text-muted-foreground">{users.length} team member{users.length !== 1 ? "s" : ""}</p>
+          <button onClick={() => setShowProfiles(true)}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+            <UsersRound className="h-4 w-4" /> Profiles
+          </button>
+          <button onClick={() => setShowScheduler(true)}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+            <CalendarClock className="h-4 w-4" /> Scheduler
+          </button>
           <button onClick={() => setShowInvite(true)}
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted">
             <Mail className="h-4 w-4" /> Invite
