@@ -18,7 +18,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { pool, readPool } from "../db";
+import { servicePool as pool, servicePool as readPool } from "../db";
 import { requireMinRole } from "../middleware/rbac";
 import { denyApiKeys } from "../middleware/scope";
 

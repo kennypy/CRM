@@ -5,7 +5,7 @@
  * Handles actions: close_date_7, close_date_14, close_date_30, close_date_pick
  */
 
-import { pool } from "../db";
+import { servicePool as pool } from "../db";
 import { updateMessage } from "../lib/slack-client";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";

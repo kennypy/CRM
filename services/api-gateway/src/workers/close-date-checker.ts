@@ -5,7 +5,7 @@
  */
 
 import { Queue, Worker } from "bullmq";
-import { pool } from "../db";
+import { servicePool as pool } from "../db";
 import { slackNotificationQueue } from "./slack-notification";
 import { redisConnection } from "../lib/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";

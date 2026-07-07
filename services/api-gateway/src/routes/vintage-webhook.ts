@@ -18,7 +18,7 @@
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { pool } from "../db";
+import { servicePool as pool } from "../db";
 import {
   EventSchema,
   VINTAGE_SOURCE,

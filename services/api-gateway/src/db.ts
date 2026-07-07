@@ -39,9 +39,14 @@ const poolOpts = { min: 2, max: 10, idleTimeoutMillis: 30_000, connectionTimeout
 const appPool = new Pool({ connectionString: APP_URL, ...poolOpts });
 appPool.on("error", (err) => console.error("[api-gateway] PG app pool error:", err));
 
+// Bind the raw pooled methods before we monkey-patch them, so the wrappers can
+// reach the originals without recursing.
+const rawQuery = appPool.query.bind(appPool);
+const rawConnect = appPool.connect.bind(appPool);
+
 /** Run one statement inside a tenant transaction (SET LOCAL app.current_tenant). */
 async function tenantScopedQuery(text: unknown, params: unknown, tenantId: string) {
-  const client = await appPool.connect();
+  const client = await rawConnect();
   try {
     await client.query("BEGIN");
     // set_config(..., is_local=true) is the parameterised form of SET LOCAL and
@@ -62,13 +67,37 @@ async function tenantScopedQuery(text: unknown, params: unknown, tenantId: strin
 // (connect/on/end/…) is preserved — a drop-in for the existing `pool.query`
 // call sites. Only the promise-style string signature is wrapped; QueryConfig
 // objects and callback-style calls fall through unchanged.
-const rawQuery = appPool.query.bind(appPool);
 (appPool as unknown as { query: unknown }).query = (text: unknown, params?: unknown, cb?: unknown) => {
   const tenantId = currentTenant();
   if (tenantId && typeof text === "string" && typeof params !== "function" && typeof cb !== "function") {
     return tenantScopedQuery(text, params, tenantId);
   }
   return (rawQuery as (...a: unknown[]) => unknown)(text, params, cb);
+};
+
+// Monkey-patch `.connect` for explicit-transaction call sites: when a tenant
+// context is present, the returned client injects `SET LOCAL app.current_tenant`
+// immediately after its `BEGIN`, so the whole transaction is RLS-scoped without
+// editing every call site. Public/worker paths have no context → no injection
+// (those must use servicePool).
+(appPool as unknown as { connect: unknown }).connect = async () => {
+  const client = await rawConnect();
+  const tenantId = currentTenant();
+  if (!tenantId) return client;
+  const clientQuery = client.query.bind(client);
+  (client as unknown as { query: unknown }).query = (text: unknown, params?: unknown, cb?: unknown) => {
+    if (typeof text === "string" && /^\s*BEGIN/i.test(text) && typeof params !== "function" && typeof cb !== "function") {
+      return (async () => {
+        const res = await (clientQuery as (...a: unknown[]) => Promise<unknown>)(text, params);
+        await (clientQuery as (...a: unknown[]) => Promise<unknown>)(
+          "SELECT set_config('app.current_tenant', $1, true)", [tenantId],
+        );
+        return res;
+      })();
+    }
+    return (clientQuery as (...a: unknown[]) => unknown)(text, params, cb);
+  };
+  return client;
 };
 
 export const pool = appPool;

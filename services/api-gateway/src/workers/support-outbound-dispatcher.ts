@@ -23,7 +23,7 @@
 
 import { Queue, Worker } from "bullmq";
 import type { PoolClient } from "pg";
-import { pool } from "../db";
+import { servicePool as pool } from "../db";
 import { redisConnection } from "../lib/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
 import {

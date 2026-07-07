@@ -12,7 +12,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { pool, readPool } from "../db";
+import { servicePool as pool, servicePool as readPool } from "../db";
 import { generateSlots, type Availability } from "../lib/scheduling";
 
 interface LinkRow {

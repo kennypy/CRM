@@ -25,7 +25,7 @@
  *   - ai_summarize            — trigger AI summarization
  */
 
-import { pool } from "../db";
+import { servicePool as pool } from "../db";
 import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
 

@@ -12,7 +12,7 @@
 
 import { createHmac } from "crypto";
 import { Queue, Worker } from "bullmq";
-import { pool } from "../db";
+import { servicePool as pool } from "../db";
 import { decrypt } from "../lib/oauth-exchange";
 import { redisConnection } from "../lib/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
