@@ -23,7 +23,7 @@ const PUBLIC_PATHS = new Set([
 // Public path PREFIXES for routes with dynamic segments that can't be listed
 // exactly. The customer portal (/portal/:slug/...) is fully public — the tenant
 // is resolved from the slug in the URL and only published KB content is served.
-const PUBLIC_PREFIXES = ["/portal/"];
+const PUBLIC_PREFIXES = ["/portal/", "/book/"];
 
 export async function authMiddleware(
   request: FastifyRequest,

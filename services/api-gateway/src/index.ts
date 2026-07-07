@@ -72,6 +72,8 @@ import { dedupRoutes }                   from "./routes/dedup";
 import { adminRoutes }                   from "./routes/admin";
 import { kbRoutes }                      from "./routes/kb";
 import { portalRoutes }                  from "./routes/portal";
+import { bookingLinksRoutes }            from "./routes/booking-links";
+import { bookingRoutes }                 from "./routes/booking";
 import { auditLogRoutes }                from "./routes/audit-log";
 import { searchRoutes }                  from "./routes/search";
 import { teamsRoutes }                   from "./routes/teams";
@@ -195,6 +197,10 @@ async function bootstrap() {
   // it needs no JWT; the tenant is resolved from its slug in the URL.
   await server.register(portalRoutes, { prefix: "/portal" });
 
+  // Meetings scheduler — PUBLIC booking flow (slot listing + booking). Also
+  // before the auth hook; the booking link is resolved by its unique slug.
+  await server.register(bookingRoutes, { prefix: "/book" });
+
   // ── Protected routes ──────────────────────────────────────────────────────
   server.addHook("preHandler", authMiddleware);
 
@@ -243,6 +249,7 @@ async function bootstrap() {
   await server.register(searchRoutes,            { prefix: "/api/v1/search" });
   await server.register(teamsRoutes,             { prefix: "/api/v1/teams" });
   await server.register(kbRoutes,                { prefix: "/api/v1/kb" });
+  await server.register(bookingLinksRoutes,      { prefix: "/api/v1/booking-links" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
