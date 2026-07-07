@@ -505,7 +505,8 @@
     "tabs": {
       "profile": "Profile",
       "general": "General",
-      "users": "Team",
+      "users": "People",
+      "teams": "Teams",
       "integrations": "Integrations",
       "billing": "Billing",
       "security": "Security",

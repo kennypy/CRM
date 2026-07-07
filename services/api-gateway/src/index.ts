@@ -72,6 +72,7 @@ import { dedupRoutes }                   from "./routes/dedup";
 import { adminRoutes }                   from "./routes/admin";
 import { auditLogRoutes }                from "./routes/audit-log";
 import { searchRoutes }                  from "./routes/search";
+import { teamsRoutes }                   from "./routes/teams";
 import { redis }                        from "./lib/redis";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
 
@@ -234,6 +235,7 @@ async function bootstrap() {
   await server.register(adminRoutes,             { prefix: "/api/admin" });
   await server.register(auditLogRoutes,          { prefix: "/api/v1/audit-log" });
   await server.register(searchRoutes,            { prefix: "/api/v1/search" });
+  await server.register(teamsRoutes,             { prefix: "/api/v1/teams" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.

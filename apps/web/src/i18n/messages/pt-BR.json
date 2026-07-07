@@ -502,7 +502,8 @@
     "tabs": {
       "profile": "Perfil",
       "general": "Geral",
-      "users": "Equipe",
+      "users": "Pessoas",
+      "teams": "Equipes",
       "integrations": "Integrações",
       "billing": "Cobrança",
       "security": "Segurança",
