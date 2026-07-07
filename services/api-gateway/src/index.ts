@@ -70,6 +70,8 @@ import { startSupportOutboundReconcile }  from "./workers/support-outbound-recon
 import { startSupportOrphanSweeper }      from "./workers/support-orphan-sweeper";
 import { dedupRoutes }                   from "./routes/dedup";
 import { adminRoutes }                   from "./routes/admin";
+import { kbRoutes }                      from "./routes/kb";
+import { portalRoutes }                  from "./routes/portal";
 import { auditLogRoutes }                from "./routes/audit-log";
 import { searchRoutes }                  from "./routes/search";
 import { teamsRoutes }                   from "./routes/teams";
@@ -189,6 +191,10 @@ async function bootstrap() {
   // own parser, and other JSON routes get standard parsing.
   await server.register(vintageWebhookRoutes, { prefix: "/webhooks" });
 
+  // Customer portal — PUBLIC knowledge base. Registered before the auth hook so
+  // it needs no JWT; the tenant is resolved from its slug in the URL.
+  await server.register(portalRoutes, { prefix: "/portal" });
+
   // ── Protected routes ──────────────────────────────────────────────────────
   server.addHook("preHandler", authMiddleware);
 
@@ -236,6 +242,7 @@ async function bootstrap() {
   await server.register(auditLogRoutes,          { prefix: "/api/v1/audit-log" });
   await server.register(searchRoutes,            { prefix: "/api/v1/search" });
   await server.register(teamsRoutes,             { prefix: "/api/v1/teams" });
+  await server.register(kbRoutes,                { prefix: "/api/v1/kb" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
