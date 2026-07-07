@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/register", "/landing", "/demo/enter", "/start", "/accept-invite"];
+const PUBLIC = ["/login", "/register", "/landing", "/demo/enter", "/start", "/accept-invite", "/portal"];
 const SUPPORTED_LOCALES = ["en", "pt-BR"];
 const DEFAULT_LOCALE = "en";
 
@@ -39,6 +39,10 @@ function decodeJWTPayload(token: string): Record<string, unknown> | null {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC.some((p) => pathname.startsWith(p));
+  // The customer portal is a public page that logged-in CRM users must ALSO be
+  // able to view (e.g. "View portal" preview), so it's exempt from the
+  // authed-user→home redirect below.
+  const isOpenToAll = pathname.startsWith("/portal");
   const token = request.cookies.get("nexcrm_token")?.value;
 
   if (!token && !isPublic) {
@@ -47,7 +51,7 @@ export function middleware(request: NextRequest) {
     url.searchParams.set("next", encodeURIComponent(pathname));
     return NextResponse.redirect(url);
   }
-  if (token && isPublic) {
+  if (token && isPublic && !isOpenToAll) {
     // Don't redirect demo users away from demo/landing pages
     const isDemo = request.cookies.get("nexcrm_demo")?.value === "1";
     const isDemoPage = pathname.startsWith("/demo") || pathname.startsWith("/landing");
