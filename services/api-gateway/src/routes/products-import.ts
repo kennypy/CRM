@@ -241,7 +241,7 @@ export async function productsImportRoutes(server: FastifyInstance) {
         } else {
           await pool.query(
             `INSERT INTO products (tenant_id, sku, name, description, unit_price, currency, billing_cycle, custom_fields)
-             VALUES ($1, $2, $3, $4, COALESCE($5, 0), COALESCE($6, 'USD'), $7, $8::jsonb)`,
+             VALUES ($1, $2, $3, $4, COALESCE($5::numeric, 0), COALESCE($6, 'USD'), $7, $8::jsonb)`,
             [tenantId, sku, name, description, unitPrice, currency, billing, JSON.stringify(custom)]
           );
           created++;
