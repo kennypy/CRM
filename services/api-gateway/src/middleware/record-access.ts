@@ -25,18 +25,25 @@ export async function hasRecordAccess(
   // Admin/super_admin bypass all ACLs
   if (userRole === "admin" || userRole === "super_admin") return true;
 
-  // Check explicit permissions: user-level, then role-level
+  // Check explicit permissions: user-level, then team-level, then role-level.
+  // Team grants (grantee_type='team') resolve through team membership — a record
+  // shared with a team is accessible to every member. User grants win over team
+  // grants, which win over role grants (ordered below).
   const col = access === "read" ? "can_read" : access === "write" ? "can_write" : "can_delete";
 
   const { rows } = await pool.query(
-    `SELECT ${col} AS allowed FROM record_permissions
-     WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+    `SELECT ${col} AS allowed FROM record_permissions rp
+     WHERE rp.tenant_id = $1 AND rp.entity_type = $2 AND rp.entity_id = $3
        AND (
-         (grantee_type = 'user' AND grantee_id = $4)
-         OR (grantee_type = 'role' AND grantee_id = $5)
+         (rp.grantee_type = 'user' AND rp.grantee_id = $4)
+         OR (rp.grantee_type = 'role' AND rp.grantee_id = $5)
+         OR (rp.grantee_type = 'team' AND rp.grantee_id IN (
+              SELECT tm.team_id::text FROM team_members tm
+              WHERE tm.user_id = $4::uuid AND tm.tenant_id = $1
+            ))
        )
      ORDER BY
-       CASE grantee_type WHEN 'user' THEN 0 ELSE 1 END
+       CASE rp.grantee_type WHEN 'user' THEN 0 WHEN 'team' THEN 1 ELSE 2 END
      LIMIT 1`,
     [tenantId, entityType, entityId, userId, userRole]
   );

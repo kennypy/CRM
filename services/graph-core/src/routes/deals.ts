@@ -35,6 +35,7 @@ const GetDealsQuery = z.object({
   tenantId: z.string().min(1),
   stage:    z.enum(DealStages).optional(),
   atRisk:   z.enum(["true", "false"]).optional(),
+  search:   z.string().optional(),
   limit:    z.coerce.number().int().min(1).max(200).default(50),
 });
 
@@ -68,7 +69,7 @@ export async function dealsRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
       });
     }
-    const { tenantId, stage, atRisk, limit } = parsed.data;
+    const { tenantId, stage, atRisk, search, limit } = parsed.data;
     const params: Record<string, unknown> = { tenantId };
 
     let cyph = `MATCH (d:Deal {tenant_id: $tenantId})\n`;
@@ -82,6 +83,10 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (atRisk === "true") {
       where.push("d.reality_score < 50");
       where.push("NOT d.stage IN ['closed_won', 'closed_lost']");
+    }
+    if (search) {
+      where.push("toLower(d.name) CONTAINS toLower($search)");
+      params.search = search;
     }
     if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
 

@@ -10,7 +10,7 @@ import {
   Settings, Users, Plug, CreditCard, Shield, User,
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
-  FileText, Package, ChevronDown, Columns3, Box, LockKeyhole,
+  FileText, Package, ChevronDown, Columns3, Box, LockKeyhole, UsersRound,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -18,6 +18,7 @@ import type { Theme } from "@/components/theme/theme-provider";
 import { useTranslations } from "next-intl";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { InviteUserModal } from "@/components/settings/invite-user-modal";
+import { TeamsTab } from "@/components/settings/teams-tab";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ const SUPPORTED_TIMEZONES  = [
   "Asia/Tokyo", "Australia/Sydney",
 ];
 
-type Tab = "profile" | "general" | "users" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions";
+type Tab = "profile" | "general" | "users" | "teams" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions";
 
 // ── Theme Selector ─────────────────────────────────────────────────────────────
 
@@ -1958,6 +1959,7 @@ function useTabs() {
     { id: "security" as Tab,         label: t("tabs.security"),       icon: Shield   },
     { id: "general" as Tab,          label: t("tabs.company"),        icon: Building2, adminOnly: true },
     { id: "users" as Tab,            label: t("tabs.users"),          icon: Users,     adminOnly: true },
+    { id: "teams" as Tab,            label: t("tabs.teams"),          icon: UsersRound, adminOnly: true },
     { id: "integrations" as Tab,     label: t("tabs.integrations"),   icon: Plug,      adminOnly: true },
     { id: "quoting" as Tab,          label: t("tabs.quoting"),        icon: FileText,  adminOnly: true },
     { id: "products" as Tab,         label: t("tabs.products"),       icon: Package,   adminOnly: true },
@@ -2033,6 +2035,7 @@ function SettingsInner() {
         {tab === "security"     && <SecurityTab />}
         {tab === "general"      && <GeneralTab user={user} />}
         {tab === "users"        && <UsersTab />}
+        {tab === "teams"        && <TeamsTab />}
         {tab === "integrations"   && <IntegrationsTab />}
         {tab === "quoting"        && <QuotingTab />}
         {tab === "products"       && <ProductsTab />}
