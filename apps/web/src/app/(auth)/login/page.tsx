@@ -1,13 +1,13 @@
 "use client";
 
-import { Suspense, useState, useRef } from "react";
+import { Suspense, useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { setAuth } from "@/lib/auth";
 import { useTenant } from "@/lib/tenant-context";
-import { Eye, EyeOff, Zap, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Zap, AlertCircle, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function LoginForm() {
@@ -32,6 +32,32 @@ function LoginForm() {
   const [showPw, setShowPw]   = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  const [ssoOkta, setSsoOkta] = useState(false);
+
+  // Surface an SSO error passed back via ?error= after a failed Okta round-trip.
+  const ssoError = searchParams.get("error");
+
+  // Only show the Okta button when the deployment has it configured.
+  useEffect(() => {
+    fetch("/api/auth/sso-config")
+      .then((r) => r.json())
+      .then((d) => setSsoOkta(Boolean(d?.okta)))
+      .catch(() => setSsoOkta(false));
+  }, []);
+
+  const startOkta = () => {
+    const params = new URLSearchParams();
+    if (form.tenantSlug) params.set("tenant", form.tenantSlug);
+    params.set("next", next);
+    window.location.href = `/api/auth/sso/okta/start?${params.toString()}`;
+  };
+
+  const SSO_ERRORS: Record<string, string> = {
+    sso_unavailable: "Single sign-on isn't configured for this deployment.",
+    sso_no_workspace: "No workspace matches your account. Enter your workspace name and try again.",
+    sso_email_unverified: "Your identity provider hasn't verified your email.",
+    sso_denied: "Sign-in was cancelled.",
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,10 +178,10 @@ function LoginForm() {
         </div>
       </div>
 
-      {error && (
+      {(error || ssoError) && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          {error}
+          {error ?? SSO_ERRORS[ssoError ?? ""] ?? "Single sign-on failed. Please try again."}
         </div>
       )}
 
@@ -170,6 +196,24 @@ function LoginForm() {
       >
         {loading ? t("signingIn") : t("signIn")}
       </button>
+
+      {ssoOkta && (
+        <>
+          <div className="flex items-center gap-3 py-1">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">or</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          <button
+            type="button"
+            onClick={startOkta}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-muted"
+          >
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            Sign in with Okta (SSO)
+          </button>
+        </>
+      )}
     </form>
   );
 }
