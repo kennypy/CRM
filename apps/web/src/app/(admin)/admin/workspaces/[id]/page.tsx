@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Save, Users, Plus, Building2, GitMerge } from "lucide-react";
+import { ArrowLeft, Save, Users, Plus, Building2, GitMerge, KeyRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { FeatureToggleList } from "@/components/admin/feature-toggle";
 import { StatsCards, UsageChart, ChildStatsTable } from "@/components/admin/stats-cards";
@@ -33,6 +33,10 @@ interface TenantDetail {
   parentName?: string | null;
   parentSlug?: string | null;
   userCount: number;
+  seatsUsed?: number;
+  seatLimit?: number;
+  seatLimitOverride?: number | null;
+  planSeatDefault?: number | null;
   children: TenantChild[];
   createdAt: string;
 }
@@ -81,6 +85,11 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
   const [editPlan, setEditPlan] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
+  // Seat management
+  const [seatInput, setSeatInput] = useState("");
+  const [savingSeats, setSavingSeats] = useState(false);
+  const [seatError, setSeatError] = useState<string | null>(null);
+
   // Merge dialog state
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [allTenants, setAllTenants] = useState<AllTenant[]>([]);
@@ -94,6 +103,7 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
         setTenant(t);
         setEditName(t.name);
         setEditPlan(t.plan);
+        setSeatInput(t.seatLimit != null ? String(t.seatLimit) : "");
       }
     }).catch(() => {});
 
@@ -119,6 +129,22 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
       setTimeout(() => setMessage(null), 2000);
     }
     setSaving(false);
+  };
+
+  const saveSeats = async (value: number | null) => {
+    setSavingSeats(true);
+    setSeatError(null);
+    const res = await api.patch(`/api/admin/tenants/${id}/seats`, { seatLimit: value });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setTenant(json.data);
+      setSeatInput(json.data.seatLimit != null ? String(json.data.seatLimit) : "");
+      setMessage("Seats updated");
+      setTimeout(() => setMessage(null), 2000);
+    } else {
+      setSeatError(json?.error?.message ?? "Could not update seats");
+    }
+    setSavingSeats(false);
   };
 
   const toggleFeature = async (key: string, enabled: boolean) => {
@@ -214,6 +240,79 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
           {stats.childStats && <ChildStatsTable children={stats.childStats} />}
         </div>
       )}
+
+      {/* License & Seats */}
+      {(() => {
+        const used = tenant.seatsUsed ?? tenant.userCount ?? 0;
+        const limit = tenant.seatLimit ?? 0;
+        const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+        const atCap = limit > 0 && used >= limit;
+        const isOverride = tenant.seatLimitOverride != null;
+        return (
+          <div className="rounded-xl border bg-card p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-semibold">License &amp; Seats</h2>
+              <span className="ml-auto rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium capitalize">{tenant.plan}</span>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Seats in use</span>
+                <span className={atCap ? "font-semibold text-red-600" : "font-semibold"}>
+                  {used} / {limit}
+                </span>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div className={`h-full rounded-full ${atCap ? "bg-red-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {isOverride
+                  ? `Custom seat limit. Plan default is ${tenant.planSeatDefault ?? "—"}.`
+                  : `Using the ${tenant.plan} plan default (${tenant.planSeatDefault ?? limit} seats).`}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Seat limit</label>
+                <input
+                  type="number"
+                  min={used}
+                  value={seatInput}
+                  onChange={(e) => setSeatInput(e.target.value)}
+                  className="mt-1 w-32 rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  placeholder="e.g. 25"
+                />
+              </div>
+              <button
+                onClick={() => saveSeats(seatInput ? Number(seatInput) : null)}
+                disabled={savingSeats}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {savingSeats ? "Saving…" : "Set seats"}
+              </button>
+              <button
+                onClick={() => saveSeats((limit || used) + 5)}
+                disabled={savingSeats}
+                className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add 5 seats
+              </button>
+              {isOverride && (
+                <button
+                  onClick={() => saveSeats(null)}
+                  disabled={savingSeats}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  Reset to plan default
+                </button>
+              )}
+            </div>
+            {seatError && <p className="text-sm text-red-600">{seatError}</p>}
+          </div>
+        );
+      })()}
 
       {/* Basic Info */}
       <div className="rounded-xl border bg-card p-5 space-y-4">

@@ -339,12 +339,14 @@ export async function getTenantDetail(tenantId: string) {
       `SELECT t.*,
               COUNT(DISTINCT u.id)::int AS user_count,
               p.name AS parent_name,
-              p.slug AS parent_slug
+              p.slug AS parent_slug,
+              pe.seat_limit AS plan_seat_default
        FROM tenants t
        LEFT JOIN users u ON u.tenant_id = t.id AND u.deleted_at IS NULL
        LEFT JOIN tenants p ON p.id = t.parent_tenant_id AND p.deleted_at IS NULL
+       LEFT JOIN plan_entitlements pe ON pe.plan = t.plan
        WHERE t.id = $1 AND t.deleted_at IS NULL
-       GROUP BY t.id, p.name, p.slug`,
+       GROUP BY t.id, p.name, p.slug, pe.seat_limit`,
       [tenantId]
     );
     if (!rows[0]) return null;
@@ -374,6 +376,12 @@ export async function getTenantDetail(tenantId: string) {
     r = rows[0];
   }
 
+  // Effective seat allowance: the per-tenant override wins; otherwise the plan
+  // default; otherwise a conservative fallback if plan_entitlements is missing.
+  const planSeatDefault: number | null = r.plan_seat_default ?? null;
+  const seatLimitOverride: number | null = r.seat_limit ?? null;
+  const seatLimit = seatLimitOverride ?? planSeatDefault ?? 5;
+
   return {
     id: r.id,
     name: r.name,
@@ -385,6 +393,10 @@ export async function getTenantDetail(tenantId: string) {
     parentName: r.parent_name ?? null,
     parentSlug: r.parent_slug ?? null,
     userCount: r.user_count,
+    seatsUsed: r.user_count,
+    seatLimit,
+    seatLimitOverride,
+    planSeatDefault,
     children: children.map((c: any) => ({
       id: c.id,
       name: c.name,
@@ -395,6 +407,24 @@ export async function getTenantDetail(tenantId: string) {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+/** Set (or clear, with null) a tenant's per-seat override.
+ *  Returns false when the new limit would be below current usage. */
+export async function setTenantSeatLimit(
+  tenantId: string,
+  seatLimit: number | null,
+): Promise<{ ok: boolean; seatsUsed: number }> {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS used FROM users WHERE tenant_id = $1 AND deleted_at IS NULL`,
+    [tenantId],
+  );
+  const seatsUsed = rows[0]?.used ?? 0;
+  if (seatLimit !== null && seatLimit < seatsUsed) {
+    return { ok: false, seatsUsed };
+  }
+  await pool.query(`UPDATE tenants SET seat_limit = $2 WHERE id = $1`, [tenantId, seatLimit]);
+  return { ok: true, seatsUsed };
 }
 
 /** Update tenant settings (merges into the existing JSONB). */

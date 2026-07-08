@@ -1584,7 +1584,13 @@ function IntegrationsTab() {
 // ── Tab: Billing ───────────────────────────────────────────────────────────────
 
 function BillingTab() {
-  const [status, setStatus] = useState<{ plan?: string; subscriptionStatus?: string | null; periodEnd?: string | null } | null>(null);
+  const [status, setStatus] = useState<{
+    plan?: string;
+    stripe_subscription_status?: string | null;
+    subscription_period_end?: string | null;
+    seat_limit?: number;
+    seats_used?: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [portalBusy, setPortalBusy] = useState(false);
   // The billing portal endpoint is admin-only; only offer the button to admins
@@ -1611,7 +1617,13 @@ function BillingTab() {
   };
 
   const plan = (status?.plan ?? "").toUpperCase() || "—";
-  const subStatus = status?.subscriptionStatus ?? null;
+  const subStatus = status?.stripe_subscription_status ?? null;
+  const periodEnd = status?.subscription_period_end ?? null;
+  const seatsUsed = status?.seats_used;
+  const seatLimit = status?.seat_limit;
+  const seatPct = seatLimit && seatLimit > 0 && seatsUsed != null
+    ? Math.min(100, Math.round((seatsUsed / seatLimit) * 100)) : 0;
+  const atSeatCap = seatLimit != null && seatsUsed != null && seatsUsed >= seatLimit;
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -1621,7 +1633,7 @@ function BillingTab() {
             <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">{loading ? "…" : plan}</span>
             {subStatus
               ? <p className="text-sm text-muted-foreground mt-3 capitalize">Subscription: {subStatus}
-                  {status?.periodEnd ? ` · renews ${new Date(status.periodEnd).toLocaleDateString()}` : ""}</p>
+                  {periodEnd ? ` · renews ${new Date(periodEnd).toLocaleDateString()}` : ""}</p>
               : <p className="text-sm text-muted-foreground mt-3">
                   {loading ? "Loading billing status…" : "No active subscription on file. Manage billing in the customer portal."}
                 </p>}
@@ -1637,6 +1649,26 @@ function BillingTab() {
           Payment methods, invoices, and plan changes are handled securely in the billing portal.
         </p>
       </div>
+
+      {/* Seats / licenses — real usage from the workspace's plan entitlement. */}
+      {!loading && seatLimit != null && (
+        <div className="rounded-xl border bg-card p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold">Licensed seats</h3>
+            <span className={cn("text-sm font-semibold", atSeatCap && "text-red-600")}>
+              {seatsUsed ?? 0} / {seatLimit} used
+            </span>
+          </div>
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className={cn("h-full rounded-full", atSeatCap ? "bg-red-500" : "bg-primary")} style={{ width: `${seatPct}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {atSeatCap
+              ? "All seats are in use. To add more users, contact your provider to increase your seat limit."
+              : `${Math.max(0, seatLimit - (seatsUsed ?? 0))} seat(s) available for new users.`}
+          </p>
+        </div>
+      )}
 
       {/* Usage metering and stored payment method are not yet wired to real data —
           shown only in preview builds so a pilot never sees fabricated figures. */}

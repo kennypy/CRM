@@ -56,6 +56,40 @@ const UpdateUserSchema = z.object({
   language:     z.string().max(20).optional().nullable(),
 });
 
+/** Effective seat cap for a tenant: the per-tenant override wins, else the plan
+ *  default, else a conservative fallback. Returns used + limit for enforcement. */
+async function seatUsage(tenantId: string): Promise<{ used: number; limit: number }> {
+  const { rows } = await pool.query(
+    `SELECT
+        (SELECT COUNT(*)::int FROM users WHERE tenant_id = $1 AND deleted_at IS NULL) AS used,
+        t.seat_limit AS override,
+        pe.seat_limit AS plan_default
+     FROM tenants t
+     LEFT JOIN plan_entitlements pe ON pe.plan = t.plan
+     WHERE t.id = $1`,
+    [tenantId],
+  );
+  const r = rows[0] ?? {};
+  const limit = (r.override as number | null) ?? (r.plan_default as number | null) ?? 5;
+  return { used: r.used ?? 0, limit };
+}
+
+/** Reject the request with 403 when the tenant is at its seat cap.
+ *  Returns null when a seat is available. */
+async function seatGuard(tenantId: string, reply: import("fastify").FastifyReply) {
+  const { used, limit } = await seatUsage(tenantId);
+  if (used >= limit) {
+    return reply.status(403).send({
+      success: false,
+      error: {
+        code: "SEAT_LIMIT_REACHED",
+        message: `Your workspace has used all ${limit} seats on its plan. Ask your provider to add seats before inviting more users.`,
+      },
+    });
+  }
+  return null;
+}
+
 /** Load a profile's defaults (role + capabilities + tz/lang) for provisioning. */
 async function loadProfile(tenantId: string, profileId: string) {
   const { rows } = await pool.query(
@@ -222,6 +256,9 @@ export async function usersRoutes(server: FastifyInstance) {
       });
     }
 
+    // Enforce the plan's seat cap (active + invited users both hold a seat).
+    if (await seatGuard(tenantId, reply)) return;
+
     // Resolve the profile (if any) for defaults, then let explicit fields win.
     let profile: Record<string, unknown> | null = null;
     if (d.profileId) {
@@ -377,6 +414,9 @@ export async function usersRoutes(server: FastifyInstance) {
         error: { code: "USER_EXISTS", message: "A user with this email already exists in your workspace" },
       });
     }
+
+    // Enforce the plan's seat cap.
+    if (await seatGuard(tenantId, reply)) return;
 
     const { rows } = await pool.query(
       `INSERT INTO users (tenant_id, email, role, first_name, last_name)

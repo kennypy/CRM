@@ -14,6 +14,7 @@ import {
   createSubWorkspace,
   listChildTenants,
   listTenantUsers,
+  setTenantSeatLimit,
   toPublicUser,
   findSuperAdminById,
   tenantsShareHierarchy,
@@ -196,6 +197,36 @@ export async function adminRoutes(server: FastifyInstance) {
   server.get<{ Params: { id: string } }>("/tenants/:id/users", async (request, reply) => {
     const users = await listTenantUsers(request.params.id, ["admin", "super_admin"]);
     return reply.send({ success: true, data: users.map(toPublicUser) });
+  });
+
+  /** PATCH /admin/tenants/:id/seats — set (or clear) a workspace's seat cap.
+   *  Body: { seatLimit: number | null }. null reverts to the plan default.
+   *  Rejected if the new cap would be below the workspace's current usage. */
+  server.patch<{ Params: { id: string } }>("/tenants/:id/seats", async (request, reply) => {
+    const schema = z.object({
+      seatLimit: z.number().int().positive().max(100000).nullable(),
+    });
+    const body = schema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
+      });
+    }
+
+    const result = await setTenantSeatLimit(request.params.id, body.data.seatLimit);
+    if (!result.ok) {
+      return reply.status(409).send({
+        success: false,
+        error: {
+          code: "SEAT_LIMIT_BELOW_USAGE",
+          message: `This workspace already has ${result.seatsUsed} users. Set the seat limit to at least ${result.seatsUsed}.`,
+        },
+      });
+    }
+
+    const tenant = await getTenantDetail(request.params.id);
+    return reply.send({ success: true, data: tenant });
   });
 
   // ── Sub-workspaces ──────────────────────────────────────────────────────────

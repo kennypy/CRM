@@ -58,9 +58,13 @@ export async function billingRoutes(server: FastifyInstance) {
   server.get("/status", { preHandler: [denyApiKeys] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows: [tenant] } = await pool.query(
-      `SELECT plan, stripe_subscription_status, subscription_period_end,
-              stripe_customer_id IS NOT NULL AS has_billing_account
-         FROM tenants WHERE id = $1`,
+      `SELECT t.plan, t.stripe_subscription_status, t.subscription_period_end,
+              t.stripe_customer_id IS NOT NULL AS has_billing_account,
+              COALESCE(t.seat_limit, pe.seat_limit, 5) AS seat_limit,
+              (SELECT COUNT(*)::int FROM users u WHERE u.tenant_id = t.id AND u.deleted_at IS NULL) AS seats_used
+         FROM tenants t
+         LEFT JOIN plan_entitlements pe ON pe.plan = t.plan
+        WHERE t.id = $1`,
       [tenantId],
     );
     if (!tenant) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
