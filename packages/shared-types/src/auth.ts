@@ -23,6 +23,10 @@ export interface User {
   avatarUrl?: string;
   lastLoginAt?: string;
   createdAt: string;
+  /** Per-user feature flags (can_campaigns, can_import, can_export, …) that gate
+   *  finer-grained access on top of the role. Used by nav/module visibility. */
+  capabilities?: Record<string, boolean>;
+  canQuote?: boolean;
 }
 
 export interface Tenant {

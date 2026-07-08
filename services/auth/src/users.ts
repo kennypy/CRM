@@ -148,6 +148,8 @@ export function toPublicUser(u: DBUser): User {
     avatarUrl: u.avatar_url ?? undefined,
     lastLoginAt: u.last_login_at ?? undefined,
     createdAt: u.created_at,
+    capabilities: (u as { capabilities?: Record<string, boolean> }).capabilities ?? {},
+    canQuote: (u as { can_quote?: boolean }).can_quote ?? false,
   };
 }
 
@@ -423,8 +425,19 @@ export async function updateTenant(
   );
 }
 
-/** List users belonging to a tenant. */
-export async function listTenantUsers(tenantId: string): Promise<DBUser[]> {
+/** List users belonging to a tenant, optionally restricted to specific roles.
+ *  The platform/provider console passes `roles=['admin','super_admin']` so the
+ *  owner only ever sees a workspace's ADMINS — never its reps/managers or any
+ *  CRM data (Tier-1 isolation). */
+export async function listTenantUsers(tenantId: string, roles?: string[]): Promise<DBUser[]> {
+  if (roles && roles.length) {
+    const { rows } = await pool.query<DBUser>(
+      `SELECT * FROM users WHERE tenant_id = $1 AND deleted_at IS NULL AND role = ANY($2)
+       ORDER BY created_at`,
+      [tenantId, roles]
+    );
+    return rows;
+  }
   const { rows } = await pool.query<DBUser>(
     `SELECT * FROM users WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
     [tenantId]

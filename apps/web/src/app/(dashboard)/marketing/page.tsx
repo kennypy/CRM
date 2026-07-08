@@ -104,7 +104,8 @@ export default function MarketingPage() {
   const t = useTranslations("marketing");
   const tc = useTranslations("common");
   const { tenant } = useTenant();
-  const { canWrite } = usePermissions();
+  const { can, ready } = usePermissions();
+  const canCampaigns = can("can_campaigns");
   const { visible, toggle } = useColumnPrefs("nexcrm_cols_campaigns", COL_DEFS);
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -203,6 +204,21 @@ export default function MarketingPage() {
     }
   };
 
+  // Campaign management is a granted module. Users without the can_campaigns
+  // capability (e.g. reps) can still see campaign details on a record and run
+  // campaign reports, but must not reach this management page.
+  if (ready && !canCampaigns) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <AlertCircle className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <h1 className="text-xl font-semibold">{t("noAccessTitle")}</h1>
+        <p className="max-w-md text-sm text-muted-foreground">{t("noAccessBody")}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -221,7 +237,7 @@ export default function MarketingPage() {
             <RefreshCw className="h-4 w-4" />
           </button>
           <ColumnPicker defs={COL_DEFS} visible={visible} toggle={toggle} />
-          {canWrite && (
+          {canCampaigns && (
             <button
               onClick={() => setShowCreate(true)}
               className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -363,22 +379,22 @@ export default function MarketingPage() {
                     {visible.has("actions") && (
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1">
-                          {c.status === "draft" && canWrite && (
+                          {c.status === "draft" && canCampaigns && (
                             <button onClick={() => handleStatusChange(c.id, "active")} className="rounded p-1 hover:bg-muted" title={t("activate")}>
                               <Play className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          {c.status === "active" && canWrite && (
+                          {c.status === "active" && canCampaigns && (
                             <button onClick={() => handleStatusChange(c.id, "paused")} className="rounded p-1 hover:bg-muted" title={t("pause")}>
                               <Pause className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          {c.status === "paused" && canWrite && (
+                          {c.status === "paused" && canCampaigns && (
                             <button onClick={() => handleStatusChange(c.id, "active")} className="rounded p-1 hover:bg-muted" title={t("resume")}>
                               <Play className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          {canWrite && (
+                          {canCampaigns && (
                             <button onClick={() => handleDelete(c.id)} className="rounded p-1 hover:bg-red-50 text-red-500" title={tc("delete")}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>

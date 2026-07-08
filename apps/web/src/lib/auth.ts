@@ -18,6 +18,8 @@ export interface StoredUser {
   role: string;
   tenantId: string;
   tenantName: string;
+  capabilities?: Record<string, boolean>;
+  canQuote?: boolean;
 }
 
 const USER_KEY = "nexcrm_user";

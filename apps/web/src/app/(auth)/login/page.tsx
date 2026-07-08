@@ -87,13 +87,15 @@ function LoginForm() {
       const { user, tenant } = data.data ?? data;
 
       setAuth("", "", {
-        id:         user.id,
-        email:      user.email,
-        firstName:  user.firstName,
-        lastName:   user.lastName,
-        role:       user.role,
-        tenantId:   user.tenantId,
-        tenantName: tenant?.name ?? form.tenantSlug,
+        id:            user.id,
+        email:         user.email,
+        firstName:     user.firstName,
+        lastName:      user.lastName,
+        role:          user.role,
+        tenantId:      user.tenantId,
+        tenantName:    tenant?.name ?? form.tenantSlug,
+        capabilities:  user.capabilities ?? {},
+        canQuote:      user.canQuote ?? false,
       });
 
       // Load tenant preferences now that we're authenticated

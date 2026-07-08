@@ -2635,7 +2635,7 @@ function useTabs() {
   const t = useTranslations("settings");
   return [
     { id: "profile" as Tab,          label: t("tabs.profile"),        icon: User     },
-    { id: "security" as Tab,         label: t("tabs.security"),       icon: Shield   },
+    { id: "security" as Tab,         label: t("tabs.security"),       icon: Shield,    adminOnly: true },
     { id: "general" as Tab,          label: t("tabs.company"),        icon: Building2, adminOnly: true },
     { id: "users" as Tab,            label: t("tabs.users"),          icon: Users,     adminOnly: true },
     { id: "teams" as Tab,            label: t("tabs.teams"),          icon: UsersRound, adminOnly: true },
@@ -2672,8 +2672,17 @@ function SettingsInner() {
     if (raw && VALID_TAB_IDS.has(raw)) setTab(raw);
   }, [searchParams]);
 
-  const isAdmin = ["admin", "super_admin", "manager"].includes(user?.role ?? "");
+  // Admin-only tabs are for workspace admins + the platform owner only. Managers
+  // are NOT admins — they were previously lumped in here, which exposed every
+  // admin tab (products, billing, permissions, API keys, …) to managers.
+  const isAdmin = ["admin", "super_admin"].includes(user?.role ?? "");
   const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin);
+
+  // Guard against deep-linking to a hidden admin tab via ?tab= — if the active
+  // tab is admin-only and the user isn't an admin, fall back to profile.
+  useEffect(() => {
+    if (!isAdmin && TABS.some((t) => t.id === tab && t.adminOnly)) setTab("profile");
+  }, [isAdmin, tab, TABS]);
 
   return (
     <div className="flex h-full gap-6">

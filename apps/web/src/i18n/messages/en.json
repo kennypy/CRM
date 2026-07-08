@@ -666,6 +666,8 @@
     "searchPlaceholder": "Search campaigns…",
     "loadError": "Failed to load campaigns",
     "createError": "Failed to create campaign",
+    "noAccessTitle": "No access to campaign management",
+    "noAccessBody": "Your role doesn't include campaign management. You can still view campaign details on a contact, lead, or account and run campaign reports. Ask your workspace admin if you need access.",
     "empty": "No campaigns yet — create your first campaign to get started",
     "confirmDelete": "Delete this campaign? This cannot be undone.",
     "status": {

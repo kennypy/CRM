@@ -33,6 +33,9 @@ const DEFAULT_PERMS = {
   isSuperAdmin:   false,
   isAdmin:        false,
   isManager:      false,
+  capabilities:   {} as Record<string, boolean>,
+  can:            (_cap: string) => false,
+  ready:          false,
 };
 
 export function usePermissions() {
@@ -44,14 +47,21 @@ export function usePermissions() {
     const user = getStoredUser();
     const role = user?.role ?? "read_only";
     const rank = rankOf(role);
+    const isAdmin = rank >= ROLE_RANK.admin;
+    const capabilities = (user?.capabilities ?? {}) as Record<string, boolean>;
     return {
       role,
       canWrite:       rank >= ROLE_RANK.rep,
       canDelete:      rank >= ROLE_RANK.manager,
-      canManageUsers: rank >= ROLE_RANK.admin,
+      canManageUsers: isAdmin,
       isSuperAdmin:   rank >= ROLE_RANK.super_admin,
-      isAdmin:        rank >= ROLE_RANK.admin,
+      isAdmin,
       isManager:      rank >= ROLE_RANK.manager,
+      capabilities,
+      // Admins/super_admins implicitly hold every capability; everyone else
+      // (incl. managers) needs the flag granted — mirrors the backend rule.
+      can: (cap: string) => isAdmin || capabilities[cap] === true,
+      ready: true,
     };
   }, [hydrated]);
 }
