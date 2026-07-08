@@ -14,6 +14,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireAdmin, requireRep } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
+import { userHasCapability } from "../middleware/capabilities";
 
 const LineItemSchema = z.object({
   productId:   z.string().uuid().optional(),
@@ -171,6 +172,18 @@ export async function quotesRoutes(server: FastifyInstance) {
     const maxDiscount = maxLineDiscount(items);
     // Also check order-level discount if percent type
     const effectiveMax = discountType === "percent" ? Math.max(maxDiscount, discountValue) : maxDiscount;
+
+    // Applying any discount requires the 'discount' capability. Admins hold it
+    // implicitly; managers/reps must have it granted on their profile — so a
+    // manager without the toggle can't discount, only quote at list price.
+    const discountApplied = effectiveMax > 0 || (discountType === "fixed" && discountValue > 0);
+    if (discountApplied && !(await userHasCapability(u.role, userId, "can_discount"))) {
+      return reply.status(403).send({
+        success: false,
+        error: { code: "CAPABILITY_REQUIRED", message: "You don't have permission to apply discounts. Ask an admin to enable it for your account." },
+      });
+    }
+
     const approvalRequired = effectiveMax > threshold;
     const status = approvalRequired ? "pending_approval" : "draft";
 
@@ -267,6 +280,25 @@ export async function quotesRoutes(server: FastifyInstance) {
     const discountType  = p.discountType  ?? quote.discount_type;
     const discountValue = p.discountValue ?? parseFloat(quote.discount_value);
     const taxRate       = p.taxRate       ?? parseFloat(quote.tax_rate);
+
+    // Introducing/changing a discount requires the 'discount' capability.
+    const discountTouched =
+      p.discountType !== undefined ||
+      p.discountValue !== undefined ||
+      (items.length > 0 && items.some((it) => (it.discountPct ?? 0) > 0));
+    const resultingDiscount =
+      (discountType === "percent" && discountValue > 0) ||
+      (discountType === "fixed" && discountValue > 0) ||
+      (items.length > 0 && maxLineDiscount(items) > 0);
+    if (discountTouched && resultingDiscount) {
+      const role = request.user.role;
+      if (!(await userHasCapability(role, userId, "can_discount"))) {
+        return reply.status(403).send({
+          success: false,
+          error: { code: "CAPABILITY_REQUIRED", message: "You don't have permission to apply discounts. Ask an admin to enable it for your account." },
+        });
+      }
+    }
 
     const { subtotal, total } = items.length
       ? computeTotals(items, discountType, discountValue, taxRate)

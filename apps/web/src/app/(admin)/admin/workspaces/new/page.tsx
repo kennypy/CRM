@@ -19,14 +19,20 @@ export default function NewWorkspacePage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Once the user manually edits the slug we stop auto-deriving it from the name.
+  const [slugTouched, setSlugTouched] = useState(false);
+
+  const slugify = (v: string) =>
+    v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   const update = (key: string, value: string) =>
     setForm((f) => ({
       ...f,
       [key]: value,
-      ...(key === "tenantName" && !form.tenantSlug
-        ? { tenantSlug: value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") }
-        : {}),
+      // Keep the slug in sync with the workspace name until the user edits the
+      // slug themselves (previously this only fired on the first keystroke, so
+      // "Acme Corp" produced the slug "a").
+      ...(key === "tenantName" && !slugTouched ? { tenantSlug: slugify(value) } : {}),
     }));
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,7 +85,7 @@ export default function NewWorkspacePage() {
               required
               pattern="[a-z0-9-]+"
               value={form.tenantSlug}
-              onChange={(e) => setForm((f) => ({ ...f, tenantSlug: e.target.value }))}
+              onChange={(e) => { setSlugTouched(true); setForm((f) => ({ ...f, tenantSlug: slugify(e.target.value) })); }}
               className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               placeholder="acme-corp"
             />

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import {
   DEMO_PRODUCTS, BILLING_CYCLE_LABELS,
   computeLineTotal, computeQuoteTotals,
@@ -60,6 +61,8 @@ export function QuoteBuilderModal({
   onClose, onSaved,
 }: Props) {
   const isEdit = !!existing;
+  const { can } = usePermissions();
+  const canDiscount = can("can_discount");
 
   // ── Form state ─────────────────────────────────────────────────────────────
   const [title, setTitle] = useState(() => {
@@ -330,17 +333,22 @@ export function QuoteBuilderModal({
               <label className={labelCls}>Order discount</label>
               <div className="flex gap-1">
                 <select value={discountType} onChange={(e) => setDiscountType(e.target.value as "none"|"percent"|"fixed")}
-                  className={cn(inputCls, "flex-shrink-0 w-auto")}>
+                  disabled={!canDiscount}
+                  className={cn(inputCls, "flex-shrink-0 w-auto", !canDiscount && "opacity-60 cursor-not-allowed")}>
                   <option value="none">None</option>
                   <option value="percent">%</option>
                   <option value="fixed">Fixed</option>
                 </select>
                 {discountType !== "none" && (
                   <input type="number" min="0" step="0.01" value={discountValue}
+                    disabled={!canDiscount}
                     onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
-                    className={numberCls} />
+                    className={cn(numberCls, !canDiscount && "opacity-60 cursor-not-allowed")} />
                 )}
               </div>
+              {!canDiscount && (
+                <p className="mt-1 text-xs text-muted-foreground">Discounting isn't enabled for your account.</p>
+              )}
             </div>
             <div>
               <label className={labelCls}>Notes</label>
@@ -420,8 +428,11 @@ export function QuoteBuilderModal({
 
                     {/* Discount % */}
                     <input type="number" min="0" max="100" step="0.5" value={item.discountPct}
+                      disabled={!canDiscount}
                       onChange={(e) => updateItem(item._key, { discountPct: parseFloat(e.target.value) || 0 })}
-                      className={cn(numberCls, item.discountPct > discountThreshold && "border-yellow-400 bg-yellow-50 text-yellow-800")} />
+                      className={cn(numberCls,
+                        !canDiscount && "opacity-60 cursor-not-allowed",
+                        item.discountPct > discountThreshold && "border-yellow-400 bg-yellow-50 text-yellow-800")} />
 
                     {/* Line total */}
                     <div className="flex items-center justify-end px-2 text-sm font-semibold">

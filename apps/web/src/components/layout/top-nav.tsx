@@ -44,7 +44,7 @@ const MORE_NAV = [
   { href: "/territories",  icon: Globe,         labelKey: "territories"   },
   { href: "/coaching",     icon: GraduationCap, labelKey: "coaching"      },
   { href: "/review",       icon: AlertCircle,  labelKey: "reviewQueue"    },
-  { href: "/marketing",    icon: Megaphone,    labelKey: "marketing"      },
+  { href: "/marketing",    icon: Megaphone,    labelKey: "marketing", cap: "can_campaigns" },
   { href: "/knowledge",    icon: BookOpen,     labelKey: "knowledge"      },
   { href: "/workflows",    icon: Layers,       labelKey: "workflows"      },
   { href: "/compliance",   icon: ShieldCheck,   labelKey: "compliance"    },
@@ -52,7 +52,7 @@ const MORE_NAV = [
   { href: "/anomalies",    icon: ShieldAlert,   labelKey: "anomalies"     },
   { href: "/marketplace",  icon: Store,         labelKey: "marketplace"   },
   { href: "/audit-log",    icon: ScrollText,    labelKey: "auditLog", adminOnly: true },
-  { href: "/admin",        icon: Cog,           labelKey: "admin"         },
+  { href: "/admin",        icon: Cog,           labelKey: "admin", superAdminOnly: true },
 ].filter((item) => isRouteEnabled(item.href));
 
 interface Notification {
@@ -132,6 +132,7 @@ function NotificationPanel({
 function ProfileDropdown({ user, onClose }: { user: StoredUser; onClose: () => void }) {
   const router = useRouter();
   const t = useTranslations("profile");
+  const { isAdmin } = usePermissions();
 
   const handleLogout = async () => { await clearAuth(); router.replace("/login"); onClose(); };
 
@@ -163,11 +164,11 @@ function ProfileDropdown({ user, onClose }: { user: StoredUser; onClose: () => v
 
       <div className="py-1">
         {[
-          { icon: User,       label: t("myProfile"),        href: "/settings?tab=profile"   },
-          { icon: Shield,     label: t("security"),          href: "/settings?tab=security"  },
-          { icon: Settings,   label: t("companySettings"),   href: "/settings?tab=general"   },
-          { icon: CreditCard, label: t("billingPlan"),       href: "/settings?tab=billing"   },
-        ].map(({ icon: Icon, label, href }) => (
+          { icon: User,       label: t("myProfile"),        href: "/settings?tab=profile",  adminOnly: false },
+          { icon: Shield,     label: t("security"),          href: "/settings?tab=security", adminOnly: true  },
+          { icon: Settings,   label: t("companySettings"),   href: "/settings?tab=general",  adminOnly: true  },
+          { icon: CreditCard, label: t("billingPlan"),       href: "/settings?tab=billing",  adminOnly: true  },
+        ].filter((i) => !i.adminOnly || isAdmin).map(({ icon: Icon, label, href }) => (
           <Link key={href} href={href} onClick={onClose}
             className="flex items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted">
             <Icon className="h-4 w-4 text-muted-foreground" />
@@ -192,7 +193,7 @@ function MoreMenu({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const t = useTranslations("nav");
-  const { isAdmin } = usePermissions();
+  const { isAdmin, isSuperAdmin, can } = usePermissions();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -200,9 +201,16 @@ function MoreMenu({ pathname }: { pathname: string }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Admin-only entries (e.g. audit log) are hidden from lower roles; the
-  // backend also enforces this, so this is purely to avoid dead 403 links.
-  const items = MORE_NAV.filter((n) => !("adminOnly" in n && n.adminOnly) || isAdmin);
+  // Hide entries the user can't reach: admin-only (audit log), super-admin-only
+  // (the provider console /admin), and capability-gated modules (marketing needs
+  // can_campaigns). The backend also enforces this — this just avoids dead links
+  // and honours per-role/department module visibility.
+  const items = MORE_NAV.filter((n) => {
+    if ("superAdminOnly" in n && n.superAdminOnly) return isSuperAdmin;
+    if ("adminOnly" in n && n.adminOnly) return isAdmin;
+    if ("cap" in n && n.cap) return can(n.cap as string);
+    return true;
+  });
   const isActive = items.some((n) => pathname === n.href);
 
   return (

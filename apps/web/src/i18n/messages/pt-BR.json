@@ -572,6 +572,8 @@
     "searchPlaceholder": "Buscar campanhas…",
     "loadError": "Falha ao carregar campanhas",
     "createError": "Falha ao criar campanha",
+    "noAccessTitle": "Sem acesso ao gerenciamento de campanhas",
+    "noAccessBody": "Seu perfil não inclui o gerenciamento de campanhas. Você ainda pode ver os detalhes da campanha em um contato, lead ou conta e executar relatórios de campanha. Fale com o administrador do workspace se precisar de acesso.",
     "empty": "Nenhuma campanha ainda — crie sua primeira campanha para começar",
     "confirmDelete": "Excluir esta campanha? Esta ação não pode ser desfeita.",
     "status": {

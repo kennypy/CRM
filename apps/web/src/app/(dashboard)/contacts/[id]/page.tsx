@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { EditContactModal } from "@/components/modals/edit-contact-modal";
+import { CustomFieldsDisplay } from "@/components/custom-fields/custom-fields-form";
 import { TagInput } from "@/components/ui/tag-input";
 import { NotesPanel } from "@/components/ui/notes-panel";
 import { OwnerPicker } from "@/components/ui/owner-picker";
@@ -43,6 +44,7 @@ interface ContactDetail {
   utmCampaign?: string;
   createdAt: string;
   updatedAt?: string;
+  customFields?: Record<string, unknown>;
 }
 
 interface ActivityRow {
@@ -232,6 +234,14 @@ export default function ContactDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Custom fields */}
+          {contact.customFields && Object.keys(contact.customFields).length > 0 && (
+            <div className="rounded-xl border bg-card p-5">
+              <h2 className="mb-4 text-sm font-semibold">Custom Fields</h2>
+              <CustomFieldsDisplay entityType="contact" values={contact.customFields} />
+            </div>
+          )}
 
           {/* GDPR & Communication Preferences */}
           <div className="rounded-xl border bg-card p-5">

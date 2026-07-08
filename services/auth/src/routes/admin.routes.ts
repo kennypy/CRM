@@ -101,9 +101,13 @@ export async function adminRoutes(server: FastifyInstance) {
 
     const body = schema.safeParse(request.body);
     if (!body.success) {
+      // Prefix the field name so a slug/name length error can't read as a
+      // password error (e.g. "tenantSlug: String must contain at least 2…").
+      const issue = body.error.issues[0];
+      const field = issue.path.join(".") || "input";
       return reply.status(400).send({
         success: false,
-        error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
+        error: { code: "VALIDATION_ERROR", message: `${field}: ${issue.message}` },
       });
     }
 
@@ -186,9 +190,11 @@ export async function adminRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: tenant });
   });
 
-  /** GET /admin/tenants/:id/users — list workspace users */
+  /** GET /admin/tenants/:id/users — list a workspace's ADMINS only.
+   *  The platform owner manages admins + billing, and must never see a
+   *  workspace's reps/managers or any CRM data (Tier-1 isolation). */
   server.get<{ Params: { id: string } }>("/tenants/:id/users", async (request, reply) => {
-    const users = await listTenantUsers(request.params.id);
+    const users = await listTenantUsers(request.params.id, ["admin", "super_admin"]);
     return reply.send({ success: true, data: users.map(toPublicUser) });
   });
 

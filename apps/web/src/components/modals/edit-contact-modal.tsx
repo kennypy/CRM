@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { X, User, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CustomFieldsForm } from "@/components/custom-fields/custom-fields-form";
 
 interface Contact {
   id: string;
@@ -14,6 +15,7 @@ interface Contact {
   title?: string;
   phone?: string;
   seniority?: string;
+  customFields?: Record<string, unknown>;
 }
 
 interface Props {
@@ -42,6 +44,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
     phone:     contact.phone     ?? "",
     seniority: contact.seniority ?? "",
   });
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(contact.customFields ?? {});
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [done, setDone]       = useState(false);
@@ -61,6 +64,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
         title:     form.title     || undefined,
         phone:     form.phone     || undefined,
         seniority: form.seniority || undefined,
+        customFields: Object.keys(customFields).length ? customFields : undefined,
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -81,7 +85,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl">
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <User className="h-5 w-5 text-primary" />
@@ -135,6 +139,8 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
               ))}
             </select>
           </div>
+
+          <CustomFieldsForm entityType="contact" values={customFields} onChange={setCustomFields} />
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

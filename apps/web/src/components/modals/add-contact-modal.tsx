@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { X, User, AlertCircle, CheckCircle2, Building2, Loader2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CustomFieldsForm } from "@/components/custom-fields/custom-fields-form";
 
 interface MatchedCompany {
   id: string;
@@ -38,6 +39,8 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
   const [companySuggestions, setSuggestions]      = useState<MatchedCompany[]>([]);
   const [companyDropOpen, setCompanyDropOpen]     = useState(false);
   const companyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
 
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
@@ -113,6 +116,7 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
         linkedinUrl: form.linkedinUrl  || undefined,
         notes:       form.notes        || undefined,
         companyId:   matchedCompany?.id || undefined,
+        customFields: Object.keys(customFields).length ? customFields : undefined,
         source: "user",
       });
       if (!res.ok) {
@@ -244,6 +248,8 @@ export function AddContactModal({ onClose, onCreated, prelinkedCompanyId, prelin
             <textarea value={form.notes} onChange={set("notes")} rows={2} placeholder={t("notesPlaceholder")}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
           </div>
+
+          <CustomFieldsForm entityType="contact" values={customFields} onChange={setCustomFields} />
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
