@@ -16,7 +16,7 @@ import { servicePool as pool } from "../db";
 import { decrypt } from "../lib/oauth-exchange";
 import { redisConnection } from "../lib/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
-import { assertSafeUrl, SsrfBlockedError } from "../lib/ssrf-guard";
+import { assertSafeUrl, safePostJson, SsrfBlockedError } from "../lib/ssrf-guard";
 
 const QUEUE_NAME = "nexcrm-webhook-deliveries";
 
@@ -100,17 +100,19 @@ export function startWebhookDeliveryWorker(): void {
       let lastError:      string | null = null;
 
       try {
-        const resp = await fetch(wh.url, {
-          method: "POST",
-          headers: {
+        // SSRF-safe delivery: re-validate every hop + pin the vetted IP so a
+        // redirect or DNS rebind can't reach an internal/metadata address.
+        const resp = await safePostJson(
+          wh.url,
+          body,
+          {
             "Content-Type":        "application/json",
             "X-NexCRM-Signature":  `sha256=${signature}`,
             "X-NexCRM-Event":      eventType,
             "X-NexCRM-Attempt":    String(job.attemptsMade + 1),
           },
-          body,
-          signal: AbortSignal.timeout(15_000),
-        });
+          { protocols: ["https:", "http:"], allowPrivateEnvVar: "WEBHOOKS_ALLOW_PRIVATE_HOST" },
+        );
 
         responseStatus = resp.status;
         responseBody   = (await resp.text()).slice(0, 1000);

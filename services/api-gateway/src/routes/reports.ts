@@ -25,6 +25,60 @@ import { z } from "zod";
 import { pool, readPool } from "../db";
 import { requireCrmRead } from "../middleware/scope";
 import { requireRep, requireManager } from "../middleware/rbac";
+import { getFieldPermissions } from "../middleware/field-access";
+
+// Report `source` names are plural; field_permissions entity_type is singular.
+const REPORT_SOURCE_ENTITY: Record<string, string> = {
+  deals: "deal", companies: "company", contacts: "contact", activities: "activity",
+};
+
+/**
+ * Strip fields a non-admin role has marked `hidden` from a report QuerySpec, and
+ * gate the PII-bearing `users` source to manager+. This makes report execution
+ * honour field_permissions instead of letting a rep read hidden columns (or the
+ * whole user directory) via an arbitrary projection.
+ */
+async function sanitizeSpecForRole(
+  spec: QuerySpec, tenantId: string, role: string,
+): Promise<{ spec?: QuerySpec; error?: string }> {
+  if (role === "admin" || role === "super_admin") return { spec };
+
+  const touchesUsers =
+    (spec.sources ?? []).includes("users" as never) ||
+    (spec.fields ?? []).some((f) => f.source === "users") ||
+    (spec.aggregations ?? []).some((a) => a.source === "users") ||
+    (spec.groupBy ?? []).some((g) => g.source === "users");
+  if (touchesUsers && role !== "manager") {
+    return { error: "This report includes user records — manager access is required." };
+  }
+
+  const srcs = new Set<string>([
+    ...(spec.fields ?? []).map((f) => f.source),
+    ...(spec.aggregations ?? []).map((a) => a.source),
+    ...(spec.groupBy ?? []).map((g) => g.source),
+  ]);
+  const hidden = new Map<string, Set<string>>();
+  for (const src of srcs) {
+    const entity = REPORT_SOURCE_ENTITY[src];
+    if (!entity) continue;
+    const perms = await getFieldPermissions(tenantId, entity, role);
+    const hset = new Set<string>();
+    for (const [field, level] of perms) if (level === "hidden") hset.add(field);
+    if (hset.size) hidden.set(src, hset);
+  }
+  if (hidden.size === 0) return { spec };
+
+  const isHidden = (source: string, field: string) => hidden.get(source)?.has(field) ?? false;
+  return {
+    spec: {
+      ...spec,
+      fields: (spec.fields ?? []).filter((f) => !isHidden(f.source, f.field)),
+      groupBy: (spec.groupBy ?? []).filter((g) => !isHidden(g.source, g.field)),
+      aggregations: (spec.aggregations ?? []).filter((a) => !isHidden(a.source, a.field)),
+      orderBy: (spec.orderBy ?? []).filter((o) => !isHidden(o.source, o.field)),
+    },
+  };
+}
 
 // ── QuerySpec types ───────────────────────────────────────────────────────────
 
@@ -465,15 +519,18 @@ export async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
 
 export async function reportsRoutes(server: FastifyInstance) {
   // ── POST /api/v1/reports/run ─────────────────────────────────────────────
-  server.post("/reports/run", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
-    const { tenantId } = request.user;
+  server.post("/reports/run", { preHandler: [requireCrmRead] }, async (request, reply) => {
+    const { tenantId, role } = request.user;
     const body = request.body as Record<string, unknown>;
     const rawSpec = body.spec ?? body; // frontend wraps in { spec } but accept either shape
     const parsed = QuerySpecSchema.safeParse(rawSpec);
     if (!parsed.success)
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
 
-    const result = await executeQuery(parsed.data, tenantId);
+    const { spec: safeSpec, error } = await sanitizeSpecForRole(parsed.data, tenantId, role);
+    if (error) return reply.status(403).send({ success: false, error: { code: "FORBIDDEN", message: error } });
+
+    const result = await executeQuery(safeSpec!, tenantId);
     return reply.send({ success: true, data: result });
   });
 
@@ -567,7 +624,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   // ── POST /api/v1/reports/:id/snapshot ───────────────────────────────────
   server.post("/reports/:id/snapshot", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { tenantId } = request.user;
+    const { tenantId, role } = request.user;
 
     const { rows: [report] } = await readPool.query(`SELECT * FROM reports WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     if (!report) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
@@ -575,7 +632,10 @@ export async function reportsRoutes(server: FastifyInstance) {
     const specParsed = QuerySpecSchema.safeParse(report.spec);
     if (!specParsed.success) return reply.status(400).send({ success: false, error: { code: "INVALID_SPEC" } });
 
-    const result = await executeQuery(specParsed.data, tenantId);
+    const { spec: safeSpec, error } = await sanitizeSpecForRole(specParsed.data, tenantId, role);
+    if (error) return reply.status(403).send({ success: false, error: { code: "FORBIDDEN", message: error } });
+
+    const result = await executeQuery(safeSpec!, tenantId);
     const { rows: [snap] } = await pool.query(
       `INSERT INTO report_snapshots (report_id, tenant_id, row_count, data)
        VALUES ($1,$2,$3,$4) RETURNING *`,

@@ -294,18 +294,25 @@ export async function dealsRoutes(server: FastifyInstance) {
     // the schema accepted companyId but the PATCH never touched the WORKS_AT/
     // INVOLVED_IN edge, so a deal's company was set-once at creation.
     if (f.companyId !== undefined) {
-      // Drop any existing buyer edge first.
-      await cypher(
-        `MATCH (:Company)-[r:INVOLVED_IN]->(d:Deal {id: $id, tenant_id: $tenantId})
-         DELETE r`,
-        { id, tenantId }
-      );
       if (f.companyId) {
+        // Re-link to a new company. Anchor on BOTH the deal AND the target
+        // company so the DELETE of the old edge only runs when the new company
+        // actually exists — otherwise an invalid companyId would silently unlink
+        // the deal from its current company (data loss).
         await cypher(
           `MATCH (d:Deal {id: $id, tenant_id: $tenantId}), (c:Company {id: $companyId, tenant_id: $tenantId})
+           OPTIONAL MATCH (:Company)-[r:INVOLVED_IN]->(d)
+           DELETE r
            MERGE (c)-[:INVOLVED_IN {type: 'buyer', created_at: $now}]->(d)
            RETURN {id: d.id}`,
           { id, companyId: f.companyId, tenantId, now: new Date().toISOString() }
+        );
+      } else {
+        // Explicit unassign (companyId cleared): drop the buyer edge.
+        await cypher(
+          `MATCH (:Company)-[r:INVOLVED_IN]->(d:Deal {id: $id, tenant_id: $tenantId})
+           DELETE r`,
+          { id, tenantId }
         );
       }
     }

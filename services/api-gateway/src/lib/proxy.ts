@@ -111,8 +111,19 @@ export function createProxy(opts: ProxyOptions) {
           parsed && typeof parsed === "object" && "data" in parsed && parsed.data
         ) {
           // Recursive, entity-aware masking: handles flat entities, arrays, and
-          // composite detail payloads (e.g. {company, contacts[], deals[]}).
-          parsed.data = await maskResponseData(parsed.data, opts.maskEntity, tenantId, role);
+          // composite detail payloads (e.g. {company, contacts[], deals[]}). Its
+          // own try/catch — a field_permissions query hiccup must NOT be caught
+          // by the JSON-parse guard below (which would mislabel a good response
+          // as a 502). Fail closed: refuse rather than risk leaking a hidden field.
+          try {
+            parsed.data = await maskResponseData(parsed.data, opts.maskEntity, tenantId, role);
+          } catch (maskErr: any) {
+            request.log.error({ err: maskErr, entity: opts.maskEntity }, "proxy.mask_failed");
+            return reply.status(500).send({
+              success: false,
+              error: { code: "MASKING_ERROR", message: "Could not apply field permissions to the response" },
+            });
+          }
         }
 
         return reply.status(resp.status).type("application/json").send(parsed);

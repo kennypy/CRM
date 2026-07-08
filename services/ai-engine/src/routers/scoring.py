@@ -285,8 +285,22 @@ async def calculate_reality_score(
 
 
 @router.post("/lead-score/{contact_id}")
-async def calculate_lead_score(contact_id: str, tenant_id: str):
+async def calculate_lead_score(
+    contact_id: str,
+    tenant_id: str | None = None,
+    x_tenant_id: str | None = Header(default=None),
+):
     """Score a contact as a lead (0–100). Tiers: cold (<30), warm (30–69), hot (70+)."""
+    # H-AI5: tenant comes from the gateway-set header (derived from the verified
+    # JWT), never a client query param. A query tenant_id is allowed only if it
+    # matches. (Matches every sibling endpoint; closes the missing guard.)
+    header_tenant = (x_tenant_id or "").strip()
+    if not header_tenant:
+        raise HTTPException(status_code=403, detail="Tenant context missing")
+    if tenant_id and tenant_id.strip() and tenant_id.strip() != header_tenant:
+        raise HTTPException(status_code=403, detail="Tenant mismatch")
+    tenant_id = header_tenant
+
     pool: asyncpg.Pool = await get_pool()
     cnt, last_at = 0, None
     try:

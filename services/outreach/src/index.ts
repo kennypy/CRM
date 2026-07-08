@@ -75,7 +75,13 @@ async function bootstrap() {
     },
   });
 
-  await server.register(jwt, { secret: jwtSecret });
+  // Pin HS256 on sign+verify (matches gateway/auth/graph-core) — defense in
+  // depth against algorithm-confusion / "alg:none".
+  await server.register(jwt, {
+    secret: jwtSecret,
+    sign: { algorithm: "HS256" },
+    verify: { algorithms: ["HS256"] },
+  });
 
   // ── Error handler ──────────────────────────────────────────────────────────
   server.setErrorHandler((err, request, reply) => {

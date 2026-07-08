@@ -28,7 +28,7 @@
 import { servicePool as pool } from "../db";
 import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
-import { assertSafeUrl, SsrfBlockedError } from "../lib/ssrf-guard";
+import { safePostJson, SsrfBlockedError } from "../lib/ssrf-guard";
 
 // Map a CRM entity_type to its graph-core collection path. Leads are Person
 // nodes, same as contacts.
@@ -170,25 +170,23 @@ const actionHandlers: Record<string, ActionHandler> = {
   async fire_webhook(config, _event, tenantId) {
     const webhookUrl = String(config?.url ?? "");
     if (!webhookUrl) return { success: false, error: "No webhook URL configured" };
-    // SSRF guard: a workflow author is a tenant user, not trusted to point the
-    // engine at internal/metadata addresses. Mirror the outbound-webhook worker.
+    // SSRF-safe POST: a workflow author is a tenant user, not trusted to point
+    // the engine at internal/metadata addresses. safePostJson validates every
+    // hop, pins the vetted IP (defeats DNS rebinding), and re-checks redirects.
     try {
-      await assertSafeUrl(webhookUrl, {
-        protocols: ["https:", "http:"],
-        allowPrivateEnvVar: "WEBHOOKS_ALLOW_PRIVATE_HOST",
-      });
+      const res = await safePostJson(
+        webhookUrl,
+        JSON.stringify({ event: _event, tenantId, timestamp: new Date().toISOString() }),
+        { "Content-Type": "application/json" },
+        { protocols: ["https:", "http:"], allowPrivateEnvVar: "WEBHOOKS_ALLOW_PRIVATE_HOST" },
+      );
+      return { success: res.ok, result: `Webhook delivered (${res.status})` };
     } catch (err) {
       if (err instanceof SsrfBlockedError) {
         return { success: false, error: `Blocked webhook URL: ${err.message}` };
       }
-      throw err;
+      return { success: false, error: (err as Error).message };
     }
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event: _event, tenantId, timestamp: new Date().toISOString() }),
-    });
-    return { success: res.ok, result: `Webhook delivered (${res.status})` };
   },
 
   async update_field(config, event, tenantId) {
@@ -196,7 +194,10 @@ const actionHandlers: Record<string, ActionHandler> = {
     const value = config?.value;
     if (!field) return { success: false, error: "No field specified" };
     const collection = ENTITY_COLLECTION[event.entity_type];
-    if (!collection) return { success: false, error: `Cannot update fields on '${event.entity_type}'` };
+    // Not-applicable to this entity type is a skip, not a failure — returning
+    // success:false here would abort the whole workflow run and skip every
+    // later action (regression). Report it honestly as skipped.
+    if (!collection) return { success: true, result: `Skipped update_field: not applicable to '${event.entity_type}'` };
     // Actually persist the change via graph-core (the field authority), then
     // record the audit event. Previously this only wrote the audit row, so the
     // automation reported success while the record was never modified.
@@ -219,7 +220,8 @@ const actionHandlers: Record<string, ActionHandler> = {
     const tag = String(config?.tag ?? config?.value ?? "");
     if (!tag) return { success: false, error: "No tag specified" };
     if (!["contact", "company", "deal", "lead"].includes(event.entity_type)) {
-      return { success: false, error: `Cannot tag '${event.entity_type}'` };
+      // Skip, don't fail the run (regression) — this action just doesn't apply here.
+      return { success: true, result: `Skipped add_tag: not applicable to '${event.entity_type}'` };
     }
     // Actually persist the tag (was a success-reporting no-op).
     await pool.query(
@@ -247,7 +249,8 @@ const actionHandlers: Record<string, ActionHandler> = {
     const ownerId = String(config?.ownerId ?? "");
     if (!ownerId) return { success: false, error: "No ownerId specified" };
     const collection = ENTITY_COLLECTION[event.entity_type];
-    if (!collection) return { success: false, error: `Cannot assign owner on '${event.entity_type}'` };
+    // Skip, don't fail the run (regression) for entity types without an owner edge.
+    if (!collection) return { success: true, result: `Skipped assign_owner: not applicable to '${event.entity_type}'` };
     // Actually persist ownership via graph-core (was a success-reporting no-op).
     const res = await internalFetch(`${GRAPH_CORE_URL}/${collection}/${event.entity_id}`, {
       method: "PATCH",
