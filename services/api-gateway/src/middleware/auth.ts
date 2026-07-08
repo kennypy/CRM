@@ -14,7 +14,6 @@ const PUBLIC_PATHS = new Set([
   "/webhooks/zoom",
   "/webhooks/slack",
   "/webhooks/stripe",
-  "/webhooks/vintage",
   "/api/v1/outreach/email/unsubscribe",
   "/api/v1/outreach/calls/webhooks/twilio/status",
   "/api/v1/integrations/slack/interactions",

@@ -13,12 +13,9 @@
 --   • nexcrm_service and nexcrm (owner) have BYPASSRLS / ownership, so internal
 --     services, workers, and migrations are unaffected.
 --
--- Deferred (tracked separately): support_tickets and its children have no
--- tenant_id column at all (a pre-existing gap) — they need a tenant_id added +
--- backfill before they can be brought under RLS, so they are intentionally not
--- covered here. Auth token tables (refresh_tokens, password_reset_tokens) are
--- accessed only by the owner-role auth service and are keyed by token hash, so
--- they are left out too.
+-- Deferred (tracked separately): auth token tables (refresh_tokens,
+-- password_reset_tokens) are accessed only by the owner-role auth service and
+-- are keyed by token hash, so they are left out.
 
 BEGIN;
 
