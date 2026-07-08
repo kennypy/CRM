@@ -18,6 +18,8 @@
 
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import * as http from "node:http";
+import * as https from "node:https";
 
 export class SsrfBlockedError extends Error {
   constructor(message: string) {
@@ -138,4 +140,68 @@ export async function assertSafeUrl(
   }
   // Pin to the first vetted address so fetch connects to what we validated.
   return { url, address: addrs[0].address, family: addrs[0].family };
+}
+
+export interface SafeResponse {
+  status: number;
+  ok: boolean;
+  text(): Promise<string>;
+}
+
+/**
+ * SSRF-safe POST. Unlike a plain fetch(), this:
+ *  - validates the URL with assertSafeUrl on EVERY hop,
+ *  - PINS the socket to the vetted IP (via the `lookup` override) so a DNS
+ *    rebind between validation and connection cannot redirect us to a private
+ *    address, and
+ *  - handles redirects manually, re-validating each Location (a 3xx to
+ *    169.254.169.254/an internal host is caught instead of blindly followed).
+ * Keeps SNI/Host as the original hostname so TLS still validates.
+ */
+export async function safePostJson(
+  rawUrl: string,
+  body: string,
+  headers: Record<string, string>,
+  ssrfOpts: SsrfGuardOptions = {},
+  timeoutMs = 15_000,
+  maxRedirects = 3,
+): Promise<SafeResponse> {
+  let current = rawUrl;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const { url, address } = await assertSafeUrl(current, ssrfOpts);
+    const isHttps = url.protocol === "https:";
+    const lib = isHttps ? https : http;
+    const fam = isIP(address);
+
+    const { status, location, buf } = await new Promise<{ status: number; location?: string; buf: Buffer }>((resolve, reject) => {
+      const req = lib.request(
+        url,
+        {
+          method: "POST",
+          headers: { ...headers, "Content-Length": Buffer.byteLength(body).toString() },
+          servername: url.hostname, // SNI: TLS cert is validated against the real host
+          // Pin the connection to the vetted IP regardless of what DNS says now.
+          lookup: ((_h: string, _o: unknown, cb: (e: Error | null, a: string, f: number) => void) => cb(null, address, fam)) as never,
+          timeout: timeoutMs,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (c) => chunks.push(c as Buffer));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, location: res.headers.location, buf: Buffer.concat(chunks) }));
+        },
+      );
+      req.on("error", reject);
+      req.on("timeout", () => req.destroy(new Error("request timed out")));
+      req.write(body);
+      req.end();
+    });
+
+    if (status >= 300 && status < 400 && location) {
+      current = new URL(location, url).toString(); // re-validate + re-pin next hop
+      continue;
+    }
+    const text = buf.toString("utf8");
+    return { status, ok: status >= 200 && status < 300, text: async () => text };
+  }
+  throw new SsrfBlockedError("Too many redirects");
 }

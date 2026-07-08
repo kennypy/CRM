@@ -6,7 +6,7 @@
  * their report queries, and sends the results via the outreach email service.
  */
 
-import { pool } from "../db";
+import { servicePool as pool } from "../db";
 import { executeQuery } from "../routes/reports";
 import { OUTREACH_URL } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";

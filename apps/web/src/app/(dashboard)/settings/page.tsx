@@ -11,6 +11,7 @@ import {
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
   FileText, Package, ChevronDown, Columns3, Box, LockKeyhole, UsersRound, Upload,
+  Copy, Check, CalendarClock,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -21,6 +22,7 @@ import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { InviteUserModal } from "@/components/settings/invite-user-modal";
 import { TeamsTab } from "@/components/settings/teams-tab";
 import { ProductsImportModal } from "@/components/settings/products-import-modal";
+import { previewEnabled } from "@/lib/feature-flags";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -30,7 +32,19 @@ interface TeamUser {
   lastLoginAt?: string; status: "active" | "invited";
   managerId?: string | null;
   canQuote?: boolean;
+  capabilities?: Record<string, boolean>;
+  profileId?: string | null;
+  timezone?: string | null;
 }
+
+interface UserProfile {
+  id: string; name: string; description?: string | null;
+  baseRole: "admin" | "manager" | "rep" | "read_only";
+  capabilities: Record<string, boolean>;
+  defaultTimezone?: string | null; defaultLanguage?: string | null;
+  isBuiltin: boolean; sortOrder: number;
+}
+interface Capability { key: string; label: string; }
 
 
 const INTEGRATIONS = [
@@ -375,6 +389,259 @@ interface UserFormProps {
   onSaved: (u: TeamUser) => void;
 }
 
+// ── Scheduler assignment (individual + batch, WS2) ──────────────────────────────
+
+function SchedulerAssignModal({ users, onClose }: { users: TeamUser[]; onClose: () => void }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [title,    setTitle]    = useState("");
+  const [duration, setDuration] = useState(30);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+  const [result,   setResult]   = useState<{ created: number; skipped: number } | null>(null);
+
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSelected = selected.size === users.length && users.length > 0;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(users.map((u) => u.id)));
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+  const labelCls = "mb-1.5 block text-sm font-medium";
+
+  const submit = async () => {
+    if (!selected.size) { setError("Select at least one user"); return; }
+    setSaving(true); setError(null);
+    try {
+      const res = await api.post("/api/v1/booking-links/provision", {
+        userIds: [...selected], title: title.trim() || undefined, durationMinutes: duration,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(json?.error?.message ?? "Failed to assign scheduler"); return; }
+      setResult({ created: json.data?.created?.length ?? 0, skipped: json.data?.skipped?.length ?? 0 });
+    } catch { setError("Network error — please try again"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold">Assign Scheduler</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+
+        {result ? (
+          <div className="p-6 space-y-3">
+            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              Created {result.created} booking link{result.created !== 1 ? "s" : ""}{result.skipped > 0 && `, skipped ${result.skipped} already-assigned`}.
+            </div>
+            <p className="text-xs text-muted-foreground">Each user now has a personal booking link they can share and manage under Meetings.</p>
+            <button onClick={onClose} className="w-full rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Done</button>
+          </div>
+        ) : (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-muted-foreground">Give one or more users a personal booking link. Select the users, then set a title and default duration.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Title <span className="font-normal text-muted-foreground">(optional)</span></label>
+                <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} placeholder="Defaults per user" />
+              </div>
+              <div>
+                <label className={labelCls}>Duration (min)</label>
+                <input type="number" min={5} max={480} value={duration} onChange={(e) => setDuration(Number(e.target.value))} className={inputCls} />
+              </div>
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="text-sm font-medium">Users ({selected.size} selected)</label>
+                <button type="button" onClick={toggleAll} className="text-xs font-medium text-primary hover:underline">
+                  {allSelected ? "Clear all" : "Select all"}
+                </button>
+              </div>
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+                {users.map((u) => (
+                  <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted">
+                    <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggle(u.id)} className="h-4 w-4 rounded border-border" />
+                    <span className="text-sm">{u.firstName} {u.lastName}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{u.email}</span>
+                  </label>
+                ))}
+                {users.length === 0 && <p className="px-2 py-4 text-center text-sm text-muted-foreground">No users to assign.</p>}
+              </div>
+            </div>
+            {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Cancel</button>
+              <button type="button" onClick={submit} disabled={saving || !selected.size} className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                {saving ? "Assigning…" : `Assign to ${selected.size || 0}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Profiles manager (built-in + editable presets, WS2) ─────────────────────────
+
+function ProfilesManagerModal({ onClose }: { onClose: () => void }) {
+  const ROLE_LABELS = useRoleLabels();
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [caps,     setCaps]     = useState<Capability[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState<string | null>(null);
+  const [editing,  setEditing]  = useState<Partial<UserProfile> | null>(null); // null = list view
+  const [saving,   setSaving]   = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [pj, cj] = await Promise.all([
+        api.get("/api/v1/user-profiles").then((r) => r.json()).catch(() => null),
+        api.get("/api/v1/user-profiles/capabilities").then((r) => r.json()).catch(() => null),
+      ]);
+      if (pj?.success) setProfiles(pj.data as UserProfile[]);
+      if (cj?.success) setCaps(cj.data as Capability[]);
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+  const labelCls = "mb-1.5 block text-sm font-medium";
+
+  const startNew = () => setEditing({ name: "", description: "", baseRole: "rep", capabilities: {}, defaultTimezone: null });
+  const startEdit = (p: UserProfile) => setEditing({ ...p, capabilities: { ...p.capabilities } });
+
+  const save = async () => {
+    if (!editing?.name?.trim()) { setError("Name is required"); return; }
+    setSaving(true); setError(null);
+    const body = {
+      name: editing.name, description: editing.description ?? null,
+      baseRole: editing.baseRole ?? "rep", capabilities: editing.capabilities ?? {},
+      defaultTimezone: editing.defaultTimezone ?? null,
+    };
+    try {
+      const res = editing.id
+        ? await api.patch(`/api/v1/user-profiles/${editing.id}`, body)
+        : await api.post("/api/v1/user-profiles", body);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(json?.error?.message ?? "Failed to save profile"); return; }
+      setEditing(null);
+      await load();
+    } catch { setError("Network error — please try again"); }
+    finally { setSaving(false); }
+  };
+
+  const remove = async (p: UserProfile) => {
+    if (!window.confirm(`Delete the "${p.name}" profile? Users keep their settings but lose the preset link.`)) return;
+    setError(null);
+    try {
+      const res = await api.delete(`/api/v1/user-profiles/${p.id}`);
+      if (res.ok || res.status === 404) await load();
+      else { const json = await res.json().catch(() => ({})); setError(json?.error?.message ?? "Failed to delete"); }
+    } catch { setError("Network error — could not delete"); }
+  };
+
+  const toggleCap = (key: string) =>
+    setEditing((e) => e ? { ...e, capabilities: { ...(e.capabilities ?? {}), [key]: !(e.capabilities ?? {})[key] } } : e);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <UsersRound className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold">{editing ? (editing.id ? "Edit Profile" : "New Profile") : "User Profiles"}</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+
+        {editing ? (
+          <div className="p-6 space-y-4">
+            <div>
+              <label className={labelCls}>Name *</label>
+              <input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className={inputCls} placeholder="e.g. Sales Rep" />
+            </div>
+            <div>
+              <label className={labelCls}>Description</label>
+              <input value={editing.description ?? ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} className={inputCls} placeholder="What this preset is for" />
+            </div>
+            <div>
+              <label className={labelCls}>Base role</label>
+              <select value={editing.baseRole ?? "rep"} onChange={(e) => setEditing({ ...editing, baseRole: e.target.value as UserProfile["baseRole"] })} className={inputCls}>
+                {(["admin", "manager", "rep", "read_only"] as const).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Default timezone</label>
+              <select value={editing.defaultTimezone ?? ""} onChange={(e) => setEditing({ ...editing, defaultTimezone: e.target.value || null })} className={inputCls}>
+                <option value="">— None —</option>
+                {PROFILE_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Default features</label>
+              <div className="space-y-1.5 rounded-lg border border-border p-2">
+                {caps.map((c) => (
+                  <label key={c.key} className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted">
+                    <span className="text-sm">{c.label}</span>
+                    <button type="button" onClick={() => toggleCap(c.key)}
+                      className={cn("relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none",
+                        (editing.capabilities ?? {})[c.key] ? "bg-primary" : "bg-muted-foreground/30")}>
+                      <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                        (editing.capabilities ?? {})[c.key] ? "translate-x-4" : "translate-x-0")} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => { setEditing(null); setError(null); }} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Back</button>
+              <button type="button" onClick={save} disabled={saving} className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">{saving ? "Saving…" : "Save Profile"}</button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 space-y-3">
+            <p className="text-sm text-muted-foreground">Presets bundle a role + default features + timezone. Pick one when creating a user to auto-fill everything.</p>
+            {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+            {loading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Loading profiles…</p>
+            ) : (
+              <div className="space-y-2">
+                {profiles.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{p.name}</p>
+                        {p.isBuiltin && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Built-in</span>}
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", ROLE_COLORS[p.baseRole])}>{ROLE_LABELS[p.baseRole]}</span>
+                      </div>
+                      {p.description && <p className="truncate text-xs text-muted-foreground">{p.description}</p>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button onClick={() => startEdit(p)} className="rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted">Edit</button>
+                      {!p.isBuiltin && <button onClick={() => remove(p)} className="rounded-md p-1 text-muted-foreground hover:text-red-600"><Trash2 className="h-4 w-4" /></button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={startNew} className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+              <Plus className="h-4 w-4" /> New profile
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps) {
   const ROLE_LABELS = useRoleLabels();
   const [firstName,   setFirstName]   = useState(user?.firstName ?? "");
@@ -384,8 +651,32 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
   const [password,    setPassword]    = useState("");
   const [canQuote,    setCanQuote]    = useState<boolean>(user?.canQuote ?? false);
   const [managerId,   setManagerId]   = useState<string | null>(user?.managerId ?? null);
+  const [timezone,    setTimezone]    = useState<string>(user?.timezone ?? (mode === "create" ? detectedTimezone() : ""));
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+
+  // Provisioning profiles + the capability catalog (WS2).
+  const [profiles,    setProfiles]    = useState<UserProfile[]>([]);
+  const [caps,        setCaps]        = useState<Capability[]>([]);
+  const [profileId,   setProfileId]   = useState<string | null>(user?.profileId ?? null);
+  const [capabilities, setCapabilities] = useState<Record<string, boolean>>(user?.capabilities ?? {});
+  // Create mode: default to issuing an invite link (no password) instead of setting one.
+  const [sendInvite,  setSendInvite]  = useState<boolean>(mode === "create");
+  const [inviteLink,  setInviteLink]  = useState<string | null>(null);
+  const [copied,      setCopied]      = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      api.get("/api/v1/user-profiles").then((r) => r.json()).catch(() => null),
+      api.get("/api/v1/user-profiles/capabilities").then((r) => r.json()).catch(() => null),
+    ]).then(([pj, cj]) => {
+      if (!alive) return;
+      if (pj?.success) setProfiles(pj.data as UserProfile[]);
+      if (cj?.success) setCaps(cj.data as Capability[]);
+    });
+    return () => { alive = false; };
+  }, []);
 
   // When role changes to admin/manager, auto-enable quoting
   const handleRoleChange = (r: TeamUser["role"]) => {
@@ -393,23 +684,49 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
     if (["admin", "manager"].includes(r)) setCanQuote(true);
   };
 
+  // Applying a profile pre-fills role + capabilities + timezone.
+  const applyProfile = (id: string) => {
+    setProfileId(id || null);
+    const p = profiles.find((x) => x.id === id);
+    if (!p) return;
+    setRole(p.baseRole);
+    setCapabilities({ ...p.capabilities });
+    if (["admin", "manager"].includes(p.baseRole) || p.capabilities.can_quote) setCanQuote(true);
+    if (p.defaultTimezone) setTimezone(p.defaultTimezone);
+  };
+
+  const toggleCap = (key: string) => setCapabilities((c) => ({ ...c, [key]: !c[key] }));
+
   const managerUser = allUsers.find((u) => u.id === managerId);
   const potentialManagers = allUsers.filter((u) => u.id !== user?.id && ["admin", "manager"].includes(u.role));
 
   const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
   const labelCls = "mb-1.5 block text-sm font-medium";
 
+  const copyInvite = async () => {
+    if (!inviteLink) return;
+    try { await navigator.clipboard.writeText(inviteLink); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* http clipboard may be blocked */ }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName.trim() || !email.trim()) return;
-    if (mode === "create" && !password.trim()) return;
+    if (mode === "create" && !sendInvite && !password.trim()) return;
     setSaving(true); setError(null);
     try {
       let res: Response;
       if (mode === "create") {
-        res = await api.post("/api/v1/users", { firstName, lastName, email, password, role, canQuote, managerId: managerId || null });
+        const body: Record<string, unknown> = {
+          firstName, lastName, email, role, canQuote, managerId: managerId || null,
+          profileId: profileId || null, capabilities, timezone: timezone || null,
+        };
+        if (sendInvite) body.sendInvite = true; else body.password = password;
+        res = await api.post("/api/v1/users", body);
       } else {
-        const body: Record<string, unknown> = { firstName, lastName, email, role, canQuote, managerId: managerId || null };
+        const body: Record<string, unknown> = {
+          firstName, lastName, email, role, canQuote, managerId: managerId || null,
+          profileId: profileId || null, capabilities, timezone: timezone || null,
+        };
         if (password.trim()) body.password = password;
         res = await api.patch(`/api/v1/users/${user!.id}`, body);
       }
@@ -419,7 +736,10 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
         return;
       }
       const saved = json.data as TeamUser;
-      onSaved({ ...saved, status: saved.status ?? (mode === "create" ? "active" : user?.status ?? "active") });
+      onSaved({ ...saved, status: saved.status ?? (mode === "create" ? (sendInvite ? "invited" : "active") : user?.status ?? "active") });
+      // If an invite link came back, surface it instead of closing immediately.
+      const path = json?.invite?.activationPath as string | undefined;
+      if (path) { setInviteLink(`${window.location.origin}${path}`); return; }
       onClose();
     } catch { setError("Network error — please try again"); }
     finally { setSaving(false); }
@@ -436,7 +756,37 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
         </div>
+
+        {inviteLink ? (
+          <div className="p-6 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              User created. Send this activation link to <span className="font-medium text-foreground">{email}</span> — it lets them set a password and sign in (expires in 7 days).
+            </p>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-2">
+              <input readOnly value={inviteLink} className="min-w-0 flex-1 bg-transparent text-xs outline-none" onFocus={(e) => e.currentTarget.select()} />
+              <button onClick={copyInvite} className="flex shrink-0 items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90">
+                {copied ? <><Check className="h-3.5 w-3.5" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+              </button>
+            </div>
+            <button onClick={onClose} className="w-full rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted">Done</button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Profile preset */}
+          {profiles.length > 0 && (
+            <div>
+              <label className={labelCls}>Profile preset</label>
+              <select value={profileId ?? ""} onChange={(e) => applyProfile(e.target.value)} className={inputCls}>
+                <option value="">— Custom (no preset) —</option>
+                {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              {profileId && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {profiles.find((p) => p.id === profileId)?.description ?? "Applies a role and default features."}
+                </p>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls}>First name *</label>
@@ -465,6 +815,15 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
               {role === "read_only" && "Read-only access to CRM data. Cannot create or edit."}
             </p>
           </div>
+          {/* Timezone (prefilled from browser / profile) */}
+          <div>
+            <label className={labelCls}>Timezone</label>
+            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls}>
+              <option value="">— Not set —</option>
+              {timezone && !PROFILE_TIMEZONES.includes(timezone) && <option value={timezone}>{timezone}</option>}
+              {PROFILE_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+            </select>
+          </div>
           {/* Manager */}
           <div>
             <label className={labelCls}>Reports to (manager)</label>
@@ -481,6 +840,32 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
               <p className="mt-1 text-xs text-muted-foreground">Reports to: {managerUser.firstName} {managerUser.lastName}</p>
             )}
           </div>
+          {/* Feature capabilities */}
+          {caps.length > 0 && (
+            <div>
+              <label className={labelCls}>Features</label>
+              <div className="space-y-1.5 rounded-lg border border-border p-2">
+                {caps.map((c) => (
+                  <label key={c.key} className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted">
+                    <span className="text-sm">{c.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleCap(c.key)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none",
+                        capabilities[c.key] ? "bg-primary" : "bg-muted-foreground/30"
+                      )}>
+                      <span className={cn(
+                        "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                        capabilities[c.key] ? "translate-x-4" : "translate-x-0"
+                      )} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Toggle the exact features this user can access.</p>
+            </div>
+          )}
           {/* Can Quote */}
           <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
             <div>
@@ -505,13 +890,36 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
           {["admin", "manager"].includes(role) && (
             <p className="text-xs text-muted-foreground -mt-2">Admins and managers always have quoting enabled.</p>
           )}
-          <div>
-            <label className={labelCls}>{mode === "create" ? "Password *" : "New password"} {mode === "edit" && <span className="font-normal text-muted-foreground">(leave blank to keep current)</span>}</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              required={mode === "create"} minLength={8}
-              placeholder={mode === "create" ? "Min. 8 characters" : "Leave blank to keep unchanged"}
-              className={inputCls} />
-          </div>
+          {/* Invite vs. set-password (create mode) */}
+          {mode === "create" && (
+            <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">Send activation link</p>
+                <p className="text-xs text-muted-foreground">User sets their own password on first login</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSendInvite(!sendInvite)}
+                className={cn(
+                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none",
+                  sendInvite ? "bg-primary" : "bg-muted"
+                )}>
+                <span className={cn(
+                  "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                  sendInvite ? "translate-x-5" : "translate-x-0"
+                )} />
+              </button>
+            </div>
+          )}
+          {!(mode === "create" && sendInvite) && (
+            <div>
+              <label className={labelCls}>{mode === "create" ? "Password *" : "New password"} {mode === "edit" && <span className="font-normal text-muted-foreground">(leave blank to keep current)</span>}</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                required={mode === "create" && !sendInvite} minLength={8}
+                placeholder={mode === "create" ? "Min. 8 characters" : "Leave blank to keep unchanged"}
+                className={inputCls} />
+            </div>
+          )}
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <AlertCircle className="h-4 w-4 shrink-0" />{error}
@@ -521,10 +929,11 @@ function UserFormModal({ mode, user, allUsers, onClose, onSaved }: UserFormProps
             <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Cancel</button>
             <button type="submit" disabled={saving}
               className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
-              {saving ? "Saving…" : mode === "create" ? "Create User" : "Save Changes"}
+              {saving ? "Saving…" : mode === "create" ? (sendInvite ? "Create & get link" : "Create User") : "Save Changes"}
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );
@@ -570,6 +979,8 @@ function UsersTab() {
   const [error,        setError]        = useState<string | null>(null);
   const [showCreate,   setShowCreate]   = useState(false);
   const [showInvite,   setShowInvite]   = useState(false);
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [showScheduler, setShowScheduler] = useState(false);
   const [editUser,     setEditUser]     = useState<TeamUser | null>(null);
   const [deletingId,   setDeletingId]   = useState<string | null>(null);
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
@@ -652,9 +1063,11 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
-      {showCreate && <UserFormModal mode="create" allUsers={users} onClose={() => setShowCreate(false)} onSaved={handleCreated} />}
-      {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} onInvited={fetchUsers} />}
-      {editUser   && <UserFormModal mode="edit" user={editUser} allUsers={users} onClose={() => setEditUser(null)} onSaved={handleUpdated} />}
+      {showCreate   && <UserFormModal mode="create" allUsers={users} onClose={() => setShowCreate(false)} onSaved={handleCreated} />}
+      {showInvite   && <InviteUserModal onClose={() => setShowInvite(false)} onInvited={fetchUsers} />}
+      {showProfiles && <ProfilesManagerModal onClose={() => setShowProfiles(false)} />}
+      {showScheduler && <SchedulerAssignModal users={users} onClose={() => setShowScheduler(false)} />}
+      {editUser     && <UserFormModal mode="edit" user={editUser} allUsers={users} onClose={() => setEditUser(null)} onSaved={handleUpdated} />}
 
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
@@ -668,6 +1081,14 @@ function UsersTab() {
         </div>
         <div className="flex items-center gap-3">
           <p className="text-sm text-muted-foreground">{users.length} team member{users.length !== 1 ? "s" : ""}</p>
+          <button onClick={() => setShowProfiles(true)}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+            <UsersRound className="h-4 w-4" /> Profiles
+          </button>
+          <button onClick={() => setShowScheduler(true)}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+            <CalendarClock className="h-4 w-4" /> Scheduler
+          </button>
           <button onClick={() => setShowInvite(true)}
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted">
             <Mail className="h-4 w-4" /> Invite
@@ -1163,66 +1584,197 @@ function IntegrationsTab() {
 // ── Tab: Billing ───────────────────────────────────────────────────────────────
 
 function BillingTab() {
+  const [status, setStatus] = useState<{ plan?: string; subscriptionStatus?: string | null; periodEnd?: string | null } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [portalBusy, setPortalBusy] = useState(false);
+  // The billing portal endpoint is admin-only; only offer the button to admins
+  // so a manager doesn't get a misleading "not configured" 403.
+  const isAdmin = ["admin", "super_admin"].includes(getStoredUser()?.role ?? "");
+
+  useEffect(() => {
+    api.get("/api/v1/billing/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setStatus(j?.data ?? null))
+      .catch(() => setStatus(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const openPortal = async () => {
+    setPortalBusy(true);
+    try {
+      const r = await api.post("/api/v1/billing/portal", { returnUrl: window.location.href });
+      const j = r.ok ? await r.json() : null;
+      if (j?.data?.url) window.location.href = j.data.url;
+      else alert("Billing portal is not configured for this workspace yet.");
+    } catch { alert("Could not open the billing portal."); }
+    setPortalBusy(false);
+  };
+
+  const plan = (status?.plan ?? "").toUpperCase() || "—";
+  const subStatus = status?.subscriptionStatus ?? null;
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="rounded-xl border bg-gradient-to-r from-primary/5 to-accent/5 p-6">
         <div className="flex items-start justify-between">
           <div>
-            <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">GROWTH</span>
-            <p className="mt-3 text-2xl font-bold">$49 <span className="text-base font-normal text-muted-foreground">/ user / month</span></p>
-            <p className="text-sm text-muted-foreground mt-1">5 users · Billed monthly · Next billing Mar 15</p>
+            <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">{loading ? "…" : plan}</span>
+            {subStatus
+              ? <p className="text-sm text-muted-foreground mt-3 capitalize">Subscription: {subStatus}
+                  {status?.periodEnd ? ` · renews ${new Date(status.periodEnd).toLocaleDateString()}` : ""}</p>
+              : <p className="text-sm text-muted-foreground mt-3">
+                  {loading ? "Loading billing status…" : "No active subscription on file. Manage billing in the customer portal."}
+                </p>}
           </div>
-          <button className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5">Upgrade to Enterprise</button>
+          {isAdmin
+            ? <button onClick={openPortal} disabled={portalBusy}
+                className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50">
+                {portalBusy ? "Opening…" : "Manage billing"}
+              </button>
+            : <span className="text-xs text-muted-foreground">Contact a workspace admin to manage billing.</span>}
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-4">
-          {[
-            { label: "AI extractions", used: "8,432", limit: "Unlimited" },
-            { label: "Contacts",       used: "1,247", limit: "Unlimited" },
-            { label: "Storage",        used: "2.3 GB", limit: "50 GB"   },
-          ].map(({ label, used, limit }) => (
-            <div key={label} className="rounded-lg bg-background/60 p-3">
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="text-sm font-semibold">{used}</p>
-              <p className="text-xs text-muted-foreground">of {limit}</p>
-            </div>
-          ))}
-        </div>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Payment methods, invoices, and plan changes are handled securely in the billing portal.
+        </p>
       </div>
-      <div className="rounded-xl border bg-card p-5">
-        <h3 className="font-semibold mb-3">Payment method</h3>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded bg-muted px-3 py-2 font-mono text-xs">VISA •••• 4242</div>
-            <span className="text-xs text-muted-foreground">Expires 12/26</span>
+
+      {/* Usage metering and stored payment method are not yet wired to real data —
+          shown only in preview builds so a pilot never sees fabricated figures. */}
+      {previewEnabled() && (
+        <div className="rounded-xl border bg-card p-5">
+          <p className="text-xs font-medium text-amber-600 mb-3">Preview — sample data, not real usage</p>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: "AI extractions", used: "8,432", limit: "Unlimited" },
+              { label: "Contacts",       used: "1,247", limit: "Unlimited" },
+              { label: "Storage",        used: "2.3 GB", limit: "50 GB"   },
+            ].map(({ label, used, limit }) => (
+              <div key={label} className="rounded-lg bg-background/60 p-3">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="text-sm font-semibold">{used}</p>
+                <p className="text-xs text-muted-foreground">of {limit}</p>
+              </div>
+            ))}
           </div>
-          <button className="text-sm text-primary hover:underline">Update</button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 // ── Tab: Security ──────────────────────────────────────────────────────────────
 
-function SecurityTab() {
-  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
-  const [pwSaved, setPwSaved] = useState(false);
-  const [twoFa, setTwoFa]    = useState(false);
+interface RealApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  last_used_at: string | null;
+  created_at: string;
+}
 
-  const DEMO_SESSIONS = [
-    { id: "s1", device: "Chrome · Windows",   ip: "192.168.1.10", lastActive: "Active now",  current: true  },
-    { id: "s2", device: "Safari · macOS",      ip: "81.103.45.21", lastActive: "2 hours ago", current: false },
-    { id: "s3", device: "NexCRM Mobile · iOS", ip: "81.103.45.21", lastActive: "1 day ago",   current: false },
-  ];
-  const DEMO_KEYS = [
-    { id: "k1", name: "CI/CD Integration",  created: "2026-01-12", lastUsed: "3 days ago", prefix: "nxc_ci_••••••" },
-    { id: "k2", name: "Internal Reporting", created: "2026-02-01", lastUsed: "Today",       prefix: "nxc_rp_••••••" },
-  ];
-  const [sessions, setSessions] = useState(DEMO_SESSIONS);
-  const [apiKeys,  setApiKeys]  = useState(DEMO_KEYS);
+function SecurityTab() {
+  const [apiKeys, setApiKeys] = useState<RealApiKey[]>([]);
+  const [keysLoading, setKeysLoading] = useState(true);
+  const [keysError, setKeysError] = useState<string | null>(null);
+  const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
+
+  const loadKeys = async () => {
+    setKeysLoading(true);
+    try {
+      const r = await api.get("/api/v1/api-keys");
+      if (r.status === 403) { setKeysError("Only workspace admins can manage API keys."); setApiKeys([]); }
+      else if (r.ok) { const j = await r.json(); setApiKeys(j.data ?? []); setKeysError(null); }
+      else setKeysError("Could not load API keys.");
+    } catch { setKeysError("Could not load API keys."); }
+    setKeysLoading(false);
+  };
+
+  useEffect(() => { loadKeys(); }, []);
+
+  const createKey = async () => {
+    const name = window.prompt("Name this API key (e.g. CI/CD Integration):");
+    if (!name?.trim()) return;
+    try {
+      const r = await api.post("/api/v1/api-keys", { name: name.trim(), scopes: ["crm:read"] });
+      if (r.status === 403) { alert("Only workspace admins can create API keys."); return; }
+      const j = r.ok ? await r.json() : null;
+      if (j?.data?.key) { setNewKeySecret(j.data.key); loadKeys(); }
+      else alert("Could not create the API key.");
+    } catch { alert("Could not create the API key."); }
+  };
+
+  const revokeKey = async (id: string) => {
+    if (!window.confirm("Revoke this API key? Any integration using it will stop working.")) return;
+    try {
+      const r = await api.delete(`/api/v1/api-keys/${id}`);
+      if (r.ok || r.status === 204) loadKeys();
+      else if (r.status === 403) alert("Only workspace admins can revoke API keys.");
+      else alert("Could not revoke the API key.");
+    } catch { alert("Could not revoke the API key."); }
+  };
 
   return (
     <div className="space-y-8 max-w-lg">
+      {/* Password change, 2FA and session management are not yet backed by real
+          endpoints; shown only in preview builds so a pilot never sees controls
+          that appear to work but don't. Password reset is available via the
+          "Forgot password" flow on the login page. */}
+      {previewEnabled() && <SecurityDemoSections />}
+
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold flex items-center gap-2"><Key className="h-4 w-4" /> API Keys</h3>
+          <button onClick={createKey} className="text-xs text-primary hover:underline">+ New key</button>
+        </div>
+
+        {newKeySecret && (
+          <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:bg-amber-950/30">
+            <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Copy this key now — it is shown only once:</p>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="flex-1 break-all rounded bg-background px-2 py-1 font-mono text-xs">{newKeySecret}</code>
+              <button onClick={() => { navigator.clipboard?.writeText(newKeySecret); }} className="text-xs text-primary hover:underline">Copy</button>
+              <button onClick={() => setNewKeySecret(null)} className="text-xs text-muted-foreground hover:underline">Dismiss</button>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {keysLoading && <p className="text-sm text-muted-foreground text-center py-6">Loading…</p>}
+          {!keysLoading && keysError && <p className="text-sm text-muted-foreground text-center py-6">{keysError}</p>}
+          {!keysLoading && !keysError && apiKeys.map((k) => (
+            <div key={k.id} className="flex items-center justify-between rounded-lg border bg-card p-3">
+              <div>
+                <p className="text-sm font-medium">{k.name}</p>
+                <p className="text-xs text-muted-foreground font-mono">{k.key_prefix}••••</p>
+                <p className="text-xs text-muted-foreground">
+                  Created {new Date(k.created_at).toLocaleDateString()} · {k.last_used_at ? `Last used ${new Date(k.last_used_at).toLocaleDateString()}` : "Never used"}
+                </p>
+              </div>
+              <button onClick={() => revokeKey(k.id)} className="text-muted-foreground hover:text-red-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
+            </div>
+          ))}
+          {!keysLoading && !keysError && apiKeys.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No API keys. Create one above.</p>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// Preview-only demo controls (no backend yet): password change, 2FA, sessions.
+function SecurityDemoSections() {
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [pwSaved, setPwSaved] = useState(false);
+  const [twoFa, setTwoFa]    = useState(false);
+  const DEMO_SESSIONS = [
+    { id: "s1", device: "Chrome · Windows",   ip: "192.168.1.10", lastActive: "Active now",  current: true  },
+    { id: "s2", device: "Safari · macOS",      ip: "81.103.45.21", lastActive: "2 hours ago", current: false },
+  ];
+  const [sessions, setSessions] = useState(DEMO_SESSIONS);
+
+  return (
+    <>
+      <p className="text-xs font-medium text-amber-600">Preview — these controls are not yet wired to a backend.</p>
       <section>
         <h3 className="text-base font-semibold mb-4 flex items-center gap-2"><Lock className="h-4 w-4" /> Change Password</h3>
         <div className="space-y-3">
@@ -1277,28 +1829,7 @@ function SecurityTab() {
           ))}
         </div>
       </section>
-
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold flex items-center gap-2"><Key className="h-4 w-4" /> API Keys</h3>
-          <button className="text-xs text-primary hover:underline">+ New key</button>
-        </div>
-        <div className="space-y-2">
-          {apiKeys.map((k) => (
-            <div key={k.id} className="flex items-center justify-between rounded-lg border bg-card p-3">
-              <div>
-                <p className="text-sm font-medium">{k.name}</p>
-                <p className="text-xs text-muted-foreground font-mono">{k.prefix}</p>
-                <p className="text-xs text-muted-foreground">Created {k.created} · Last used {k.lastUsed}</p>
-              </div>
-              <button onClick={() => setApiKeys((prev) => prev.filter((x) => x.id !== k.id))}
-                className="text-muted-foreground hover:text-red-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
-            </div>
-          ))}
-          {apiKeys.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No API keys. Create one above.</p>}
-        </div>
-      </section>
-    </div>
+    </>
   );
 }
 
@@ -1601,15 +2132,146 @@ function CommunicationsTab() {
 
 // ── Custom Fields Tab ────────────────────────────────────────────────────────
 
+// Objects a custom field can be created on (mirrors the backend ENTITY_TYPES,
+// minus custom_object which is managed on its own tab). Leads & Products included.
+const FIELD_ENTITIES: { key: string; label: string }[] = [
+  { key: "contact",  label: "Contacts" },
+  { key: "company",  label: "Companies" },
+  { key: "deal",     label: "Deals" },
+  { key: "lead",     label: "Leads" },
+  { key: "product",  label: "Products" },
+  { key: "activity", label: "Activities" },
+  { key: "task",     label: "Tasks" },
+];
+const FIELD_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "text", label: "Text" }, { value: "number", label: "Number" },
+  { value: "date", label: "Date" }, { value: "datetime", label: "Date & time" },
+  { value: "boolean", label: "Yes / No" }, { value: "enum", label: "Dropdown (single)" },
+  { value: "multi_enum", label: "Dropdown (multi-select)" }, { value: "url", label: "URL" },
+  { value: "email", label: "Email" }, { value: "phone", label: "Phone" },
+  { value: "currency", label: "Currency" },
+];
+
+/** Derive a snake_case field_key from a human label. */
+function toFieldKey(label: string): string {
+  return label.toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, "_")   // non-alphanumerics → underscore
+    .replace(/^_+|_+$/g, "")        // trim leading/trailing underscores
+    .replace(/^([0-9])/, "f_$1")    // must start with a letter
+    .slice(0, 100) || "field";
+}
+
+// ── Create-custom-field modal: click Create → pick the object → build the field.
+function CreateFieldModal({ defaultEntity, onClose, onCreated }: { defaultEntity: string; onClose: () => void; onCreated: () => void }) {
+  const [entity,   setEntity]   = useState(defaultEntity);
+  const [label,    setLabel]    = useState("");
+  const [keyEdited, setKeyEdited] = useState(false);
+  const [fieldKey, setFieldKey] = useState("");
+  const [fieldType, setFieldType] = useState("text");
+  const [required, setRequired] = useState(false);
+  const [options,  setOptions]  = useState<string[]>([""]);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const isEnum = fieldType === "enum" || fieldType === "multi_enum";
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+  const labelCls = "mb-1.5 block text-sm font-medium";
+
+  // Keep the key in sync with the label until the user hand-edits it.
+  const onLabelChange = (v: string) => { setLabel(v); if (!keyEdited) setFieldKey(toFieldKey(v)); };
+
+  const submit = async () => {
+    if (!label.trim()) { setError("Give the field a label"); return; }
+    const key = fieldKey.trim() || toFieldKey(label);
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) { setError("Key must be snake_case (letters, numbers, underscores; start with a letter)"); return; }
+    const opts = isEnum
+      ? options.map((o) => o.trim()).filter(Boolean).map((v) => ({ value: toFieldKey(v), label: v }))
+      : [];
+    if (isEnum && opts.length === 0) { setError("Add at least one dropdown option"); return; }
+    setSaving(true); setError(null);
+    try {
+      const res = await api.post("/api/v1/custom-fields", {
+        entity_type: entity, field_key: key, field_label: label.trim(),
+        field_type: fieldType, is_required: required, options: opts,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(json?.error?.message ?? "Failed to create field"); return; }
+      onCreated();
+      onClose();
+    } catch { setError("Network error — please try again"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2"><Columns3 className="h-5 w-5 text-primary" /><h2 className="font-semibold">Create custom field</h2></div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className={labelCls}>What is this field on?</label>
+            <select value={entity} onChange={(e) => setEntity(e.target.value)} className={inputCls}>
+              {FIELD_ENTITIES.map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Field label *</label>
+            <input value={label} onChange={(e) => onLabelChange(e.target.value)} className={inputCls} placeholder="e.g. Contract Value" />
+          </div>
+          <div>
+            <label className={labelCls}>Field key <span className="font-normal text-muted-foreground">(auto)</span></label>
+            <input value={fieldKey} onChange={(e) => { setKeyEdited(true); setFieldKey(e.target.value); }} className={cn(inputCls, "font-mono text-xs")} placeholder="contract_value" />
+          </div>
+          <div>
+            <label className={labelCls}>Field type</label>
+            <select value={fieldType} onChange={(e) => setFieldType(e.target.value)} className={inputCls}>
+              {FIELD_TYPE_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          {isEnum && (
+            <div>
+              <label className={labelCls}>Dropdown options</label>
+              <div className="space-y-2">
+                {options.map((o, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input value={o} onChange={(e) => setOptions((os) => os.map((x, j) => j === i ? e.target.value : x))}
+                      className={inputCls} placeholder={`Option ${i + 1}`} />
+                    <button type="button" onClick={() => setOptions((os) => os.filter((_, j) => j !== i))}
+                      className="rounded-md p-1.5 text-muted-foreground hover:text-red-600" disabled={options.length === 1}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setOptions((os) => [...os, ""])}
+                  className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"><Plus className="h-3.5 w-3.5" /> Add option</button>
+              </div>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} className="h-4 w-4 rounded border-border" />
+            Required field
+          </label>
+          {error && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Cancel</button>
+            <button type="button" onClick={submit} disabled={saving} className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+              {saving ? "Creating…" : "Create field"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CustomFieldsTab() {
   const [fields, setFields] = useState<any[]>([]);
   const [entityType, setEntityType] = useState("contact");
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ field_key: "", field_label: "", field_type: "text", is_required: false, options: [] as any[] });
-
-  const entityTypes = ["contact", "company", "deal", "activity", "task"];
-  const fieldTypes = ["text", "number", "date", "datetime", "boolean", "enum", "multi_enum", "url", "email", "phone", "currency"];
 
   const load = async () => {
     setLoading(true);
@@ -1622,71 +2284,42 @@ function CustomFieldsTab() {
   };
   useEffect(() => { load(); }, [entityType]);
 
-  const create = async () => {
-    try {
-      await api.post("/api/v1/custom-fields", { ...form, entity_type: entityType });
-      setShowCreate(false);
-      setForm({ field_key: "", field_label: "", field_type: "text", is_required: false, options: [] });
-      load();
-    } catch (e: any) { alert(e.message); }
-  };
-
   const remove = async (id: string) => {
     await api.delete(`/api/v1/custom-fields/${id}`);
     load();
   };
 
+  const entityLabel = FIELD_ENTITIES.find((e) => e.key === entityType)?.label ?? entityType;
+
   return (
     <div className="space-y-4">
+      {showCreate && (
+        <CreateFieldModal
+          defaultEntity={entityType}
+          onClose={() => setShowCreate(false)}
+          onCreated={() => { setShowCreate(false); load(); }}
+        />
+      )}
       <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          {entityTypes.map((t) => (
-            <button key={t} onClick={() => setEntityType(t)}
-              className={cn("rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors",
-                entityType === t ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
-              {t}
+        <div className="flex flex-wrap gap-2">
+          {FIELD_ENTITIES.map((t) => (
+            <button key={t.key} onClick={() => setEntityType(t.key)}
+              className={cn("rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                entityType === t.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
+              {t.label}
             </button>
           ))}
         </div>
-        <button onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> Add Field
+        <button onClick={() => setShowCreate(true)}
+          className="flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+          <Plus className="h-4 w-4" /> Create field
         </button>
       </div>
-
-      {showCreate && (
-        <div className="rounded-lg border p-4 space-y-3">
-          <div className="grid grid-cols-3 gap-3">
-            <input placeholder="field_key (snake_case)" value={form.field_key}
-              onChange={(e) => setForm({ ...form, field_key: e.target.value })}
-              className="rounded-lg border px-3 py-2 text-sm" />
-            <input placeholder="Display Label" value={form.field_label}
-              onChange={(e) => setForm({ ...form, field_label: e.target.value })}
-              className="rounded-lg border px-3 py-2 text-sm" />
-            <select value={form.field_type} onChange={(e) => setForm({ ...form, field_type: e.target.value })}
-              className="rounded-lg border px-3 py-2 text-sm">
-              {fieldTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.is_required}
-                onChange={(e) => setForm({ ...form, is_required: e.target.checked })} />
-              Required
-            </label>
-            <button onClick={create}
-              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-              Create
-            </button>
-            <button onClick={() => setShowCreate(false)} className="text-sm text-muted-foreground hover:underline">Cancel</button>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="h-20 rounded-lg bg-muted animate-pulse" />
       ) : fields.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-8 text-center">No custom fields for {entityType}. Click "Add Field" to create one.</p>
+        <p className="text-sm text-muted-foreground py-8 text-center">No custom fields on {entityLabel} yet. Click "Create field" to add one.</p>
       ) : (
         <div className="rounded-lg border divide-y">
           {fields.map((f: any) => (

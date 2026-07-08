@@ -226,9 +226,12 @@ export async function dealsRoutes(server: FastifyInstance) {
     }
     const deal = toDealResponse(rows[0]) as Record<string, unknown>;
     if (deal.ownerId) {
+      // Scope to the deal's tenant so a foreign-tenant owner_id (there is no RLS
+      // backstop here — graph-core connects with a BYPASSRLS/owner role) cannot
+      // surface another tenant's user name + email.
       const { rows: uRows } = await pool.query(
-        `SELECT first_name, last_name, email FROM users WHERE id = $1`,
-        [deal.ownerId]
+        `SELECT first_name, last_name, email FROM users WHERE id = $1 AND tenant_id = $2`,
+        [deal.ownerId, tenantId]
       );
       if (uRows[0]) {
         deal.owner = {
@@ -269,6 +272,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (f.archetype           !== undefined) { setParts.push("d.archetype            = $archetype");           params.archetype           = f.archetype; }
     if (f.isExpansion         !== undefined) { setParts.push("d.is_expansion         = $isExpansion");         params.isExpansion         = f.isExpansion; }
     if (f.declaredProbability !== undefined) { setParts.push("d.declared_probability = $declaredProbability"); params.declaredProbability = f.declaredProbability; }
+    if (f.ownerId             !== undefined) { setParts.push("d.owner_id             = $ownerId");             params.ownerId             = f.ownerId; }
     if (f.customFields)                    { setParts.push("d.custom_fields        = $customFields");        params.customFields        = JSON.stringify(f.customFields); }
 
     let stageChanged = false;
@@ -284,6 +288,34 @@ export async function dealsRoutes(server: FastifyInstance) {
        RETURN {id: d.id}`,
       params
     );
+
+    // Re-link the company edge if companyId changed. This is a relationship,
+    // not a property, so it must be handled outside the SET-builder — previously
+    // the schema accepted companyId but the PATCH never touched the WORKS_AT/
+    // INVOLVED_IN edge, so a deal's company was set-once at creation.
+    if (f.companyId !== undefined) {
+      if (f.companyId) {
+        // Re-link to a new company. Anchor on BOTH the deal AND the target
+        // company so the DELETE of the old edge only runs when the new company
+        // actually exists — otherwise an invalid companyId would silently unlink
+        // the deal from its current company (data loss).
+        await cypher(
+          `MATCH (d:Deal {id: $id, tenant_id: $tenantId}), (c:Company {id: $companyId, tenant_id: $tenantId})
+           OPTIONAL MATCH (:Company)-[r:INVOLVED_IN]->(d)
+           DELETE r
+           MERGE (c)-[:INVOLVED_IN {type: 'buyer', created_at: $now}]->(d)
+           RETURN {id: d.id}`,
+          { id, companyId: f.companyId, tenantId, now: new Date().toISOString() }
+        );
+      } else {
+        // Explicit unassign (companyId cleared): drop the buyer edge.
+        await cypher(
+          `MATCH (:Company)-[r:INVOLVED_IN]->(d:Deal {id: $id, tenant_id: $tenantId})
+           DELETE r`,
+          { id, tenantId }
+        );
+      }
+    }
 
     const evType = stageChanged
       ? f.stage === "closed_won" ? "deal.closed_won"

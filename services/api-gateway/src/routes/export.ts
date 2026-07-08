@@ -18,6 +18,9 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Queue } from "bullmq";
 import { pool } from "../db";
 import { requireCrmRead } from "../middleware/scope";
+import { requireCapability } from "../middleware/capabilities";
+import { internalFetch } from "../lib/internal-fetch";
+import { GRAPH_CORE_URL } from "../lib/service-urls";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
 const exportQueue = new Queue("export", { connection: { url: REDIS_URL } });
@@ -38,22 +41,41 @@ const S3_BUCKET = process.env.S3_BUCKET ?? "nexcrm-files";
 
 // ── Export runner ─────────────────────────────────────────────────────────────
 
+type Row = Record<string, unknown>;
+
+/** Pull the graph-resident entities (contacts, companies, deals) from graph-core. */
+async function fetchGraphEntities(tenantId: string): Promise<{ contacts: Row[]; companies: Row[]; deals: Row[] }> {
+  const empty: { contacts: Row[]; companies: Row[]; deals: Row[] } = { contacts: [], companies: [], deals: [] };
+  try {
+    const resp = await internalFetch(`${GRAPH_CORE_URL}/graph/export?tenantId=${encodeURIComponent(tenantId)}`);
+    if (!resp.ok) return empty;
+    const json = await resp.json() as { success?: boolean; data?: { contacts?: Row[]; companies?: Row[]; deals?: Row[] } };
+    if (!json.success || !json.data) return empty;
+    return {
+      contacts:  json.data.contacts  ?? [],
+      companies: json.data.companies ?? [],
+      deals:     json.data.deals     ?? [],
+    };
+  } catch {
+    return empty;
+  }
+}
+
 async function runExport(tenantId: string, format: "json" | "csv"): Promise<string> {
-  // Fetch all entity data for the tenant in parallel.
-  const [contacts, companies, deals, activities, tasks] = await Promise.all([
-    pool.query(`SELECT * FROM contacts WHERE tenant_id = $1 AND deleted_at IS NULL`, [tenantId]),
-    pool.query(`SELECT * FROM companies WHERE tenant_id = $1 AND deleted_at IS NULL`, [tenantId]),
-    pool.query(`SELECT * FROM deals WHERE tenant_id = $1 AND deleted_at IS NULL`, [tenantId]),
-    pool.query(`SELECT * FROM activities WHERE tenant_id = $1 AND deleted_at IS NULL`, [tenantId]),
-    pool.query(`SELECT * FROM tasks WHERE tenant_id = $1 AND deleted_at IS NULL`, [tenantId]),
+  // Contacts, companies and deals live in the Apache AGE graph (owned by
+  // graph-core); activities and tasks are relational. Fetch both in parallel.
+  const [graph, activities, tasks] = await Promise.all([
+    fetchGraphEntities(tenantId),
+    pool.query(`SELECT * FROM activities WHERE tenant_id = $1`, [tenantId]).catch(() => ({ rows: [] })),
+    pool.query(`SELECT * FROM tasks WHERE tenant_id = $1`, [tenantId]).catch(() => ({ rows: [] })),
   ]);
 
   const exportData = {
     exported_at: new Date().toISOString(),
     tenant_id:   tenantId,
-    contacts:    contacts.rows,
-    companies:   companies.rows,
-    deals:       deals.rows,
+    contacts:    graph.contacts,
+    companies:   graph.companies,
+    deals:       graph.deals,
     activities:  activities.rows,
     tasks:       tasks.rows,
   };
@@ -98,23 +120,32 @@ async function runExport(tenantId: string, format: "json" | "csv"): Promise<stri
 
   const key = `exports/${tenantId}/${Date.now()}.${format}`;
 
-  await s3.send(new PutObjectCommand({
-    Bucket:      S3_BUCKET,
-    Key:         key,
-    Body:        body,
-    ContentType: contentType,
-    // Auto-delete after 24 hours (requires lifecycle policy on the bucket)
-    Metadata:    { tenant_id: tenantId, exported_at: exportData.exported_at },
-  }));
+  // Prefer object storage (signed URL, deletes after 24h). But self-hosted
+  // deploys may not have a reachable/configured S3/minio — in that case fall
+  // back to returning the payload inline as a data: URL so the export always
+  // works instead of hard-failing.
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket:      S3_BUCKET,
+      Key:         key,
+      Body:        body,
+      ContentType: contentType,
+      // Auto-delete after 24 hours (requires lifecycle policy on the bucket)
+      Metadata:    { tenant_id: tenantId, exported_at: exportData.exported_at },
+    }));
 
-  // Generate a pre-signed download URL valid for 1 hour.
-  const url = await getSignedUrl(
-    s3,
-    new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
-    { expiresIn: 3600 },
-  );
-
-  return url;
+    // Generate a pre-signed download URL valid for 1 hour.
+    return await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
+      { expiresIn: 3600 },
+    );
+  } catch {
+    // Object storage unavailable — return the content inline. The browser can
+    // download a data: URL directly; API callers get the payload in the URL.
+    const b64 = Buffer.from(body, "utf-8").toString("base64");
+    return `data:${contentType};base64,${b64}`;
+  }
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -122,7 +153,7 @@ async function runExport(tenantId: string, format: "json" | "csv"): Promise<stri
 export async function exportRoutes(server: FastifyInstance) {
   // POST /api/v1/export — trigger an export (runs synchronously for now;
   // move to BullMQ background job for tenants with >100k records)
-  server.post("/", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.post("/", { preHandler: [requireCrmRead, requireCapability("can_export")] }, async (request, reply) => {
     const { tenantId } = request.user;
     const parsed = z.object({
       format: z.enum(["json", "csv"]).default("json"),
@@ -132,16 +163,16 @@ export async function exportRoutes(server: FastifyInstance) {
       return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR" } });
     }
 
-    // Quick record count to decide sync vs async
+    // Quick record count (relational entities only) to decide sync vs async.
+    // Graph entities aren't counted here — contacts/companies/deals come from
+    // graph-core inside runExport — but activities/tasks are the bulk of volume.
     const { rows: [{ count }] } = await pool.query<{ count: string }>(
       `SELECT (
-         (SELECT COUNT(*) FROM contacts   WHERE tenant_id = $1) +
-         (SELECT COUNT(*) FROM companies  WHERE tenant_id = $1) +
-         (SELECT COUNT(*) FROM deals      WHERE tenant_id = $1) +
-         (SELECT COUNT(*) FROM activities WHERE tenant_id = $1)
+         (SELECT COUNT(*) FROM activities WHERE tenant_id = $1) +
+         (SELECT COUNT(*) FROM tasks      WHERE tenant_id = $1)
        ) AS count`,
       [tenantId],
-    );
+    ).catch(() => ({ rows: [{ count: "0" }] }));
 
     if (parseInt(count, 10) > 200_000) {
       const job = await exportQueue.add("tenant-export", {

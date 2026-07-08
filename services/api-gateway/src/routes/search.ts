@@ -61,9 +61,11 @@ export async function searchRoutes(server: FastifyInstance) {
     const contacts = people.filter((p) => !p.isLead && !p.is_lead);
     const leads = people.filter((p) => p.isLead || p.is_lead);
 
+    // Do not fall back to email — it may be a role-hidden field, and global
+    // search does not run through the field-masking proxy.
     const personName = (p: any) =>
-      `${p.firstName ?? p.first_name ?? ""} ${p.lastName ?? p.last_name ?? ""}`.trim() || p.email || "Unnamed";
-    const personCompany = (p: any) => p.companyName ?? p.company_name ?? p.title ?? p.email ?? null;
+      `${p.firstName ?? p.first_name ?? ""} ${p.lastName ?? p.last_name ?? ""}`.trim() || "Unnamed";
+    const personCompany = (p: any) => p.companyName ?? p.company_name ?? p.title ?? null;
 
     for (const p of contacts.slice(0, perType)) {
       results.push({ type: "contact", id: p.id, title: personName(p), subtitle: personCompany(p), href: `/contacts/${p.id}` });

@@ -23,7 +23,10 @@ export async function cypher<T = Record<string, unknown>>(
 ): Promise<T[]> {
   const client = await pool.connect();
   try {
-    await client.query("LOAD 'age'");
+    // `age` is in shared_preload_libraries, so it is already available. LOAD is
+    // best-effort: a superuser can LOAD, but a least-privilege (non-superuser)
+    // role cannot LOAD a library — and does not need to, since it is preloaded.
+    try { await client.query("LOAD 'age'"); } catch { /* preloaded; non-superuser cannot LOAD */ }
     await client.query("SET search_path = ag_catalog, \"$user\", public");
 
     // Parameterize AGE queries via JSON

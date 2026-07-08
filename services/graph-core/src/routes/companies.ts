@@ -205,11 +205,14 @@ export async function companiesRoutes(server: FastifyInstance) {
     const setParts = ["c.updated_at = $now"];
 
     if (f.name)      { setParts.push("c.name      = $name");      params.name      = f.name; }
-    if (f.industry)  { setParts.push("c.industry  = $industry");  params.industry  = f.industry; }
+    // `domain` was accepted by the schema but never written (silent no-op, same
+    // class as the deals ownerId bug). Use !== undefined so it can be set/cleared.
+    if (f.domain    !== undefined) { setParts.push("c.domain    = $domain");    params.domain    = f.domain ?? ""; }
+    if (f.industry  !== undefined) { setParts.push("c.industry  = $industry");  params.industry  = f.industry ?? ""; }
     if (f.headcount) { setParts.push("c.headcount = $headcount"); params.headcount = f.headcount; }
     if (f.tier)      { setParts.push("c.tier      = $tier");      params.tier      = f.tier; }
-    if (f.website)   { setParts.push("c.website   = $website");   params.website   = f.website; }
-    if (f.country)      { setParts.push("c.country       = $country");      params.country      = f.country; }
+    if (f.website   !== undefined) { setParts.push("c.website   = $website");   params.website   = f.website ?? ""; }
+    if (f.country   !== undefined) { setParts.push("c.country   = $country");   params.country   = f.country ?? ""; }
     if (f.ownerId !== undefined) { setParts.push("c.owner_id = $ownerId"); params.ownerId = f.ownerId ?? ""; }
     if (f.customFields) { setParts.push("c.custom_fields = $customFields"); params.customFields = JSON.stringify(f.customFields); }
 

@@ -30,7 +30,9 @@ export async function aiRoutes(server: FastifyInstance) {
   // Each call invokes the LLM, so this is both a cost and DDoS defence.
   server.post("/nl", {
     config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
-    preHandler: [requireAiWrite],
+    // requireAiWrite is a no-op for JWT users; add a real role floor so
+    // read_only users can't drive the (LLM-cost-bearing) NL command endpoint.
+    preHandler: [requireRep, requireAiWrite],
   }, createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
 
   // Review queue — reads from Postgres directly (fast, no extra hop)

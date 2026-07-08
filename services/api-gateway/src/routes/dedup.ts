@@ -209,15 +209,24 @@ export async function dedupRoutes(server: FastifyInstance) {
 
   server.post("/duplicates/dismiss", async (request, reply) => {
     const { tenantId } = request.user;
-    const body = request.body as { id1: string; id2: string; entity_type: string };
+    const body = request.body as { id1?: string; id2?: string; entity_type?: string };
 
-    // Store dismissed pairs so they don't show up again
+    if (!body?.id1 || !body?.id2) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: "id1 and id2 are required" },
+      });
+    }
+
+    // Store dismissed pairs so they don't show up again. Do NOT swallow write
+    // errors: a silent failure here returns success while the pair reappears on
+    // the next scan ("says dismissed, nothing changed"). Let it propagate to a 500.
     await pool.query(
       `INSERT INTO entity_tags (tenant_id, entity_type, entity_id, tag)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
       [tenantId, `dedup_dismissed`, body.id1, `${body.id1}:${body.id2}`]
-    ).catch(() => {});
+    );
 
     return reply.send({ success: true });
   });

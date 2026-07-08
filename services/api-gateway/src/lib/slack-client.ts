@@ -3,7 +3,7 @@
  * All bot tokens are encrypted at rest; this module decrypts on use.
  */
 
-import { pool } from "../db";
+import { servicePool as pool } from "../db";
 import { decrypt } from "./oauth-exchange";
 
 interface SlackApiResponse {

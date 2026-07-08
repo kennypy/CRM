@@ -285,11 +285,14 @@ export async function contactsRoutes(server: FastifyInstance) {
 
     if (fields.firstName) { setParts.push("p.first_name = $firstName"); params.firstName = fields.firstName; }
     if (fields.lastName)  { setParts.push("p.last_name  = $lastName");  params.lastName  = fields.lastName; }
-    if (fields.title)     { setParts.push("p.title      = $title");     params.title     = fields.title; }
-    if (fields.phone)     { setParts.push("p.phone      = $phone");     params.phone     = fields.phone; }
+    // `email` was accepted by the schema but never written (silent no-op, same
+    // class as the deals ownerId bug).
+    if (fields.email !== undefined)     { setParts.push("p.email      = $email");     params.email     = fields.email; }
+    if (fields.title !== undefined)     { setParts.push("p.title      = $title");     params.title     = fields.title ?? ""; }
+    if (fields.phone !== undefined)     { setParts.push("p.phone      = $phone");     params.phone     = fields.phone ?? ""; }
     if (fields.seniority) { setParts.push("p.seniority  = $seniority"); params.seniority = fields.seniority; }
     if (fields.isLead !== undefined) { setParts.push("p.is_lead = $isLead"); params.isLead = fields.isLead; }
-    if (fields.source) { setParts.push("p.source = $source"); params.source = fields.source; }
+    if (fields.source !== undefined) { setParts.push("p.source = $source"); params.source = fields.source ?? ""; }
     if (fields.ownerId !== undefined) { setParts.push("p.owner_id = $ownerId"); params.ownerId = fields.ownerId ?? ""; }
     if (fields.customFields) { setParts.push("p.custom_fields = $customFields"); params.customFields = JSON.stringify(fields.customFields); }
 

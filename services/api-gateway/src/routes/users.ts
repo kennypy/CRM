@@ -12,6 +12,7 @@ import { randomBytes, createHash } from "crypto";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/rbac";
 import { denyApiKeys } from "../middleware/scope";
+import { sanitizeCapabilities } from "./user-profiles";
 
 const UpdateMeSchema = z.object({
   firstName:    z.string().min(1).max(100).optional(),
@@ -25,24 +26,45 @@ const UpdateMeSchema = z.object({
 });
 
 const CreateUserSchema = z.object({
-  firstName:  z.string().min(1).max(100),
-  lastName:   z.string().min(0).max(100).default(""),
-  email:      z.string().email(),
-  password:   z.string().min(8, "Password must be at least 8 characters"),
-  role:       z.enum(["admin", "manager", "rep", "read_only"]),
-  canQuote:   z.boolean().optional(),
-  managerId:  z.string().uuid().nullable().optional(),
+  firstName:    z.string().min(1).max(100),
+  lastName:     z.string().min(0).max(100).default(""),
+  email:        z.string().email(),
+  // Password is optional: omit it (or set sendInvite) to create an invited user
+  // who sets their own password via the activation link.
+  password:     z.string().min(8, "Password must be at least 8 characters").optional(),
+  sendInvite:   z.boolean().optional(),
+  role:         z.enum(["admin", "manager", "rep", "read_only"]).optional(),
+  profileId:    z.string().uuid().optional().nullable(),
+  capabilities: z.record(z.boolean()).optional(),
+  canQuote:     z.boolean().optional(),
+  managerId:    z.string().uuid().nullable().optional(),
+  timezone:     z.string().max(64).optional().nullable(),
+  language:     z.string().max(20).optional().nullable(),
 });
 
 const UpdateUserSchema = z.object({
-  firstName:  z.string().min(1).max(100).optional(),
-  lastName:   z.string().min(0).max(100).optional(),
-  email:      z.string().email().optional(),
-  role:       z.enum(["admin", "manager", "rep", "read_only"]).optional(),
-  password:   z.string().min(8).optional(),
-  canQuote:   z.boolean().optional(),
-  managerId:  z.string().uuid().nullable().optional(),
+  firstName:    z.string().min(1).max(100).optional(),
+  lastName:     z.string().min(0).max(100).optional(),
+  email:        z.string().email().optional(),
+  role:         z.enum(["admin", "manager", "rep", "read_only"]).optional(),
+  password:     z.string().min(8).optional(),
+  profileId:    z.string().uuid().nullable().optional(),
+  capabilities: z.record(z.boolean()).optional(),
+  canQuote:     z.boolean().optional(),
+  managerId:    z.string().uuid().nullable().optional(),
+  timezone:     z.string().max(64).optional().nullable(),
+  language:     z.string().max(20).optional().nullable(),
 });
+
+/** Load a profile's defaults (role + capabilities + tz/lang) for provisioning. */
+async function loadProfile(tenantId: string, profileId: string) {
+  const { rows } = await pool.query(
+    `SELECT base_role, capabilities, default_timezone, default_language
+     FROM user_profiles WHERE id = $1 AND tenant_id = $2`,
+    [profileId, tenantId]
+  );
+  return rows[0] ?? null;
+}
 
 const InviteSchema = z.object({
   email:  z.string().email(),
@@ -61,6 +83,8 @@ function toUser(row: Record<string, unknown>) {
     status:        row.password_hash === null ? "invited" : "active",
     createdAt:     row.created_at,
     canQuote:      row.can_quote     ?? false,
+    capabilities:  row.capabilities  ?? {},
+    profileId:     row.profile_id    ?? null,
     managerId:     row.manager_id    ?? null,
     country:       row.country       ?? null,
     timezone:      row.timezone      ?? null,
@@ -75,7 +99,7 @@ export async function usersRoutes(server: FastifyInstance) {
   server.get("/", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
-      `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, manager_id,
+      `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, capabilities, profile_id, manager_id,
               country, timezone, language, phone, twilio_number
        FROM users
        WHERE tenant_id = $1
@@ -90,7 +114,7 @@ export async function usersRoutes(server: FastifyInstance) {
     const { sub: userId, tenantId } = request.user;
     const { rows } = await pool.query(
       `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
-              can_quote, manager_id, country, timezone, language, phone, twilio_number
+              can_quote, capabilities, profile_id, manager_id, country, timezone, language, phone, twilio_number
        FROM users WHERE id = $1 AND tenant_id = $2`,
       [userId, tenantId]
     );
@@ -133,7 +157,7 @@ export async function usersRoutes(server: FastifyInstance) {
       `UPDATE users SET ${sets.join(", ")}
        WHERE id = $1 AND tenant_id = $2
        RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
-                 can_quote, manager_id, country, timezone, language, phone, twilio_number`,
+                 can_quote, capabilities, profile_id, manager_id, country, timezone, language, phone, twilio_number`,
       vals
     );
 
@@ -169,7 +193,12 @@ export async function usersRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/users ───────────────────────────────────────────────────
-  // Admin creates a fully active user (with password). The user can log in immediately.
+  // Admin creates a user. Two modes:
+  //   • With `password`            → a fully active user who can log in immediately.
+  //   • No password / `sendInvite` → an invited user who sets their own password
+  //                                  via a returned single-use activation link.
+  // A `profileId` pre-fills role + capabilities + timezone/language, each of which
+  // the explicit request fields still override.
   server.post("/", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
     const parsed = CreateUserSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -179,12 +208,12 @@ export async function usersRoutes(server: FastifyInstance) {
       });
     }
 
-    const { firstName, lastName, email, password, role, canQuote, managerId } = parsed.data;
+    const d = parsed.data;
     const { tenantId } = request.user;
 
     const existing = await pool.query(
       `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
-      [tenantId, email.toLowerCase()]
+      [tenantId, d.email.toLowerCase()]
     );
     if (existing.rows.length) {
       return reply.status(409).send({
@@ -193,16 +222,56 @@ export async function usersRoutes(server: FastifyInstance) {
       });
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
-    // Admins and managers get quoting enabled by default
-    const effectiveCanQuote = canQuote ?? ["admin", "manager"].includes(role);
+    // Resolve the profile (if any) for defaults, then let explicit fields win.
+    let profile: Record<string, unknown> | null = null;
+    if (d.profileId) {
+      profile = await loadProfile(tenantId, d.profileId);
+      if (!profile) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: "PROFILE_NOT_FOUND", message: "The selected profile does not exist" },
+        });
+      }
+    }
+
+    const role = (d.role ?? (profile?.base_role as string) ?? "rep") as string;
+    const capabilities = sanitizeCapabilities({
+      ...(profile?.capabilities as Record<string, boolean> | undefined),
+      ...(d.capabilities ?? {}),
+    });
+    const timezone = d.timezone ?? (profile?.default_timezone as string | null) ?? null;
+    const language = d.language ?? (profile?.default_language as string | null) ?? null;
+    // Keep the legacy can_quote column mirrored from capabilities for the quoting flow.
+    const effectiveCanQuote = d.canQuote ?? capabilities.can_quote ?? ["admin", "manager"].includes(role);
+
+    // Invite mode: no password supplied, or sendInvite explicitly requested.
+    const invite = d.sendInvite || !d.password;
+    const passwordHash = invite ? null : await bcrypt.hash(d.password!, 12);
+
     const { rows } = await pool.query(
-      `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role, can_quote, manager_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role, can_quote, capabilities, profile_id, manager_id, timezone, language)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12)
        RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
-                 can_quote, manager_id, country, timezone, language, phone, twilio_number`,
-      [tenantId, email.toLowerCase(), passwordHash, firstName, lastName, role, effectiveCanQuote, managerId ?? null]
+                 can_quote, capabilities, profile_id, manager_id, country, timezone, language, phone, twilio_number`,
+      [tenantId, d.email.toLowerCase(), passwordHash, d.firstName, d.lastName, role, effectiveCanQuote,
+       JSON.stringify(capabilities), d.profileId ?? null, d.managerId ?? null, timezone, language]
     );
+
+    // Invited users need a single-use activation link (same machinery as /invite).
+    if (invite) {
+      const rawToken  = randomBytes(32).toString("hex");
+      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+      await pool.query(
+        `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+         VALUES ($1, $2, NOW() + interval '7 days')`,
+        [rows[0].id, tokenHash]
+      );
+      return reply.status(201).send({
+        success: true,
+        data: toUser(rows[0]),
+        invite: { activationPath: `/accept-invite?token=${rawToken}` },
+      });
+    }
 
     return reply.status(201).send({ success: true, data: toUser(rows[0]) });
   });
@@ -221,18 +290,47 @@ export async function usersRoutes(server: FastifyInstance) {
       });
     }
 
-    const { firstName, lastName, email, role, password, canQuote, managerId } = parsed.data;
+    const d = parsed.data;
     const sets: string[] = ["updated_at = NOW()"];
     const vals: unknown[] = [id, tenantId];
 
-    if (firstName  !== undefined) { vals.push(firstName); sets.push(`first_name = $${vals.length}`); }
-    if (lastName   !== undefined) { vals.push(lastName);  sets.push(`last_name  = $${vals.length}`); }
-    if (email      !== undefined) { vals.push(email.toLowerCase()); sets.push(`email = $${vals.length}`); }
-    if (role       !== undefined) { vals.push(role); sets.push(`role = $${vals.length}`); }
-    if (canQuote   !== undefined) { vals.push(canQuote); sets.push(`can_quote = $${vals.length}`); }
-    if (managerId  !== undefined) { vals.push(managerId); sets.push(`manager_id = $${vals.length}`); }
-    if (password   !== undefined) {
-      const hash = await bcrypt.hash(password, 12);
+    // Applying a profile pre-fills role + capabilities + tz/lang, each still
+    // overridable by an explicit field in the same request.
+    let profile: Record<string, unknown> | null = null;
+    if (d.profileId) {
+      profile = await loadProfile(tenantId, d.profileId);
+      if (!profile) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: "PROFILE_NOT_FOUND", message: "The selected profile does not exist" },
+        });
+      }
+    }
+
+    const effRole = d.role ?? (profile?.base_role as string | undefined);
+
+    if (d.firstName  !== undefined) { vals.push(d.firstName); sets.push(`first_name = $${vals.length}`); }
+    if (d.lastName   !== undefined) { vals.push(d.lastName);  sets.push(`last_name  = $${vals.length}`); }
+    if (d.email      !== undefined) { vals.push(d.email.toLowerCase()); sets.push(`email = $${vals.length}`); }
+    if (effRole      !== undefined) { vals.push(effRole); sets.push(`role = $${vals.length}`); }
+    if (d.managerId  !== undefined) { vals.push(d.managerId); sets.push(`manager_id = $${vals.length}`); }
+    if (d.timezone   !== undefined) { vals.push(d.timezone); sets.push(`timezone = $${vals.length}`); }
+    if (d.language   !== undefined) { vals.push(d.language); sets.push(`language = $${vals.length}`); }
+    if (d.profileId  !== undefined) { vals.push(d.profileId); sets.push(`profile_id = $${vals.length}`); }
+
+    // Capabilities: merge profile defaults (when a profile is applied) with any
+    // explicit overrides, then mirror can_quote from the resolved bag.
+    if (d.capabilities !== undefined || profile) {
+      const capabilities = sanitizeCapabilities({
+        ...(profile?.capabilities as Record<string, boolean> | undefined),
+        ...(d.capabilities ?? {}),
+      });
+      vals.push(JSON.stringify(capabilities)); sets.push(`capabilities = $${vals.length}::jsonb`);
+      if (d.canQuote === undefined) { vals.push(capabilities.can_quote ?? false); sets.push(`can_quote = $${vals.length}`); }
+    }
+    if (d.canQuote   !== undefined) { vals.push(d.canQuote); sets.push(`can_quote = $${vals.length}`); }
+    if (d.password   !== undefined) {
+      const hash = await bcrypt.hash(d.password, 12);
       vals.push(hash); sets.push(`password_hash = $${vals.length}`);
     }
 
@@ -244,7 +342,7 @@ export async function usersRoutes(server: FastifyInstance) {
       `UPDATE users SET ${sets.join(", ")}
        WHERE id = $1 AND tenant_id = $2
        RETURNING id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at,
-                 can_quote, manager_id, country, timezone, language, phone, twilio_number`,
+                 can_quote, capabilities, profile_id, manager_id, country, timezone, language, phone, twilio_number`,
       vals
     );
 

@@ -14,6 +14,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireRep } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
+import { requireCapability } from "../middleware/capabilities";
 import { importProcessorQueue } from "../workers/import-processor";
 
 const MappingSchema = z.object({
@@ -23,7 +24,7 @@ const MappingSchema = z.object({
 
 export async function importRoutes(server: FastifyInstance) {
   // POST /upload — multipart file upload
-  server.post("/upload", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
+  server.post("/upload", { preHandler: [requireRep, requireCrmWrite, requireCapability("can_import")] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const body = request.body as {
       entity_type?: string;
@@ -74,7 +75,7 @@ export async function importRoutes(server: FastifyInstance) {
   });
 
   // POST /:jobId/mapping — save column mapping, start processing
-  server.post("/:jobId/mapping", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
+  server.post("/:jobId/mapping", { preHandler: [requireRep, requireCrmWrite, requireCapability("can_import")] }, async (request, reply) => {
     const { jobId } = request.params as { jobId: string };
     const { tenantId } = request.user;
 

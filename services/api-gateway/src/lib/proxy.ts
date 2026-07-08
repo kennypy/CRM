@@ -6,6 +6,7 @@
 
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { mintInternalToken } from "./internal-fetch";
+import { maskResponseData } from "../middleware/field-access";
 
 export interface ProxyOptions {
   baseUrl: string;
@@ -13,6 +14,14 @@ export interface ProxyOptions {
   stripPrefix?: string;
   /** Additional headers to inject */
   headers?: Record<string, string>;
+  /**
+   * Entity type (singular, e.g. "contact") for field-level access control. When
+   * set, fields the caller's role has marked `hidden` in field_permissions are
+   * stripped from the response `data` before it leaves the gateway. Admins and
+   * super_admins are never masked. Unconfigured fields default to read_write, so
+   * this is a no-op unless an admin has explicitly hidden a field.
+   */
+  maskEntity?: string;
 }
 
 export function createProxy(opts: ProxyOptions) {
@@ -90,6 +99,33 @@ export function createProxy(opts: ProxyOptions) {
 
       try {
         const parsed = JSON.parse(body);
+
+        // Field-level masking: strip fields the caller's role cannot see. Only
+        // on successful reads with a data payload; admins bypass. This is what
+        // makes the Permissions → Field Access tab actually enforce.
+        const role = jwt?.role ?? "";
+        if (
+          opts.maskEntity &&
+          resp.ok &&
+          role && role !== "admin" && role !== "super_admin" &&
+          parsed && typeof parsed === "object" && "data" in parsed && parsed.data
+        ) {
+          // Recursive, entity-aware masking: handles flat entities, arrays, and
+          // composite detail payloads (e.g. {company, contacts[], deals[]}). Its
+          // own try/catch — a field_permissions query hiccup must NOT be caught
+          // by the JSON-parse guard below (which would mislabel a good response
+          // as a 502). Fail closed: refuse rather than risk leaking a hidden field.
+          try {
+            parsed.data = await maskResponseData(parsed.data, opts.maskEntity, tenantId, role);
+          } catch (maskErr: any) {
+            request.log.error({ err: maskErr, entity: opts.maskEntity }, "proxy.mask_failed");
+            return reply.status(500).send({
+              success: false,
+              error: { code: "MASKING_ERROR", message: "Could not apply field permissions to the response" },
+            });
+          }
+        }
+
         return reply.status(resp.status).type("application/json").send(parsed);
       } catch {
         request.log.warn({ status: resp.status, bodySnippet: body.slice(0, 200) }, "proxy.non_json_response");

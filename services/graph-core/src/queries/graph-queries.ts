@@ -162,15 +162,18 @@ export async function linkPersonToDeal(
   dealId:         string,
   role:           string,
   influenceScore: number,
+  tenantId:       string,
 ) {
+  // Both nodes are scoped to the tenant so this can never link a Person and Deal
+  // across tenants (graph nodes have no RLS backstop).
   return cypher(
-    `MATCH (p:Person {id: $personId})
-     MATCH (d:Deal {id: $dealId})
+    `MATCH (p:Person {id: $personId, tenant_id: $tenantId})
+     MATCH (d:Deal {id: $dealId, tenant_id: $tenantId})
      MERGE (p)-[r:INFLUENCES]->(d)
      SET r.role            = $role,
          r.influence_score = $influenceScore,
          r.updated_at      = $now
      RETURN {ok: true}`,
-    { personId, dealId, role, influenceScore, now: new Date().toISOString() }
+    { personId, dealId, role, influenceScore, tenantId, now: new Date().toISOString() }
   );
 }

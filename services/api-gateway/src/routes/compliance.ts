@@ -38,6 +38,7 @@ import { z } from "zod";
 import { pool, readPool } from "../db";
 import { dsrQueue } from "../workers/dsr-processor";
 import { denyApiKeys } from "../middleware/scope";
+import { requireAdmin } from "../middleware/rbac";
 
 // ── SOC2 Control definitions ────────────────────────────────────────────────
 
@@ -102,8 +103,11 @@ async function gatherSubjectDataForDownload(tenantId: string, subjectEmail: stri
 }
 
 export async function complianceRoutes(server: FastifyInstance) {
-  // Block API key access to all compliance routes
+  // Block API key access to all compliance routes, and restrict the entire
+  // GDPR/CCPA/escrow/audit surface to workspace admins — these expose the
+  // tenant's compliance posture, audit log, and data-subject records.
   server.addHook("preHandler", denyApiKeys);
+  server.addHook("preHandler", requireAdmin);
 
   // ── GET /compliance/status ──────────────────────────────────────────────
   server.get("/compliance/status", async (request, reply) => {

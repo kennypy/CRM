@@ -12,7 +12,7 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import { pool, readPool } from "../db";
+import { servicePool as pool, servicePool as readPool } from "../db";
 
 async function resolveTenant(slug: string): Promise<{ id: string; name: string } | null> {
   const { rows } = await readPool.query(

@@ -20,14 +20,13 @@ import { activitiesRoutes } from "./routes/activities";
 import { aiRoutes } from "./routes/ai";
 import { graphRoutes } from "./routes/graph";
 import { webhookRoutes } from "./routes/webhooks";
-import { vintageWebhookRoutes } from "./routes/vintage-webhook";
-import { supportTicketRoutes } from "./routes/support-tickets";
 import { integrationsRoutes } from "./routes/integrations";
 import { tenantRoutes } from "./routes/tenant";
 import { tasksRoutes }     from "./routes/tasks";
 import { outreachRoutes }  from "./routes/outreach";
 import { workflowsRoutes } from "./routes/workflows";
 import { usersRoutes }     from "./routes/users";
+import { userProfilesRoutes } from "./routes/user-profiles";
 import { quotesRoutes }    from "./routes/quotes";
 import { productsRoutes }  from "./routes/products";
 import { productsImportRoutes } from "./routes/products-import";
@@ -66,9 +65,6 @@ import { startImportProcessorWorker }   from "./workers/import-processor";
 import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
 import { startDsrProcessorWorker }      from "./workers/dsr-processor";
 import { startScheduledReportsWorker }   from "./workers/scheduled-reports";
-import { startSupportOutboundDispatcher } from "./workers/support-outbound-dispatcher";
-import { startSupportOutboundReconcile }  from "./workers/support-outbound-reconcile";
-import { startSupportOrphanSweeper }      from "./workers/support-orphan-sweeper";
 import { dedupRoutes }                   from "./routes/dedup";
 import { adminRoutes }                   from "./routes/admin";
 import { kbRoutes }                      from "./routes/kb";
@@ -79,6 +75,7 @@ import { auditLogRoutes }                from "./routes/audit-log";
 import { searchRoutes }                  from "./routes/search";
 import { teamsRoutes }                   from "./routes/teams";
 import { redis }                        from "./lib/redis";
+import { setTenantContext, pool }       from "./db";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
 
 const server = Fastify({
@@ -121,27 +118,6 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  // Vintage.br inbound webhook secret — required in production so we never
-  // accept unsigned tickets. In dev we tolerate an unset secret (the route
-  // returns 503) so a fresh checkout still boots.
-  if (process.env.NODE_ENV === "production" && !process.env.VINTAGE_WEBHOOK_SECRET) {
-    console.error("FATAL: VINTAGE_WEBHOOK_SECRET is not set. Refusing to start in production.");
-    process.exit(1);
-  }
-
-  // Vintage.br partner API credentials — required in production so agent
-  // replies can actually reach the user. Without these, the outbound
-  // dispatcher logs a warning and stays offline; jobs pile up in 'pending'.
-  if (process.env.NODE_ENV === "production") {
-    if (!process.env.VINTAGE_API_URL) {
-      console.error("FATAL: VINTAGE_API_URL is not set. Refusing to start in production.");
-      process.exit(1);
-    }
-    if (!process.env.CRM_PARTNER_KEY) {
-      console.error("FATAL: CRM_PARTNER_KEY is not set. Refusing to start in production.");
-      process.exit(1);
-    }
-  }
 
   // ── Security ──────────────────────────────────────────────────────────────
   await server.register(helmet, {
@@ -192,7 +168,6 @@ async function bootstrap() {
   // Registered as a separate plugin so the raw-body content-type parser is
   // scoped only to this route — the Stripe/Slack/Zoom plugin already has its
   // own parser, and other JSON routes get standard parsing.
-  await server.register(vintageWebhookRoutes, { prefix: "/webhooks" });
 
   // Customer portal — PUBLIC knowledge base. Registered before the auth hook so
   // it needs no JWT; the tenant is resolved from its slug in the URL.
@@ -204,6 +179,28 @@ async function bootstrap() {
 
   // ── Protected routes ──────────────────────────────────────────────────────
   server.addHook("preHandler", authMiddleware);
+
+  // Stamp the AsyncLocalStorage tenant context from the verified identity so the
+  // DB layer can scope every query via RLS (SET LOCAL app.current_tenant). Runs
+  // after authMiddleware, so request.user is populated. Only applies to routes
+  // registered below this hook (the public portal/book routes above are exempt).
+  server.addHook("preHandler", async (request) => {
+    const tenantId = (request.user as { tenantId?: string } | undefined)?.tenantId ?? null;
+    setTenantContext(tenantId);
+  });
+
+  // Diagnostic: confirms the AsyncLocalStorage → SET LOCAL chain end-to-end.
+  // Returns the JWT tenant and the DB-side app.current_tenant seen inside a
+  // wrapped query; they must match. Admin/super_admin only, read-only, cheap.
+  server.get("/api/v1/_diag/tenant-context", async (request, reply) => {
+    const role = (request.user as { role?: string } | undefined)?.role;
+    if (role !== "admin" && role !== "super_admin") {
+      return reply.status(403).send({ success: false, error: { code: "FORBIDDEN" } });
+    }
+    const jwtTenant = (request.user as { tenantId?: string; role?: string } | undefined)?.tenantId ?? null;
+    const { rows } = await pool.query("SELECT current_setting('app.current_tenant', true) AS db_tenant, current_user AS db_role");
+    return { success: true, data: { jwtTenant, dbTenant: rows[0]?.db_tenant ?? null, dbRole: rows[0]?.db_role ?? null } };
+  });
 
   await server.register(contactsRoutes, { prefix: "/api/v1/contacts" });
   await server.register(companiesRoutes, { prefix: "/api/v1/companies" });
@@ -217,6 +214,7 @@ async function bootstrap() {
   await server.register(outreachRoutes,     { prefix: "/api/v1/outreach" });
   await server.register(workflowsRoutes,    { prefix: "/api/v1/workflows" });
   await server.register(usersRoutes,        { prefix: "/api/v1/users" });
+  await server.register(userProfilesRoutes, { prefix: "/api/v1/user-profiles" });
   await server.register(quotesRoutes,       { prefix: "/api/v1/quotes" });
   await server.register(productsRoutes,     { prefix: "/api/v1/products" });
   await server.register(productsImportRoutes, { prefix: "/api/v1/products/import" });
@@ -240,7 +238,6 @@ async function bootstrap() {
   await server.register(campaignsRoutes,        { prefix: "/api/v1/campaigns" });
   await server.register(tagsRoutes,             { prefix: "/api/v1/tags" });
   await server.register(notesRoutes,            { prefix: "/api/v1/notes" });
-  await server.register(supportTicketRoutes,    { prefix: "/api/v1/support-tickets" });
   await server.register(complianceRoutes,       { prefix: "/api/v1" });
   await server.register(coachingRoutes,         { prefix: "/api/v1/coaching" });
   await server.register(territoriesRoutes,      { prefix: "/api/v1/territories" });
@@ -286,14 +283,6 @@ async function bootstrap() {
   startCloseDateCheckerWorker();
   startDsrProcessorWorker();
   startScheduledReportsWorker();
-
-  // Support-ticket outbound to Vintage. The dispatcher and reconcile loops
-  // share a single VintageClient and share the same retry taxonomy; the
-  // orphan sweeper heals inbound replies whose parent open arrived late.
-  // All three are cheap no-ops when their env isn't configured (dev).
-  startSupportOutboundDispatcher({ logger: server.log });
-  startSupportOutboundReconcile({ logger: server.log });
-  startSupportOrphanSweeper({ logger: server.log });
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

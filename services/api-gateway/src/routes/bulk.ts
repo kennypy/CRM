@@ -10,6 +10,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { requireCrmWrite } from "../middleware/scope";
+import { getFieldPermissions, getReadOnlyFields } from "../middleware/field-access";
 import { createProxy } from "../lib/proxy";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
@@ -72,7 +73,24 @@ export async function bulkRoutes(server: FastifyInstance) {
       });
     }
 
-    const { tenantId, sub: userId } = request.user;
+    const { tenantId, sub: userId, role } = request.user;
+
+    // Field-level write ACL: bulk update must honour the same field_permissions
+    // as the per-record PATCH path (blockReadOnlyFields), otherwise a rep barred
+    // from writing e.g. deal.value could set it via /bulk/update. Admins bypass.
+    if (role !== "admin" && role !== "super_admin") {
+      const perms = await getFieldPermissions(tenantId, entity_type, role);
+      const readOnly = getReadOnlyFields(perms);
+      if (readOnly.size > 0) {
+        const blocked = Object.keys(changes).filter((k) => readOnly.has(k));
+        if (blocked.length > 0) {
+          return reply.status(403).send({
+            success: false,
+            error: { code: "FIELD_ACCESS_DENIED", message: `You do not have write access to: ${blocked.join(", ")}` },
+          });
+        }
+      }
+    }
     let updated = 0;
     const errors: Array<{ id: string; error: string }> = [];
 

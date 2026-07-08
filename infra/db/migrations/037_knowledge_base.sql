@@ -4,7 +4,7 @@
 -- Tenant-scoped KB articles grouped into categories. Articles have a draft →
 -- published lifecycle; only published articles are exposed on the public
 -- customer portal (resolved by tenant slug — see routes/portal.ts). Follows the
--- standard tenant_id-scoped pattern (unlike the global support-tickets queue).
+-- standard tenant_id-scoped pattern.
 
 BEGIN;
 

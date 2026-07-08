@@ -18,7 +18,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { pool, readPool } from "../db";
+import { servicePool as pool, servicePool as readPool } from "../db";
 import { requireMinRole } from "../middleware/rbac";
 import { denyApiKeys } from "../middleware/scope";
 
@@ -84,10 +84,13 @@ export async function adminReportsRoutes(server: FastifyInstance) {
       });
     }
 
-    // Determine effective tenant for admin-scoped reports
-    const effectiveTenant = role === "super_admin" && body.data.tenantId
-      ? body.data.tenantId
-      : callerTenantId;
+    // Admin-scoped reports (e.g. field_usage) ALWAYS run against the caller's own
+    // tenant — never an arbitrary one. Previously a super_admin could pass any
+    // tenantId and read that workspace's field-fill statistics, a cross-tenant
+    // metadata leak. The super_admin cross-tenant reports (SUPER_ADMIN_REPORTS)
+    // scope themselves by role internally and do not use this value to target a
+    // specific tenant.
+    const effectiveTenant = callerTenantId;
 
     try {
       const data = await runAdminReport(reportType, effectiveTenant, role);

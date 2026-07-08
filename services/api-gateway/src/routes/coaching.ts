@@ -5,6 +5,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
+import { requireManager } from "../middleware/rbac";
 import { requireAiRead, requireAiWrite } from "../middleware/scope";
 
 export async function coachingRoutes(server: FastifyInstance) {
@@ -58,7 +59,7 @@ export async function coachingRoutes(server: FastifyInstance) {
   });
 
   // ── POST /call-reviews/:id/score — submit scorecard ─────────────────────
-  server.post("/call-reviews/:id/score", { preHandler: [requireAiWrite] }, async (request, reply) => {
+  server.post("/call-reviews/:id/score", { preHandler: [requireManager, requireAiWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
 

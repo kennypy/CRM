@@ -578,10 +578,16 @@ function RepDashboard({ currency, locale }: { currency: string; locale: string }
           <div>
             <h2 className="font-semibold">AI Intelligence Brief</h2>
             <div className="mt-2 space-y-1.5 text-sm text-muted-foreground">
-              <p>• <strong>Acme Corp</strong> — CFO confirmed $450K budget in yesterday&apos;s email. Move to Commit forecast.</p>
-              <p>• <strong>TechStart</strong> — Champion mentioned competitor (HubSpot) in call. Schedule competitive displacement demo.</p>
-              <p>• <strong>Globex</strong> — No contact response in 12 days. Reality Score dropped to 45. Consider executive sponsor outreach.</p>
-              <p>• Your <strong>connect rate</strong> is 15% higher on Tuesdays 10-11am. Consider shifting call blocks.</p>
+              {previewEnabled() ? (
+                <>
+                  <p>• <strong>Acme Corp</strong> — CFO confirmed $450K budget in yesterday&apos;s email. Move to Commit forecast.</p>
+                  <p>• <strong>TechStart</strong> — Champion mentioned competitor (HubSpot) in call. Schedule competitive displacement demo.</p>
+                  <p>• <strong>Globex</strong> — No contact response in 12 days. Reality Score dropped to 45. Consider executive sponsor outreach.</p>
+                  <p>• Your <strong>connect rate</strong> is 15% higher on Tuesdays 10-11am. Consider shifting call blocks.</p>
+                </>
+              ) : (
+                <p>Connect your inbox and calendar in Settings → Integrations to generate AI intelligence from your live deals and activity.</p>
+              )}
             </div>
             <Link href="/insights" className="mt-3 inline-flex items-center gap-1 text-xs text-primary hover:underline">
               View full insights <ArrowRight className="h-3 w-3" />
@@ -714,6 +720,11 @@ function RepDashboard({ currency, locale }: { currency: string; locale: string }
       {/* AI Forecast */}
       <ForecastPanel />
 
+      {/* Team performance, coaching opportunities, forecast summary and the
+          live-call / pending-review tiles below are illustrative and not yet
+          wired to real data. Gated behind preview so a pilot rep never lands on
+          fabricated figures (finding #8). */}
+      {previewEnabled() && (<>
       {/* Activity summary stats */}
       <div className="rounded-xl border bg-card p-5">
         <div className="mb-4 flex items-center justify-between">
@@ -832,6 +843,7 @@ function RepDashboard({ currency, locale }: { currency: string; locale: string }
           <p className="text-xs text-muted-foreground mt-1">Call recordings + AI extractions to review</p>
         </Link>
       </div>
+      </>)}
     </>
   );
 }

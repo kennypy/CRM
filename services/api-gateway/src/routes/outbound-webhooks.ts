@@ -19,6 +19,7 @@ import { pool } from "../db";
 import { encrypt } from "../lib/oauth-exchange";
 import { webhookDeliveryQueue } from "../workers/webhook-delivery";
 import { assertSafeUrl, SsrfBlockedError } from "../lib/ssrf-guard";
+import { requireAdmin } from "../middleware/rbac";
 
 // Customer webhook URLs must be public https endpoints. Set
 // WEBHOOKS_ALLOW_PRIVATE_HOST=true only for self-hosted/dev setups.
@@ -90,6 +91,10 @@ export async function dispatchWebhookEvent(
 // ── Route plugin ──────────────────────────────────────────────────────────────
 
 export async function outboundWebhooksRoutes(server: FastifyInstance) {
+  // Outbound webhooks can exfiltrate tenant data to arbitrary URLs and hold
+  // signing secrets — restrict the whole surface to workspace admins.
+  server.addHook("preHandler", requireAdmin);
+
   // GET /api/v1/webhooks
   server.get("/", async (request, reply) => {
     const { tenantId } = request.user;
