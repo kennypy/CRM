@@ -24,16 +24,18 @@ const { queryMock, clientQueryMock, releaseMock } = vi.hoisted(() => ({
   releaseMock:     vi.fn(),
 }));
 
-vi.mock("../db", () => ({
-  pool: {
+vi.mock("../db", () => {
+  const poolMock = {
     connect: async () => ({
       query: clientQueryMock,
       release: releaseMock,
     }),
     query: queryMock,
-  },
-  readPool: { query: queryMock },
-}));
+  };
+  // The route uses `servicePool` (BYPASSRLS) for this non-request path; alias it
+  // to the same mock as `pool`.
+  return { pool: poolMock, servicePool: poolMock, readPool: { query: queryMock } };
+});
 
 import { vintageWebhookRoutes } from "../routes/vintage-webhook";
 

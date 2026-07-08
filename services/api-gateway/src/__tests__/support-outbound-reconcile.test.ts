@@ -15,13 +15,14 @@ const { queryMock, clientQueryMock, releaseMock } = vi.hoisted(() => ({
   releaseMock:     vi.fn(),
 }));
 
-vi.mock("../db", () => ({
-  pool: {
+vi.mock("../db", () => {
+  const poolMock = {
     connect: async () => ({ query: clientQueryMock, release: releaseMock }),
     query: queryMock,
-  },
-  readPool: { query: queryMock },
-}));
+  };
+  // Non-request paths use `servicePool` (BYPASSRLS); alias it to the same mock.
+  return { pool: poolMock, servicePool: poolMock, readPool: { query: queryMock } };
+});
 
 vi.mock("bullmq", () => ({
   Queue: vi.fn().mockImplementation(() => ({ add: vi.fn().mockResolvedValue(undefined) })),

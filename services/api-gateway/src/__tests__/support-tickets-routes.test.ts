@@ -20,13 +20,14 @@ const { queryMock, clientQueryMock, releaseMock } = vi.hoisted(() => ({
   releaseMock:     vi.fn(),
 }));
 
-vi.mock("../db", () => ({
-  pool: {
+vi.mock("../db", () => {
+  const poolMock = {
     connect: async () => ({ query: clientQueryMock, release: releaseMock }),
     query: queryMock,
-  },
-  readPool: { query: queryMock },
-}));
+  };
+  // Non-request paths use `servicePool` (BYPASSRLS); alias it to the same mock.
+  return { pool: poolMock, servicePool: poolMock, readPool: { query: queryMock } };
+});
 
 // S3 SDK isn't hit by the non-attachment tests; stub it so test boot stays
 // fast and dependency-free.
