@@ -272,6 +272,7 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (f.archetype           !== undefined) { setParts.push("d.archetype            = $archetype");           params.archetype           = f.archetype; }
     if (f.isExpansion         !== undefined) { setParts.push("d.is_expansion         = $isExpansion");         params.isExpansion         = f.isExpansion; }
     if (f.declaredProbability !== undefined) { setParts.push("d.declared_probability = $declaredProbability"); params.declaredProbability = f.declaredProbability; }
+    if (f.ownerId             !== undefined) { setParts.push("d.owner_id             = $ownerId");             params.ownerId             = f.ownerId; }
     if (f.customFields)                    { setParts.push("d.custom_fields        = $customFields");        params.customFields        = JSON.stringify(f.customFields); }
 
     let stageChanged = false;
@@ -287,6 +288,27 @@ export async function dealsRoutes(server: FastifyInstance) {
        RETURN {id: d.id}`,
       params
     );
+
+    // Re-link the company edge if companyId changed. This is a relationship,
+    // not a property, so it must be handled outside the SET-builder — previously
+    // the schema accepted companyId but the PATCH never touched the WORKS_AT/
+    // INVOLVED_IN edge, so a deal's company was set-once at creation.
+    if (f.companyId !== undefined) {
+      // Drop any existing buyer edge first.
+      await cypher(
+        `MATCH (:Company)-[r:INVOLVED_IN]->(d:Deal {id: $id, tenant_id: $tenantId})
+         DELETE r`,
+        { id, tenantId }
+      );
+      if (f.companyId) {
+        await cypher(
+          `MATCH (d:Deal {id: $id, tenant_id: $tenantId}), (c:Company {id: $companyId, tenant_id: $tenantId})
+           MERGE (c)-[:INVOLVED_IN {type: 'buyer', created_at: $now}]->(d)
+           RETURN {id: d.id}`,
+          { id, companyId: f.companyId, tenantId, now: new Date().toISOString() }
+        );
+      }
+    }
 
     const evType = stageChanged
       ? f.stage === "closed_won" ? "deal.closed_won"

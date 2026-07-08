@@ -28,6 +28,16 @@
 import { servicePool as pool } from "../db";
 import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
+import { assertSafeUrl, SsrfBlockedError } from "../lib/ssrf-guard";
+
+// Map a CRM entity_type to its graph-core collection path. Leads are Person
+// nodes, same as contacts.
+const ENTITY_COLLECTION: Record<string, string> = {
+  contact: "contacts",
+  lead: "contacts",
+  company: "companies",
+  deal: "deals",
+};
 
 interface WorkflowDef {
   id: string;
@@ -160,6 +170,19 @@ const actionHandlers: Record<string, ActionHandler> = {
   async fire_webhook(config, _event, tenantId) {
     const webhookUrl = String(config?.url ?? "");
     if (!webhookUrl) return { success: false, error: "No webhook URL configured" };
+    // SSRF guard: a workflow author is a tenant user, not trusted to point the
+    // engine at internal/metadata addresses. Mirror the outbound-webhook worker.
+    try {
+      await assertSafeUrl(webhookUrl, {
+        protocols: ["https:", "http:"],
+        allowPrivateEnvVar: "WEBHOOKS_ALLOW_PRIVATE_HOST",
+      });
+    } catch (err) {
+      if (err instanceof SsrfBlockedError) {
+        return { success: false, error: `Blocked webhook URL: ${err.message}` };
+      }
+      throw err;
+    }
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -172,6 +195,17 @@ const actionHandlers: Record<string, ActionHandler> = {
     const field = String(config?.field ?? "");
     const value = config?.value;
     if (!field) return { success: false, error: "No field specified" };
+    const collection = ENTITY_COLLECTION[event.entity_type];
+    if (!collection) return { success: false, error: `Cannot update fields on '${event.entity_type}'` };
+    // Actually persist the change via graph-core (the field authority), then
+    // record the audit event. Previously this only wrote the audit row, so the
+    // automation reported success while the record was never modified.
+    const res = await internalFetch(`${GRAPH_CORE_URL}/${collection}/${event.entity_id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+      body: JSON.stringify({ [field]: value }),
+    });
+    if (!res.ok) return { success: false, error: `Field update failed (${res.status})` };
     await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, $2, 'workflow', $3, $4, $5)`,
@@ -181,9 +215,19 @@ const actionHandlers: Record<string, ActionHandler> = {
     return { success: true, result: `Field ${field} updated` };
   },
 
-  async add_tag(config) {
+  async add_tag(config, event, tenantId) {
     const tag = String(config?.tag ?? config?.value ?? "");
     if (!tag) return { success: false, error: "No tag specified" };
+    if (!["contact", "company", "deal", "lead"].includes(event.entity_type)) {
+      return { success: false, error: `Cannot tag '${event.entity_type}'` };
+    }
+    // Actually persist the tag (was a success-reporting no-op).
+    await pool.query(
+      `INSERT INTO entity_tags (tenant_id, entity_type, entity_id, tag)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (tenant_id, entity_type, entity_id, tag) DO NOTHING`,
+      [tenantId, event.entity_type, event.entity_id, tag]
+    );
     return { success: true, result: `Tag '${tag}' added` };
   },
 
@@ -199,8 +243,19 @@ const actionHandlers: Record<string, ActionHandler> = {
     return { success: res.ok, result: `Enrolled in sequence (${res.status})` };
   },
 
-  async assign_owner(config) {
-    return { success: true, result: `Owner assigned to ${config?.ownerId ?? "default"}` };
+  async assign_owner(config, event, tenantId) {
+    const ownerId = String(config?.ownerId ?? "");
+    if (!ownerId) return { success: false, error: "No ownerId specified" };
+    const collection = ENTITY_COLLECTION[event.entity_type];
+    if (!collection) return { success: false, error: `Cannot assign owner on '${event.entity_type}'` };
+    // Actually persist ownership via graph-core (was a success-reporting no-op).
+    const res = await internalFetch(`${GRAPH_CORE_URL}/${collection}/${event.entity_id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
+      body: JSON.stringify({ ownerId }),
+    });
+    if (!res.ok) return { success: false, error: `Owner assignment failed (${res.status})` };
+    return { success: true, result: `Owner assigned to ${ownerId}` };
   },
 
   async ai_score_lead(_config, event, tenantId) {
@@ -295,8 +350,21 @@ async function processEvent(event: CrmEvent) {
  * Start the workflow engine polling loop.
  * Polls crm_events for unprocessed events every 5 seconds.
  */
-export function startWorkflowEngine() {
+export async function startWorkflowEngine() {
+  // Resume from the durable cursor so events created during a deploy/crash
+  // window are not silently skipped. Falls back to now() only if the state row
+  // is somehow missing (first-ever boot before the migration seeded it).
   let lastProcessedAt = new Date().toISOString();
+  try {
+    const { rows } = await pool.query<{ last_processed_at: string }>(
+      `SELECT last_processed_at FROM workflow_engine_state WHERE id = TRUE`
+    );
+    if (rows[0]?.last_processed_at) {
+      lastProcessedAt = new Date(rows[0].last_processed_at).toISOString();
+    }
+  } catch (err) {
+    console.error("[workflow-engine] could not load cursor, starting from now():", err);
+  }
 
   const poll = async () => {
     try {
@@ -312,6 +380,11 @@ export function startWorkflowEngine() {
       for (const event of events as CrmEvent[]) {
         await processEvent(event);
         lastProcessedAt = (event as any).created_at;
+        // Persist the cursor after each event so a crash resumes cleanly.
+        await pool.query(
+          `UPDATE workflow_engine_state SET last_processed_at = $1, updated_at = NOW() WHERE id = TRUE`,
+          [lastProcessedAt]
+        ).catch((e) => console.error("[workflow-engine] cursor persist failed:", e.message));
       }
     } catch (err) {
       console.error("[workflow-engine] poll error:", err);

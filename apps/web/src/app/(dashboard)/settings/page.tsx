@@ -1587,6 +1587,9 @@ function BillingTab() {
   const [status, setStatus] = useState<{ plan?: string; subscriptionStatus?: string | null; periodEnd?: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [portalBusy, setPortalBusy] = useState(false);
+  // The billing portal endpoint is admin-only; only offer the button to admins
+  // so a manager doesn't get a misleading "not configured" 403.
+  const isAdmin = ["admin", "super_admin"].includes(getStoredUser()?.role ?? "");
 
   useEffect(() => {
     api.get("/api/v1/billing/status")
@@ -1623,10 +1626,12 @@ function BillingTab() {
                   {loading ? "Loading billing status…" : "No active subscription on file. Manage billing in the customer portal."}
                 </p>}
           </div>
-          <button onClick={openPortal} disabled={portalBusy}
-            className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50">
-            {portalBusy ? "Opening…" : "Manage billing"}
-          </button>
+          {isAdmin
+            ? <button onClick={openPortal} disabled={portalBusy}
+                className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50">
+                {portalBusy ? "Opening…" : "Manage billing"}
+              </button>
+            : <span className="text-xs text-muted-foreground">Contact a workspace admin to manage billing.</span>}
         </div>
         <p className="mt-4 text-xs text-muted-foreground">
           Payment methods, invoices, and plan changes are handled securely in the billing portal.

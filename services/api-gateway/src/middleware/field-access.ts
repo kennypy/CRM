@@ -11,6 +11,13 @@ interface FieldPerm {
   access_level: "hidden" | "read_only" | "read_write";
 }
 
+// Short-lived cache of (tenant,entity,role) → perms map. Field masking runs on
+// every non-admin read of the hot entities; without this each read pays a
+// field_permissions round-trip even when the tenant has configured nothing.
+// 30s TTL keeps admin permission changes near-live.
+const _permCache = new Map<string, { perms: Map<string, string>; exp: number }>();
+const _PERM_TTL_MS = 30_000;
+
 /**
  * Get field permissions for a role on an entity type.
  * Returns a map of field_name → access_level.
@@ -21,13 +28,67 @@ export async function getFieldPermissions(
   entityType: string,
   role: string
 ): Promise<Map<string, string>> {
+  const key = `${tenantId}:${entityType}:${role}`;
+  const hit = _permCache.get(key);
+  if (hit && hit.exp > Date.now()) return hit.perms;
+
   const { rows } = await pool.query<FieldPerm>(
     `SELECT field_name, access_level FROM field_permissions
      WHERE tenant_id = $1 AND entity_type = $2 AND role = $3`,
     [tenantId, entityType, role]
   );
 
-  return new Map(rows.map((r) => [r.field_name, r.access_level]));
+  const perms = new Map(rows.map((r) => [r.field_name, r.access_level]));
+  _permCache.set(key, { perms, exp: Date.now() + _PERM_TTL_MS });
+  return perms;
+}
+
+// Top-level keys in a composite payload that carry a known sub-entity, mapped to
+// the entity_type whose field_permissions govern them. Lets us mask nested data
+// (e.g. /companies/:id/detail → { company, contacts[], deals[], activities[] }).
+const NESTED_KEY_ENTITY: Record<string, string> = {
+  company: "company", companies: "company",
+  contact: "contact", contacts: "contact",
+  deal: "deal", deals: "deal",
+  activity: "activity", activities: "activity",
+};
+
+/**
+ * Recursively mask a response `data` payload for a role. The top-level node is
+ * masked with `primaryEntity`'s perms; any nested key that carries a known
+ * sub-entity is masked with THAT entity's perms. Handles both flat entities,
+ * arrays of entities, and composite detail wrappers. Admin bypass is the
+ * caller's responsibility.
+ */
+export async function maskResponseData(
+  data: unknown,
+  primaryEntity: string,
+  tenantId: string,
+  role: string
+): Promise<unknown> {
+  const cache = new Map<string, Map<string, string>>();
+  const permsFor = async (entity: string) => {
+    if (!cache.has(entity)) cache.set(entity, await getFieldPermissions(tenantId, entity, role));
+    return cache.get(entity)!;
+  };
+
+  const maskNode = async (node: unknown, entity: string, depth: number): Promise<unknown> => {
+    if (node == null || typeof node !== "object" || depth > 4) return node;
+    if (Array.isArray(node)) {
+      return Promise.all(node.map((el) => maskNode(el, entity, depth)));
+    }
+    const perms = await permsFor(entity);
+    const stripped = stripHiddenFields({ ...(node as Record<string, unknown>) }, perms) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(stripped)) {
+      const nested = NESTED_KEY_ENTITY[k];
+      if (nested && v && typeof v === "object") {
+        stripped[k] = await maskNode(v, nested, depth + 1);
+      }
+    }
+    return stripped;
+  };
+
+  return maskNode(data, primaryEntity, 0);
 }
 
 /**

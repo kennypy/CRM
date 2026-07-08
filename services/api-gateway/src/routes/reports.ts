@@ -24,6 +24,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, readPool } from "../db";
 import { requireCrmRead } from "../middleware/scope";
+import { requireRep, requireManager } from "../middleware/rbac";
 
 // ── QuerySpec types ───────────────────────────────────────────────────────────
 
@@ -464,7 +465,7 @@ export async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
 
 export async function reportsRoutes(server: FastifyInstance) {
   // ── POST /api/v1/reports/run ─────────────────────────────────────────────
-  server.post("/reports/run", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.post("/reports/run", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;
     const body = request.body as Record<string, unknown>;
     const rawSpec = body.spec ?? body; // frontend wraps in { spec } but accept either shape
@@ -499,7 +500,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/reports ─────────────────────────────────────────────────
-  server.post("/reports", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.post("/reports", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const b = request.body as Record<string, unknown>;
     const specParsed = QuerySpecSchema.safeParse(b.spec);
@@ -529,7 +530,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/reports/:id ────────────────────────────────────────────
-  server.patch("/reports/:id", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.patch("/reports/:id", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const b = request.body as Record<string, unknown>;
@@ -556,7 +557,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /api/v1/reports/:id ───────────────────────────────────────────
-  server.delete("/reports/:id", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.delete("/reports/:id", { preHandler: [requireManager, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     await pool.query(`DELETE FROM reports WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
@@ -564,7 +565,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/reports/:id/snapshot ───────────────────────────────────
-  server.post("/reports/:id/snapshot", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.post("/reports/:id/snapshot", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
 
@@ -621,7 +622,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/reports/:id/subscriptions ──────────────────────────────
-  server.post("/reports/:id/subscriptions", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.post("/reports/:id/subscriptions", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId, sub: userId } = request.user;
     const b = request.body as Record<string, unknown>;
@@ -641,7 +642,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /api/v1/reports/:id/subscriptions/:subId ─────────────────────
-  server.delete("/reports/:id/subscriptions/:subId", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.delete("/reports/:id/subscriptions/:subId", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { subId } = request.params as { id: string; subId: string };
     const { tenantId } = request.user;
     await pool.query(`DELETE FROM report_subscriptions WHERE id=$1 AND tenant_id=$2`, [subId, tenantId]);
@@ -661,7 +662,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/datasets ────────────────────────────────────────────────
-  server.post("/datasets", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.post("/datasets", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const b = request.body as Record<string, unknown>;
     const specParsed = QuerySpecSchema.safeParse(b.spec);
@@ -692,7 +693,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── PATCH /api/v1/datasets/:id ───────────────────────────────────────────
-  server.patch("/datasets/:id", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.patch("/datasets/:id", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     const b = request.body as Record<string, unknown>;
@@ -720,7 +721,7 @@ export async function reportsRoutes(server: FastifyInstance) {
   });
 
   // ── DELETE /api/v1/datasets/:id ──────────────────────────────────────────
-  server.delete("/datasets/:id", { preHandler: [requireCrmRead] }, async (request, reply) => {
+  server.delete("/datasets/:id", { preHandler: [requireManager, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
     await pool.query(`DELETE FROM report_datasets WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);

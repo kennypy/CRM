@@ -6,7 +6,7 @@
 
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { mintInternalToken } from "./internal-fetch";
-import { getFieldPermissions, stripHiddenFields } from "../middleware/field-access";
+import { maskResponseData } from "../middleware/field-access";
 
 export interface ProxyOptions {
   baseUrl: string;
@@ -110,13 +110,9 @@ export function createProxy(opts: ProxyOptions) {
           role && role !== "admin" && role !== "super_admin" &&
           parsed && typeof parsed === "object" && "data" in parsed && parsed.data
         ) {
-          const perms = await getFieldPermissions(tenantId, opts.maskEntity, role);
-          if (perms.size > 0) {
-            parsed.data = stripHiddenFields(
-              parsed.data as Record<string, unknown> | Record<string, unknown>[],
-              perms,
-            );
-          }
+          // Recursive, entity-aware masking: handles flat entities, arrays, and
+          // composite detail payloads (e.g. {company, contacts[], deals[]}).
+          parsed.data = await maskResponseData(parsed.data, opts.maskEntity, tenantId, role);
         }
 
         return reply.status(resp.status).type("application/json").send(parsed);

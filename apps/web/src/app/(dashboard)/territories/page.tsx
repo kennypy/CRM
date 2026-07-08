@@ -348,6 +348,9 @@ export default function TerritoriesPage() {
   const [regionFilter, setRegionFilter] = useState("All Regions");
   const [typeFilter, setTypeFilter] = useState<TerritoryType | "all">("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Territory create/edit/delete require manager+ on the server. Gate the UI to
+  // match so a rep isn't shown a Create button that silently 403s.
+  const perms = usePermissions();
   const [expandedRegions, setExpandedRegions] = useState<Set<string>>(new Set(REGIONS));
   const [expandedSubRegions, setExpandedSubRegions] = useState<Set<string>>(new Set());
 
@@ -435,44 +438,37 @@ export default function TerritoriesPage() {
     }) => {
       try {
         const res = await api.post("/api/v1/territories", data);
-        const json = res.ok ? await res.json() : null;
-        if (json?.data) {
-          setTerritories((prev) => [...prev, json.data]);
+        if (!res.ok) {
+          // Surface the failure instead of silently pretending it worked (and
+          // never fabricate a local territory that was never persisted).
+          alert(res.status === 403
+            ? "Only managers and admins can create territories."
+            : "Could not create the territory. Please try again.");
+          return;
         }
+        const json = await res.json();
+        if (json?.data) setTerritories((prev) => [...prev, json.data]);
+        setShowCreateModal(false);
       } catch {
-        // fallback: add locally
-        const newTerritory: Territory = {
-          id: `t${Date.now()}`,
-          name: data.name,
-          region: data.region,
-          subRegion: data.region,
-          type: data.type,
-          owner: data.owner,
-          ownerId: `u${Date.now()}`,
-          repCount: 0,
-          accountCount: 0,
-          pipelineValue: 0,
-          quota: data.quota,
-          revenue: 0,
-          winRate: 0,
-          accountCoverage: 0,
-          attainment: 0,
-          color: "gray",
-        };
-        setTerritories((prev) => [...prev, newTerritory]);
+        alert("Could not reach the server to create the territory.");
       }
-      setShowCreateModal(false);
     },
     []
   );
 
   const handleDelete = useCallback(async (id: string) => {
     try {
-      await api.delete(`/territories/${id}`);
+      const res = await api.delete(`/territories/${id}`);
+      if (!res.ok) {
+        alert(res.status === 403
+          ? "Only managers and admins can delete territories."
+          : "Could not delete the territory.");
+        return;
+      }
+      setTerritories((prev) => prev.filter((t) => t.id !== id));
     } catch {
-      // continue with local removal
+      alert("Could not reach the server to delete the territory.");
     }
-    setTerritories((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const toggleRule = useCallback((id: string) => {
@@ -520,13 +516,15 @@ export default function TerritoriesPage() {
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             Refresh
           </button>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Create Territory
-          </button>
+          {perms.isManager && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Create Territory
+            </button>
+          )}
         </div>
       </div>
 
