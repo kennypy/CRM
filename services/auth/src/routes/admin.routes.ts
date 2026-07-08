@@ -15,6 +15,8 @@ import {
   listChildTenants,
   listTenantUsers,
   setTenantSeatLimit,
+  listOwnerSeatRequests,
+  resolveOwnerSeatRequest,
   toPublicUser,
   findSuperAdminById,
   tenantsShareHierarchy,
@@ -228,6 +230,33 @@ export async function adminRoutes(server: FastifyInstance) {
     const tenant = await getTenantDetail(request.params.id);
     return reply.send({ success: true, data: tenant });
   });
+
+  /** GET /admin/seat-requests — pending seat requests routed to the owner. */
+  server.get("/seat-requests", async (_request, reply) => {
+    const requests = await listOwnerSeatRequests();
+    return reply.send({ success: true, data: requests });
+  });
+
+  /** POST /admin/seat-requests/:id/:action — approve | decline a seat request.
+   *  Approving adds the requested seats to the workspace. */
+  server.post<{ Params: { id: string; action: string } }>(
+    "/seat-requests/:id/:action",
+    async (request, reply) => {
+      const { id, action } = request.params;
+      if (action !== "approve" && action !== "decline") {
+        return reply.status(400).send({ success: false, error: { code: "BAD_ACTION" } });
+      }
+      const ownerId = (request as any).superAdmin.id as string;
+      const result = await resolveOwnerSeatRequest(id, action === "approve", ownerId);
+      if (!result) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: "NOT_FOUND", message: "Request not found or already resolved" },
+        });
+      }
+      return reply.send({ success: true, data: result });
+    },
+  );
 
   // ── Sub-workspaces ──────────────────────────────────────────────────────────
 

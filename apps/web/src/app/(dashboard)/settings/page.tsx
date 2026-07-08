@@ -1583,6 +1583,141 @@ function IntegrationsTab() {
 
 // ── Tab: Billing ───────────────────────────────────────────────────────────────
 
+// ── Self-serve "Add seats" modal: agree to cost, route to finance, or ask owner.
+function AddSeatsModal({ onClose, onApplied }: { onClose: () => void; onApplied: () => void }) {
+  const [pricing, setPricing] = useState<{ unitPriceCents: number; currency: string; plan: string; seatsUsed: number; seatLimit: number } | null>(null);
+  const [seats, setSeats] = useState(1);
+  const [financeEmail, setFinanceEmail] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ kind: string; link?: string } | null>(null);
+
+  useEffect(() => {
+    api.get("/api/v1/billing/seat-pricing")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setPricing(j?.data ?? null))
+      .catch(() => setPricing(null));
+  }, []);
+
+  const fmtMoney = (cents: number, currency: string) =>
+    new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100);
+  const monthly = pricing ? seats * pricing.unitPriceCents : 0;
+
+  const submit = async (decision: "self_approve" | "finance" | "owner") => {
+    setError(null);
+    if (decision === "finance" && !financeEmail.trim()) { setError("Enter your finance director's email."); return; }
+    setBusy(true);
+    try {
+      const body: Record<string, unknown> = { seats, decision };
+      if (decision === "finance") body.financeEmail = financeEmail.trim();
+      if (note.trim()) body.note = note.trim();
+      const r = await api.post("/api/v1/billing/seats", body);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setError(j?.error?.message ?? "Could not process the request."); return; }
+      if (decision === "self_approve") { onApplied(); setDone({ kind: "self_approve" }); }
+      else if (decision === "finance") {
+        const link = j?.data?.approvalPath ? `${window.location.origin}${j.data.approvalPath}` : undefined;
+        setDone({ kind: "finance", link });
+      } else { setDone({ kind: "owner" }); }
+    } catch { setError("Network error — please try again."); }
+    finally { setBusy(false); }
+  };
+
+  const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <h2 className="font-semibold">Add seats</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {done ? (
+            <div className="space-y-3 text-sm">
+              {done.kind === "self_approve" && (
+                <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-3 text-green-700">
+                  <p className="font-medium">Seats added.</p>
+                  <p className="mt-1">Your monthly bill increases by {pricing ? fmtMoney(monthly, pricing.currency) : ""}. You can invite {seats} more user(s) now.</p>
+                </div>
+              )}
+              {done.kind === "finance" && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-blue-700 space-y-2">
+                  <p className="font-medium">Approval request created.</p>
+                  <p>We&apos;ve routed this to {financeEmail}. Once approved, the seats are added automatically.</p>
+                  {done.link && (
+                    <div>
+                      <p className="text-xs">Approval link (share if the email doesn&apos;t arrive):</p>
+                      <input readOnly value={done.link} onClick={(e) => (e.target as HTMLInputElement).select()} className={cn(inputCls, "mt-1 text-xs")} />
+                    </div>
+                  )}
+                </div>
+              )}
+              {done.kind === "owner" && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-blue-700">
+                  <p className="font-medium">Request sent to your provider.</p>
+                  <p className="mt-1">They&apos;ll review your request for {seats} additional seat(s). You&apos;ll be able to invite users once it&apos;s approved.</p>
+                </div>
+              )}
+              <button onClick={onClose} className="w-full rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">Close</button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">How many seats?</label>
+                <input type="number" min={1} max={1000} value={seats}
+                  onChange={(e) => setSeats(Math.max(1, parseInt(e.target.value) || 1))} className={inputCls} />
+              </div>
+
+              <div className="rounded-lg bg-muted/50 px-3 py-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Cost per seat</span>
+                  <span>{pricing ? `${fmtMoney(pricing.unitPriceCents, pricing.currency)}/mo` : "…"}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between font-semibold">
+                  <span>Added to your monthly bill</span>
+                  <span>{pricing ? `${fmtMoney(monthly, pricing.currency)}/mo` : "…"}</span>
+                </div>
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" />{error}
+                </div>
+              )}
+
+              <div className="space-y-2 pt-1">
+                <button onClick={() => submit("self_approve")} disabled={busy}
+                  className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                  Approve &amp; add now
+                </button>
+
+                <div className="rounded-lg border p-3 space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Need sign-off first?</p>
+                  <input type="email" placeholder="Finance director's email" value={financeEmail}
+                    onChange={(e) => setFinanceEmail(e.target.value)} className={inputCls} />
+                  <button onClick={() => submit("finance")} disabled={busy}
+                    className="w-full rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60">
+                    Send to finance for approval
+                  </button>
+                </div>
+
+                <button onClick={() => submit("owner")} disabled={busy}
+                  className="w-full rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-60">
+                  Decline — request seats from provider instead
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BillingTab() {
   const [status, setStatus] = useState<{
     plan?: string;
@@ -1604,6 +1739,15 @@ function BillingTab() {
       .catch(() => setStatus(null))
       .finally(() => setLoading(false));
   }, []);
+
+  const [showAddSeats, setShowAddSeats] = useState(false);
+
+  const reloadStatus = () => {
+    api.get("/api/v1/billing/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setStatus(j?.data ?? null))
+      .catch(() => {});
+  };
 
   const openPortal = async () => {
     setPortalBusy(true);
@@ -1664,10 +1808,22 @@ function BillingTab() {
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
             {atSeatCap
-              ? "All seats are in use. To add more users, contact your provider to increase your seat limit."
+              ? "All seats are in use. Add more below to keep inviting users."
               : `${Math.max(0, seatLimit - (seatsUsed ?? 0))} seat(s) available for new users.`}
           </p>
+          {isAdmin && (
+            <button
+              onClick={() => setShowAddSeats(true)}
+              className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              Add seats
+            </button>
+          )}
         </div>
+      )}
+
+      {showAddSeats && (
+        <AddSeatsModal onClose={() => setShowAddSeats(false)} onApplied={reloadStatus} />
       )}
 
       {/* Usage metering and stored payment method are not yet wired to real data —

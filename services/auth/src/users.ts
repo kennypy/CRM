@@ -4,6 +4,7 @@
  */
 
 import bcrypt from "bcryptjs";
+import { createHash } from "crypto";
 import { pool } from "./db";
 import type { User, UserRole, ROLE_SCOPES } from "@nexcrm/shared-types";
 import { ROLE_SCOPES as SCOPES_MAP } from "@nexcrm/shared-types";
@@ -425,6 +426,93 @@ export async function setTenantSeatLimit(
   }
   await pool.query(`UPDATE tenants SET seat_limit = $2 WHERE id = $1`, [tenantId, seatLimit]);
   return { ok: true, seatsUsed };
+}
+
+// ── Seat requests ────────────────────────────────────────────────────────────
+
+/** Raise a tenant's seat override by `seats` (over the current effective cap). */
+async function bumpTenantSeats(tenantId: string, seats: number): Promise<number> {
+  const { rows } = await pool.query(
+    `UPDATE tenants t
+        SET seat_limit = COALESCE(t.seat_limit, pe.seat_limit, 5) + $2
+       FROM (SELECT plan FROM tenants WHERE id = $1) src
+       LEFT JOIN plan_entitlements pe ON pe.plan = src.plan
+      WHERE t.id = $1
+      RETURNING t.seat_limit`,
+    [tenantId, seats],
+  );
+  return rows[0]?.seat_limit ?? 0;
+}
+
+/** Look up a pending finance seat request by its raw token (public approval). */
+export async function getSeatRequestByToken(rawToken: string) {
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  const { rows } = await pool.query(
+    `SELECT sr.id, sr.seats, sr.unit_price_cents, sr.currency, sr.status,
+            sr.finance_email, sr.note, sr.requested_by_name, sr.created_at,
+            t.name AS tenant_name
+       FROM seat_requests sr
+       JOIN tenants t ON t.id = sr.tenant_id
+      WHERE sr.token_hash = $1 AND sr.decision = 'finance'`,
+    [tokenHash],
+  );
+  return rows[0] ?? null;
+}
+
+/** Approve/decline a finance seat request via its token. On approval the seats
+ *  are added to the workspace. Returns null if the token is unknown/spent. */
+export async function resolveSeatRequestByToken(rawToken: string, approve: boolean) {
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  const { rows } = await pool.query(
+    `SELECT id, tenant_id, seats, status FROM seat_requests
+      WHERE token_hash = $1 AND decision = 'finance'`,
+    [tokenHash],
+  );
+  const req = rows[0];
+  if (!req || req.status !== "pending") return null;
+
+  if (approve) await bumpTenantSeats(req.tenant_id, req.seats);
+  await pool.query(
+    `UPDATE seat_requests
+        SET status = $2, resolved_by = 'finance', resolved_at = NOW()
+      WHERE id = $1`,
+    [req.id, approve ? "approved" : "declined"],
+  );
+  return { ok: true, approved: approve, seats: req.seats };
+}
+
+/** Pending seat requests routed to the platform owner, across all tenants. */
+export async function listOwnerSeatRequests() {
+  const { rows } = await pool.query(
+    `SELECT sr.id, sr.seats, sr.unit_price_cents, sr.currency, sr.note,
+            sr.requested_by_name, sr.created_at,
+            sr.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug
+       FROM seat_requests sr
+       JOIN tenants t ON t.id = sr.tenant_id
+      WHERE sr.decision = 'owner' AND sr.status = 'pending'
+      ORDER BY sr.created_at ASC`,
+  );
+  return rows;
+}
+
+/** Owner approves/declines a seat request from the provider console. */
+export async function resolveOwnerSeatRequest(id: string, approve: boolean, ownerId: string) {
+  const { rows } = await pool.query(
+    `SELECT id, tenant_id, seats, status FROM seat_requests
+      WHERE id = $1 AND decision = 'owner'`,
+    [id],
+  );
+  const req = rows[0];
+  if (!req || req.status !== "pending") return null;
+
+  if (approve) await bumpTenantSeats(req.tenant_id, req.seats);
+  await pool.query(
+    `UPDATE seat_requests
+        SET status = $2, resolved_by = $3, resolved_at = NOW()
+      WHERE id = $1`,
+    [id, approve ? "approved" : "declined", ownerId],
+  );
+  return { ok: true, approved: approve };
 }
 
 /** Update tenant settings (merges into the existing JSONB). */

@@ -2,8 +2,21 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Building2, Users, ArrowRight, Activity, Brain, Mail, Phone } from "lucide-react";
+import { Building2, Users, ArrowRight, Activity, Brain, Mail, Phone, KeyRound, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
+
+interface SeatRequest {
+  id: string;
+  seats: number;
+  unit_price_cents: number;
+  currency: string;
+  note: string | null;
+  requested_by_name: string | null;
+  tenant_id: string;
+  tenant_name: string;
+  tenant_slug: string;
+  created_at: string;
+}
 
 interface TenantSummary {
   id: string;
@@ -35,7 +48,14 @@ function formatNumber(n: number): string {
 export default function AdminDashboardPage() {
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
   const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
+  const [seatRequests, setSeatRequests] = useState<SeatRequest[]>([]);
+  const [resolvingSeat, setResolvingSeat] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const loadSeatRequests = () =>
+    api.get("/api/admin/seat-requests").then(async (res) => {
+      if (res.ok) setSeatRequests((await res.json()).data ?? []);
+    }).catch(() => {});
 
   useEffect(() => {
     const loadTenants = api.get("/api/admin/tenants").then(async (res) => {
@@ -46,8 +66,18 @@ export default function AdminDashboardPage() {
       if (res.ok) setPlatformStats((await res.json()).data ?? null);
     }).catch(() => {});
 
-    Promise.all([loadTenants, loadStats]).finally(() => setLoading(false));
+    Promise.all([loadTenants, loadStats, loadSeatRequests()]).finally(() => setLoading(false));
   }, []);
+
+  const resolveSeat = async (id: string, action: "approve" | "decline") => {
+    setResolvingSeat(id);
+    const res = await api.post(`/api/admin/seat-requests/${id}/${action}`, {});
+    if (res.ok) setSeatRequests((rs) => rs.filter((r) => r.id !== id));
+    setResolvingSeat(null);
+  };
+
+  const fmtSeatMoney = (cents: number, currency: string) =>
+    new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100);
 
   const totalUsers = tenants.reduce((sum, t) => sum + t.userCount, 0);
   const topLevel = tenants.filter(t => !t.parentTenantId);
@@ -144,6 +174,47 @@ export default function AdminDashboardPage() {
               </div>
             )}
           </div>
+
+          {seatRequests.length > 0 && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50/60 dark:bg-amber-950/20">
+              <div className="flex items-center gap-2 border-b border-amber-200 px-5 py-4">
+                <KeyRound className="h-4 w-4 text-amber-600" />
+                <h2 className="font-semibold">Seat requests ({seatRequests.length})</h2>
+              </div>
+              <div className="divide-y divide-amber-200">
+                {seatRequests.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">
+                        {r.tenant_name} — <span className="text-primary">+{r.seats} seat{r.seats !== 1 ? "s" : ""}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {r.requested_by_name ? `${r.requested_by_name} · ` : ""}
+                        {fmtSeatMoney(r.unit_price_cents * r.seats, r.currency)}/mo
+                        {r.note ? ` · "${r.note}"` : ""}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        onClick={() => resolveSeat(r.id, "approve")}
+                        disabled={resolvingSeat === r.id}
+                        className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                      >
+                        <Check className="h-3.5 w-3.5" /> Approve
+                      </button>
+                      <button
+                        onClick={() => resolveSeat(r.id, "decline")}
+                        disabled={resolvingSeat === r.id}
+                        className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
+                      >
+                        <X className="h-3.5 w-3.5" /> Decline
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="rounded-xl border bg-card">
             <div className="flex items-center justify-between border-b px-5 py-4">

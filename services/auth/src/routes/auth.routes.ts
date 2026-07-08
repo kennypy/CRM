@@ -13,6 +13,8 @@ import {
   toPublicUser,
   toPublicTenant,
   scopesForRole,
+  getSeatRequestByToken,
+  resolveSeatRequestByToken,
 } from "../users";
 import {
   createRefreshToken,
@@ -358,6 +360,43 @@ export async function authRoutes(server: FastifyInstance) {
     server.log.info({ userId: tokenRow.user_id }, "auth.password_reset");
 
     return reply.send({ success: true, data: { message: "Password updated. Please log in." } });
+  });
+
+  /**
+   * POST /auth/seat-approval
+   * Public, token-gated. Used by a finance director who received a seat-approval
+   * link. action=lookup returns the request details; approve/decline resolves it
+   * (approve adds the requested seats to the workspace). No login required — the
+   * unguessable token is the credential, same model as accept-invite.
+   */
+  server.post("/seat-approval", async (request, reply) => {
+    const body = z.object({
+      token:  z.string().min(1),
+      action: z.enum(["lookup", "approve", "decline"]),
+    }).safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: body.error.issues[0].message },
+      });
+    }
+
+    if (body.data.action === "lookup") {
+      const req = await getSeatRequestByToken(body.data.token);
+      if (!req) {
+        return reply.status(404).send({ success: false, error: { code: "INVALID_TOKEN", message: "This approval link is invalid." } });
+      }
+      return reply.send({ success: true, data: req });
+    }
+
+    const result = await resolveSeatRequestByToken(body.data.token, body.data.action === "approve");
+    if (!result) {
+      return reply.status(409).send({
+        success: false,
+        error: { code: "ALREADY_RESOLVED", message: "This request no longer needs a decision." },
+      });
+    }
+    return reply.send({ success: true, data: result });
   });
 
   /**
