@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomInt } from "crypto";
 
-const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
+import { AUTH_SERVICE_URL } from "../_env";
+
 
 /**
  * POST /api/start
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
   // Register via auth service
   let upstream: Response;
   try {
-    upstream = await fetch(`${AUTH_URL}/auth/register`, {
+    upstream = await fetch(`${AUTH_SERVICE_URL}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
     // If slug is taken, retry with a random suffix
     if (upstream.status === 409) {
       return retryWithRandomSlug(
-        AUTH_URL,
+        AUTH_SERVICE_URL,
         tenantName,
         slugBase,
         firstName,

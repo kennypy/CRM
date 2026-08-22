@@ -2,12 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslations } from "next-intl";
-import { formatRelativeTime, cn } from "@/lib/utils";
+import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useTenant } from "@/lib/tenant-context";
 import { usePermissions } from "@/lib/permissions";
-import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
-import type { ColDef } from "@/components/ui/column-picker";
+import { ColumnPicker, useColumnPrefs, type ColDef } from "@nexcrm/ui-components";
 import { OwnerPicker } from "@/components/ui/owner-picker";
 import { CampaignContacts } from "@/components/marketing/campaign-contacts";
 import {
@@ -167,7 +166,7 @@ export default function MarketingPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const fmt = (n: number) => new Intl.NumberFormat(tenant?.locale ?? "en-US").format(n);
   const fmtCurrency = (n: number, currency = "USD") =>
-    new Intl.NumberFormat(tenant?.locale ?? "en-US", { style: "currency", currency }).format(n);
+    formatCurrency(n, currency, false, tenant?.locale ?? "en-US");
 
   // Create campaign form
   const [form, setForm] = useState({

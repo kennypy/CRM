@@ -10,7 +10,7 @@ import {
   Trash2, Archive,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 interface Notification {
   id: string;
@@ -36,18 +36,6 @@ const TYPE_CONFIG: Record<string, { icon: React.FC<{ className?: string }>; colo
   meeting:        { icon: Calendar,     color: "text-violet-600", bg: "bg-violet-100" },
   security:       { icon: Shield,       color: "text-red-600",    bg: "bg-red-100" },
 };
-
-function formatTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString();
-}
 
 export default function NotificationsPage() {
   const t = useTranslations("notifications");
@@ -221,7 +209,7 @@ export default function NotificationsPage() {
                       {n.priority === "high" && (
                         <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">Priority</span>
                       )}
-                      <span className="text-xs text-muted-foreground">{formatTime(n.created_at)}</span>
+                      <span className="text-xs text-muted-foreground">{formatRelativeTime(n.created_at)}</span>
                     </div>
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{n.body}</p>

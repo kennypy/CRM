@@ -7,162 +7,22 @@ import {
   ChevronDown, ChevronUp, Loader2, RefreshCw, Camera, X,
   Check, Search, Clock, Rows3,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDate as fmtDate, formatRelativeTime as fmtRelative } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useTranslations } from "next-intl";
 
+import {
+  SOURCE_LABELS,
+  SOURCE_FIELDS,
+  JOIN_SUGGESTIONS as SUGGESTED_JOINS,
+  PERIOD_OPTIONS,
+  FILTER_OPS,
+  type SourceId,
+  type FilterRow,
+  type QueryResult,
+} from "@/lib/report-schema";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-type SourceId = "activities" | "deals" | "companies" | "contacts" | "quotes" | "users";
-
-const SOURCE_LABELS: Record<SourceId, string> = {
-  activities: "Activities",
-  deals:      "Opportunities",
-  companies:  "Companies",
-  contacts:   "Contacts",
-  quotes:     "Quotes",
-  users:      "Users",
-};
-
-const SOURCE_FIELDS: Record<SourceId, { key: string; label: string }[]> = {
-  activities: [
-    { key: "id",               label: "Activity ID" },
-    { key: "type",             label: "Type" },
-    { key: "direction",        label: "Direction" },
-    { key: "subject",          label: "Subject" },
-    { key: "summary",          label: "Summary" },
-    { key: "sentiment",        label: "Sentiment" },
-    { key: "duration_seconds", label: "Duration seconds" },
-    { key: "occurred_at",      label: "Created date" },
-    { key: "deal_id",          label: "Deal ID" },
-    { key: "company_id",       label: "Company ID" },
-    { key: "source",           label: "Source" },
-    { key: "created_at",       label: "Created date" },
-    { key: "created_by",       label: "Created By" },
-    { key: "related_to",       label: "Related To" },
-  ],
-  deals: [
-    { key: "id",                        label: "Deal ID" },
-    { key: "name",                      label: "Name" },
-    { key: "stage",                     label: "Stage" },
-    { key: "value",                     label: "Value" },
-    { key: "currency",                  label: "Currency" },
-    { key: "close_date",                label: "Close Date" },
-    { key: "company_id",                label: "Company ID" },
-    { key: "owner_id",                  label: "Owner ID" },
-    { key: "reality_score",             label: "Reality Score" },
-    { key: "created_at",                label: "Created date" },
-    { key: "updated_at",                label: "Last update date" },
-    { key: "created_by",                label: "Created by" },
-    { key: "line_item",                 label: "Line Item" },
-    { key: "value_usd",                 label: "Value ($)" },
-    { key: "value_eur",                 label: "Value (\u20ac) Converted" },
-    { key: "main_poc",                  label: "Main POC" },
-    { key: "last_opportunity_activity", label: "Last opportunity Activity" },
-  ],
-  companies: [
-    { key: "id",                    label: "Company ID" },
-    { key: "name",                  label: "Name" },
-    { key: "domain",                label: "Domain" },
-    { key: "city",                  label: "City" },
-    { key: "country",               label: "Country" },
-    { key: "sub_region",            label: "Sub Region" },
-    { key: "region",                label: "Region" },
-    { key: "created_at",            label: "Created Date" },
-    { key: "updated_at",            label: "Last update date" },
-    { key: "created_by",            label: "Created by" },
-    { key: "opportunities_name",    label: "Opportunity Name" },
-    { key: "last_company_activity", label: "Last Company Activity" },
-    { key: "linked_url",            label: "LinkedIn URL" },
-    { key: "industry",              label: "Industry" },
-    { key: "sub_industry",          label: "Sub Industry" },
-    { key: "revenue",               label: "Revenue ($)" },
-    { key: "employees",             label: "Employees" },
-    { key: "segment",               label: "Segment" },
-  ],
-  contacts: [
-    { key: "id",            label: "Contact ID" },
-    { key: "firstName",     label: "First Name" },
-    { key: "lastName",      label: "Last Name" },
-    { key: "fullName",      label: "Full Name" },
-    { key: "email",         label: "email" },
-    { key: "title",         label: "Title" },
-    { key: "seniority",     label: "Seniority" },
-    { key: "isLead",        label: "Previous Lead" },
-    { key: "created_at",    label: "Created date" },
-    { key: "updated_at",    label: "Last update date" },
-    { key: "created_by",    label: "Created by" },
-    { key: "last_activity", label: "Last Contact Activity" },
-  ],
-  quotes: [
-    { key: "id",           label: "Quote ID" },
-    { key: "quote_number", label: "Quote Number" },
-    { key: "title",        label: "Title" },
-    { key: "status",       label: "Status" },
-    { key: "company_name", label: "Company Name" },
-    { key: "contact_name", label: "Contact Name" },
-    { key: "total",        label: "Total" },
-    { key: "subtotal",     label: "Subtotal" },
-    { key: "currency",     label: "Currency" },
-    { key: "valid_until",  label: "Valid Until" },
-    { key: "created_at",   label: "Created At" },
-    { key: "updated_at",   label: "Updated At" },
-    { key: "created_by",   label: "Created By" },
-    { key: "related_to",   label: "Related To" },
-  ],
-  users: [
-    { key: "id",            label: "User ID" },
-    { key: "first_name",    label: "First Name" },
-    { key: "last_name",     label: "Last Name" },
-    { key: "email",         label: "email" },
-    { key: "role",          label: "Role" },
-    { key: "can_quote",     label: "Can Quote" },
-    { key: "country",       label: "Country" },
-    { key: "timezone",      label: "Timezone" },
-    { key: "language",      label: "language" },
-    { key: "phone",         label: "Phone" },
-    { key: "twilio_number", label: "Twilio Number" },
-  ],
-};
-
-const SUGGESTED_JOINS = [
-  { from: "activities" as SourceId, to: "deals"     as SourceId, label: "Activity → Deal",    on: { left: "deal_id",    right: "id" } },
-  { from: "activities" as SourceId, to: "companies" as SourceId, label: "Activity → Company", on: { left: "company_id", right: "id" } },
-  { from: "deals"      as SourceId, to: "companies" as SourceId, label: "Deal → Company",     on: { left: "company_id", right: "id" } },
-  { from: "quotes"     as SourceId, to: "contacts"  as SourceId, label: "Quote → Contact",    on: { left: "contact_id", right: "id" } },
-  { from: "quotes"     as SourceId, to: "deals"     as SourceId, label: "Quote → Deal",       on: { left: "deal_id",    right: "id" } },
-];
-
-const PERIOD_OPTIONS = [
-  { value: "",              label: "All time" },
-  { value: "last_24_hours", label: "Last 24 hours" },
-  { value: "last_7_days",   label: "Last 7 days" },
-  { value: "last_30_days",  label: "Last 30 days" },
-  { value: "last_90_days",  label: "Last 90 days" },
-  { value: "last_year",     label: "Last year" },
-  { value: "custom",        label: "Custom…" },
-];
-
-const FILTER_OPS = [
-  { value: "eq",           label: "=" },
-  { value: "neq",          label: "≠" },
-  { value: "contains",     label: "contains" },
-  { value: "not_contains", label: "not contains" },
-  { value: "gt",           label: ">" },
-  { value: "gte",          label: "≥" },
-  { value: "lt",           label: "<" },
-  { value: "lte",          label: "≤" },
-  { value: "is_null",      label: "is empty" },
-  { value: "not_null",     label: "is not empty" },
-];
-
-interface FilterRow {
-  id:     string;
-  source: SourceId;
-  field:  string;
-  op:     string;
-  value:  string;
-}
 
 interface SavedReport {
   id:          string;
@@ -174,35 +34,12 @@ interface SavedReport {
   lastSnapshot?: { taken_at: string; row_count: number } | null;
 }
 
-interface QueryResult {
-  rows:     Record<string, unknown>[];
-  columns:  string[];
-  rowCount: number;
-}
-
 interface SubscribeModalState {
   reportId:   string;
   reportName: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDate(iso: string | null | undefined) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function fmtRelative(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return days < 7 ? `${days}d ago` : fmtDate(iso);
-}
 
 function downloadCSV(columns: string[], rows: Record<string, unknown>[], filename = "report.csv") {
   const header = columns.join(",");

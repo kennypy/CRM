@@ -9,6 +9,8 @@
  * credentials: "include" ensures the HttpOnly cookie is sent on every request.
  */
 
+import { clearAuth } from "./auth";
+
 async function apiFetch(
   path: string,
   options: RequestInit = {}
@@ -42,12 +44,7 @@ async function apiFetch(
     if (typeof window !== "undefined") {
       // Clear stale cookies so the middleware does not redirect back to "/"
       // when we land on /login — that would create an infinite redirect loop.
-      try {
-        await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-      } catch {
-        // Best-effort — proceed to login regardless
-      }
-      localStorage.removeItem("nexcrm_user");
+      await clearAuth();
       window.location.replace(
         `/login?next=${encodeURIComponent(window.location.pathname)}`
       );

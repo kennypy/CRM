@@ -10,7 +10,7 @@ import {
   Settings, Bell, ChevronDown, LogOut, User, Search,
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
   Headphones, Target, Globe, GraduationCap, ShieldCheck,
-  Cog, LineChart, MailPlus, ShieldAlert, Store, Megaphone,
+  Cog, LineChart, ShieldAlert, Store, Megaphone,
   ScrollText, BookOpen, CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,6 @@ const MORE_NAV = [
   { href: "/tasks",        icon: CheckSquare,  labelKey: "tasks"          },
   { href: "/scheduler",    icon: CalendarClock, labelKey: "scheduler"     },
   { href: "/quotes",       icon: FileText,     labelKey: "quotes"         },
-  { href: "/templates",    icon: MailPlus,      labelKey: "templates"     },
   { href: "/reports",      icon: BarChart3,    labelKey: "reports"        },
   { href: "/insights",     icon: LineChart,     labelKey: "insights"      },
   { href: "/forecasting",  icon: Target,        labelKey: "forecasting"   },

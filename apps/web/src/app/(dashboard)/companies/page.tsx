@@ -8,8 +8,7 @@ import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { AddCompanyModal } from "@/components/modals/add-company-modal";
 import { EditCompanyModal } from "@/components/modals/edit-company-modal";
-import { ColumnPicker, useColumnPrefs } from "@/components/ui/column-picker";
-import type { ColDef } from "@/components/ui/column-picker";
+import { ColumnPicker, useColumnPrefs, type ColDef } from "@nexcrm/ui-components";
 import {
   Building2, Search, Plus, RefreshCw, AlertCircle,
   Globe, ChevronLeft, ChevronRight, Briefcase, Zap, Pencil, Trash2,

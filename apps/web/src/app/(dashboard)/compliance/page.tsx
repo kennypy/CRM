@@ -2,7 +2,7 @@
 
 import { PreviewGate } from "@/components/layout/preview-gate";
 import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { useTranslations } from "next-intl";
@@ -168,12 +168,6 @@ const DEMO_RETENTION_POLICIES: RetentionPolicy[] = [
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
-  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
-  return `${(bytes / 1_000).toFixed(1)} KB`;
-}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {

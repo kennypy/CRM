@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Building2, Users, ArrowRight, Activity, Brain, Mail, Phone } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatNumber } from "@/lib/utils";
 
 interface TenantSummary {
   id: string;
@@ -24,12 +25,6 @@ interface PlatformStats {
   emailsSent: number;
   callsMade: number;
   storageBytes: number;
-}
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toString();
 }
 
 export default function AdminDashboardPage() {

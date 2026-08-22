@@ -9,7 +9,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { accessCookieHeader, refreshCookieHeader, clearCookieHeaders } from "../_cookies";
 
-const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
+import { AUTH_SERVICE_URL } from "../../_env";
+
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("session");
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
   let tokens: { accessToken: string; refreshToken: string };
   try {
     // Server-to-server call — auth service is internal, not accessible from the internet
-    const res = await fetch(`${AUTH_URL}/auth/oauth-session/${sessionId}`);
+    const res = await fetch(`${AUTH_SERVICE_URL}/auth/oauth-session/${sessionId}`);
     if (!res.ok) {
       return NextResponse.redirect(new URL("/login?error=oauth_failed", request.url));
     }

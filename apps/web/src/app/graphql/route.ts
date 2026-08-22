@@ -15,18 +15,13 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import {
-  ACCESS_COOKIE,
-  REFRESH_COOKIE,
-  accessCookieHeader,
-  refreshCookieHeader,
-  clearCookieHeaders,
-} from "../api/auth/_cookies";
 
-const GATEWAY_URL = process.env.API_GATEWAY_URL ?? "http://localhost:4000";
-const AUTH_URL    = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
+import { API_GATEWAY_URL } from "../api/_env";
+import { proxyWithAuth } from "../api/_proxy";
 
-const UPSTREAM = `${GATEWAY_URL}/graphql`;
+
+
+const UPSTREAM = `${API_GATEWAY_URL}/graphql`;
 
 /**
  * Best-effort detection of a GraphQL mutation in a request body.
@@ -78,84 +73,7 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  let accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
-
-  if (!accessToken) {
-    const refreshed = await tryRefresh(request.cookies.get(REFRESH_COOKIE)?.value);
-    if (!refreshed) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    accessToken = refreshed.accessToken;
-  }
-
-  const upstream = await callGateway(accessToken, bodyText);
-
-  // Silent token refresh on 401 — one retry.
-  if (upstream.status === 401) {
-    const refreshed = await tryRefresh(request.cookies.get(REFRESH_COOKIE)?.value);
-    if (!refreshed) {
-      const resp = NextResponse.json(
-        { error: "Session expired — please log in again" },
-        { status: 401 }
-      );
-      for (const h of clearCookieHeaders()) resp.headers.append("Set-Cookie", h);
-      return resp;
-    }
-    const retried = await callGateway(refreshed.accessToken, bodyText);
-    return buildResponse(retried, refreshed);
-  }
-
-  return buildResponse(upstream);
-}
-
-/** Forward the GraphQL request to the gateway with the provided Bearer token. */
-async function callGateway(accessToken: string, body: string): Promise<Response> {
-  return fetch(UPSTREAM, {
-    method: "POST",
-    headers: {
-      "Content-Type":  "application/json",
-      "Authorization": `Bearer ${accessToken}`,
-    },
-    body,
-  });
-}
-
-/** Exchange a refresh token for new tokens via the auth service. */
-async function tryRefresh(
-  refreshToken: string | undefined
-): Promise<{ accessToken: string; refreshToken: string } | null> {
-  if (!refreshToken) return null;
-  try {
-    const resp = await fetch(`${AUTH_URL}/auth/refresh`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ refreshToken }),
-    });
-    if (!resp.ok) return null;
-    const data = (await resp.json()) as Record<string, unknown>;
-    const payload = (data.data ?? data) as { accessToken: string; refreshToken: string };
-    return payload.accessToken ? payload : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Build a NextResponse from the upstream response, optionally setting new token cookies. */
-async function buildResponse(
-  upstream: Response,
-  newTokens?: { accessToken: string; refreshToken: string }
-): Promise<NextResponse> {
-  const contentType = upstream.headers.get("content-type") ?? "";
-  const body = await upstream.text();
-  const resp = new NextResponse(body, {
-    status: upstream.status,
-    headers: { "Content-Type": contentType || "application/json" },
-  });
-  if (newTokens) {
-    resp.headers.append("Set-Cookie", accessCookieHeader(newTokens.accessToken));
-    resp.headers.append("Set-Cookie", refreshCookieHeader(newTokens.refreshToken));
-  }
-  return resp;
+  return proxyWithAuth(request, UPSTREAM, { method: "POST", bodyText });
 }
 
 export const POST = handler;
