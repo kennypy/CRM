@@ -28,6 +28,7 @@ import { workflowsRoutes } from "./routes/workflows";
 import { usersRoutes }     from "./routes/users";
 import { userProfilesRoutes } from "./routes/user-profiles";
 import { navRoutes } from "./routes/nav";
+import { residencyGuard } from "./middleware/residency";
 import { quotesRoutes }    from "./routes/quotes";
 import { productsRoutes }  from "./routes/products";
 import { productsImportRoutes } from "./routes/products-import";
@@ -191,6 +192,10 @@ async function bootstrap() {
     const tenantId = (request.user as { tenantId?: string } | undefined)?.tenantId ?? null;
     setTenantContext(tenantId);
   });
+
+  // Data-residency backstop: refuse requests for tenants pinned to another
+  // region when this stack declares DEPLOYMENT_REGION (no-op otherwise).
+  server.addHook("preHandler", residencyGuard);
 
   // Usage metering — count every authenticated API call per tenant (batched;
   // flushed to workspace_usage_stats by the usage recorder). AI endpoints

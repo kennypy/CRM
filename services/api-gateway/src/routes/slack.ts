@@ -12,9 +12,10 @@
 
 import { createHmac, timingSafeEqual } from "crypto";
 import type { FastifyInstance } from "fastify";
-import { pool } from "../db";
+import { pool, servicePool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
-import { exchangeSlackCode, encrypt } from "../lib/oauth-exchange";
+import { exchangeSlackCode } from "../lib/oauth-exchange";
+import { decryptTenantSecret, encryptTenantSecret } from "@nexcrm/service-common/tenant-crypto";
 import { listSlackUsers } from "../lib/slack-client";
 import { handleCloseDateInteraction, handleCloseDateModalSubmit } from "../workers/close-date-handler";
 import { createOAuthState, consumeOAuthState } from "../lib/oauth-state";
@@ -86,7 +87,7 @@ export async function slackRoutes(server: FastifyInstance) {
       const redirectUri = `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/slack/callback`;
       const result = await exchangeSlackCode(code, redirectUri);
 
-      const encToken = encrypt(result.botToken);
+      const encToken = await encryptTenantSecret(servicePool, tenantId, result.botToken);
 
       await pool.query(
         `INSERT INTO slack_workspaces

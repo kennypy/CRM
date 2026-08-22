@@ -4,7 +4,7 @@
  */
 
 import { servicePool as pool } from "../db";
-import { decrypt } from "./oauth-exchange";
+import { decryptTenantSecret } from "@nexcrm/service-common/tenant-crypto";
 
 interface SlackApiResponse {
   ok: boolean;
@@ -20,7 +20,7 @@ async function getBotToken(tenantId: string): Promise<string | null> {
     [tenantId]
   );
   if (!rows.length) return null;
-  return decrypt(rows[0].bot_token_enc);
+  return decryptTenantSecret(pool, tenantId, rows[0].bot_token_enc);
 }
 
 async function slackApi(

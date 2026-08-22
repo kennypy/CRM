@@ -77,7 +77,7 @@ async function getOAuthToken(
   const expiresAt = rows[0].expires_at ? new Date(rows[0].expires_at) : null;
   if (expiresAt && expiresAt < new Date()) throw new Error(`${provider} OAuth token has expired. Please reconnect in Settings.`);
 
-  return decrypt(rows[0].access_token);
+  return decrypt(tenantId, rows[0].access_token);
 }
 
 async function getTenantSettings(tenantId: string): Promise<Record<string, unknown> | null> {
@@ -326,7 +326,7 @@ export async function emailRoutes(fastify: FastifyInstance) {
     const body = parsed.data;
 
     const settings = await getTenantSettings(tenantId);
-    const providerConfig = resolveProviderConfig(settings);
+    const providerConfig = await resolveProviderConfig(tenantId, settings);
 
     const suggestion = await suggestEmail({
       step:          body.step,

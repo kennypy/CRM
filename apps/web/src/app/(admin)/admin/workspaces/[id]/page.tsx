@@ -79,6 +79,7 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
   const [savingFeature, setSavingFeature] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPlan, setEditPlan] = useState("");
+  const [editRegion, setEditRegion] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
   // Merge dialog state
@@ -94,6 +95,7 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
         setTenant(t);
         setEditName(t.name);
         setEditPlan(t.plan);
+        setEditRegion(t.dataRegion ?? "us");
       }
     }).catch(() => {});
 
@@ -111,7 +113,7 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
   const saveBasicInfo = async () => {
     setSaving(true);
     setMessage(null);
-    const res = await api.patch(`/api/admin/tenants/${id}`, { name: editName, plan: editPlan });
+    const res = await api.patch(`/api/admin/tenants/${id}`, { name: editName, plan: editPlan, dataRegion: editRegion });
     if (res.ok) {
       const updated = (await res.json()).data;
       setTenant(updated);
@@ -239,6 +241,21 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
               <option value="growth">Growth</option>
               <option value="enterprise">Enterprise</option>
             </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Data region</label>
+            <select
+              value={editRegion}
+              onChange={(e) => setEditRegion(e.target.value)}
+              className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="us">United States</option>
+              <option value="eu">European Union</option>
+              <option value="apac">Asia-Pacific</option>
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Region-pinned stacks refuse requests for workspaces pinned elsewhere.
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">

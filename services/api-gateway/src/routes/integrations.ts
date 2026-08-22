@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { pool } from "../db";
-import { exchangeGoogleCode, exchangeOutlookCode, encrypt } from "../lib/oauth-exchange";
+import { pool, servicePool } from "../db";
+import { exchangeGoogleCode, exchangeOutlookCode } from "../lib/oauth-exchange";
+import { decryptTenantSecret, encryptTenantSecret } from "@nexcrm/service-common/tenant-crypto";
 import { createOAuthState, consumeOAuthState } from "../lib/oauth-state";
 
 export async function integrationsRoutes(fastify: FastifyInstance) {
@@ -76,8 +77,8 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
                        expires_at = $5, updated_at = NOW()`,
         [
           tenantId, userId,
-          encrypt(tokens.accessToken),
-          tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
+          await encryptTenantSecret(servicePool, tenantId, tokens.accessToken),
+          tokens.refreshToken ? await encryptTenantSecret(servicePool, tenantId, tokens.refreshToken) : null,
           tokens.expiresAt?.toISOString() ?? null,
           tokens.scope ? tokens.scope.split(" ") : [],
         ]
@@ -140,8 +141,8 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
                        expires_at = $5, updated_at = NOW()`,
         [
           tenantId, userId,
-          encrypt(tokens.accessToken),
-          tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
+          await encryptTenantSecret(servicePool, tenantId, tokens.accessToken),
+          tokens.refreshToken ? await encryptTenantSecret(servicePool, tenantId, tokens.refreshToken) : null,
           tokens.expiresAt?.toISOString() ?? null,
           tokens.scope ? tokens.scope.split(" ") : [],
         ]

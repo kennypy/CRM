@@ -26,6 +26,8 @@ import asyncpg
 import httpx
 import structlog
 
+from nexcrm_shared.secret_crypto import encrypt_tenant_secret, maybe_decrypt_secret
+
 from ..config import settings
 from .google_oauth import TOKEN_REFRESH_BUFFER, mark_integration_error
 
@@ -63,9 +65,10 @@ class OutlookConnector:
                 row["expires_at"].replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
             ).total_seconds()
             if remaining < TOKEN_REFRESH_BUFFER:
-                return await self._refresh_token(tenant_id, user_id, row["refresh_token"])
+                refresh = await maybe_decrypt_secret(self.db, tenant_id, row["refresh_token"])
+                return await self._refresh_token(tenant_id, user_id, refresh)
 
-        return row["access_token"]
+        return await maybe_decrypt_secret(self.db, tenant_id, row["access_token"])
 
     async def _refresh_token(
         self, tenant_id: str, user_id: str, refresh_token: str | None
@@ -101,7 +104,9 @@ class OutlookConnector:
                 SET access_token = $1, refresh_token = $2, expires_at = $3, updated_at = NOW()
                 WHERE tenant_id = $4 AND user_id = $5 AND provider = 'microsoft'
                 """,
-                new_token, new_refresh, expires_at, tenant_id, user_id,
+                await encrypt_tenant_secret(self.db, tenant_id, new_token),
+                await encrypt_tenant_secret(self.db, tenant_id, new_refresh) if new_refresh else None,
+                expires_at, tenant_id, user_id,
             )
             log.info("outlook.token_refreshed", tenant_id=tenant_id, user_id=user_id)
             return new_token

@@ -1,11 +1,21 @@
 /**
- * Secret encryption for the outreach service — delegates to the shared
- * implementation so all services read/write one wire format (the shared
- * decrypt still accepts rows written in this service's legacy
- * base64(iv‖ct‖tag) format).
+ * Tenant-keyed secret encryption for the outreach service.
+ *
+ * Secrets are encrypted under each tenant's own DEK (envelope encryption —
+ * see @nexcrm/service-common/tenant-crypto). decrypt() transparently falls
+ * back to the shared-key legacy formats for rows written before per-tenant
+ * keys existed.
  */
 
-export {
-  encryptSecret as encrypt,
-  decryptSecret as decrypt,
-} from "@nexcrm/service-common/secret-crypto";
+import {
+  decryptTenantSecret,
+  encryptTenantSecret,
+} from "@nexcrm/service-common/tenant-crypto";
+
+import { servicePool } from "../db";
+
+export const encrypt = (tenantId: string, plaintext: string): Promise<string> =>
+  encryptTenantSecret(servicePool, tenantId, plaintext);
+
+export const decrypt = (tenantId: string, value: string): Promise<string> =>
+  decryptTenantSecret(servicePool, tenantId, value);

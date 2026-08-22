@@ -294,7 +294,7 @@ async function executeEmailStep(exec: DueExecution): Promise<{
 
   let accessToken: string;
   try {
-    accessToken = decrypt(token.access_token);
+    accessToken = await decrypt(exec.tenant_id, token.access_token);
   } catch {
     return { success: false, errorMessage: "Failed to decrypt OAuth token", retryable: false };
   }

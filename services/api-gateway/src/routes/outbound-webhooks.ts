@@ -16,7 +16,7 @@ import { createHmac, randomBytes } from "crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool, servicePool } from "../db";
-import { decrypt, encrypt } from "../lib/oauth-exchange";
+import { decryptTenantSecret, encryptTenantSecret } from "@nexcrm/service-common/tenant-crypto";
 import { webhookDeliveryQueue } from "../workers/webhook-delivery";
 import { assertSafeUrl, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
 import { requireAdmin } from "../middleware/rbac";
@@ -131,7 +131,7 @@ export async function outboundWebhooksRoutes(server: FastifyInstance) {
 
     // Generate a random signing secret (shown once to the customer).
     const rawSecret      = "whsec_" + randomBytes(32).toString("hex");
-    const encryptedSecret = encrypt(rawSecret);
+    const encryptedSecret = await encryptTenantSecret(servicePool, tenantId, rawSecret);
 
     const { rows: [wh] } = await pool.query(
       `INSERT INTO outbound_webhooks (tenant_id, created_by, name, url, secret, event_types)
@@ -216,7 +216,7 @@ export async function outboundWebhooksRoutes(server: FastifyInstance) {
       timestamp: new Date().toISOString(),
     };
     const body      = JSON.stringify(testPayload);
-    const signature = createHmac("sha256", decrypt(wh.secret)).update(body).digest("hex");
+    const signature = createHmac("sha256", await decryptTenantSecret(servicePool, tenantId, wh.secret)).update(body).digest("hex");
 
     try {
       const resp = await fetch(wh.url, {

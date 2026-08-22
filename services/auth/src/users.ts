@@ -399,13 +399,14 @@ export async function updateTenantSettings(
 /** Update tenant basic info (name, plan). */
 export async function updateTenant(
   tenantId: string,
-  data: { name?: string; plan?: string }
+  data: { name?: string; plan?: string; dataRegion?: string }
 ): Promise<void> {
   const sets: string[] = [];
   const vals: unknown[] = [];
   let idx = 1;
   if (data.name) { sets.push(`name = $${++idx}`); vals.push(data.name); }
   if (data.plan) { sets.push(`plan = $${++idx}`); vals.push(data.plan); }
+  if (data.dataRegion) { sets.push(`data_region = $${++idx}`); vals.push(data.dataRegion); }
   if (sets.length === 0) return;
   await pool.query(
     `UPDATE tenants SET ${sets.join(", ")} WHERE id = $1`,

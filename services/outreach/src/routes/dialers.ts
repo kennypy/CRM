@@ -78,7 +78,7 @@ export async function dialersRoutes(fastify: FastifyInstance) {
     const parsed = TwilioCredsSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
 
-    const enc = encrypt(JSON.stringify(parsed.data));
+    const enc = await encrypt(tenantId, JSON.stringify(parsed.data));
 
     await pool.query(
       `INSERT INTO dialer_configs (tenant_id, native_enabled, native_credentials_enc)

@@ -13,7 +13,7 @@
 import { createHmac } from "crypto";
 import { Queue, Worker } from "bullmq";
 import { servicePool as pool } from "../db";
-import { decrypt } from "../lib/oauth-exchange";
+import { decryptTenantSecret } from "@nexcrm/service-common/tenant-crypto";
 import { redisConnection } from "@nexcrm/service-common/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
 import { assertSafeUrl, safePostJson, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
@@ -80,7 +80,7 @@ export function startWebhookDeliveryWorker(): void {
       }
 
       const body        = JSON.stringify(payload);
-      const plainSecret = decrypt(wh.secret);
+      const plainSecret = await decryptTenantSecret(pool, tenantId, wh.secret);
       const signature   = createHmac("sha256", plainSecret).update(body).digest("hex");
 
       // Create or update the delivery record, keyed by the job's stable

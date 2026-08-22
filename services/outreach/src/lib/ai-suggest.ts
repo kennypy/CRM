@@ -172,9 +172,10 @@ function buildContext(_args: SuggestEmailArgs): string {
 /**
  * Resolve and decrypt per-tenant AI provider config from tenants.settings.
  */
-export function resolveProviderConfig(
+export async function resolveProviderConfig(
+  tenantId: string,
   tenantSettings: Record<string, unknown> | null,
-): AIProviderConfig | undefined {
+): Promise<AIProviderConfig | undefined> {
   const raw = (tenantSettings as any)?.ai_outreach as Record<string, unknown> | undefined;
   if (!raw) return undefined;
 
@@ -183,7 +184,7 @@ export function resolveProviderConfig(
 
   if (raw.api_key_enc && typeof raw.api_key_enc === "string") {
     try {
-      apiKey = decrypt(raw.api_key_enc);
+      apiKey = await decrypt(tenantId, raw.api_key_enc);
     } catch {
       // Decryption failed — fall back to system key
     }

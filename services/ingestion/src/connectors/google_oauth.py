@@ -15,6 +15,8 @@ import asyncpg
 import httpx
 import structlog
 
+from nexcrm_shared.secret_crypto import encrypt_tenant_secret, maybe_decrypt_secret
+
 from ..config import settings
 
 log = structlog.get_logger()
@@ -58,9 +60,12 @@ async def get_valid_google_token(
             expires_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
         ).total_seconds()
         if remaining >= TOKEN_REFRESH_BUFFER:
-            return row["access_token"]
+            # Tokens are stored encrypted (auth/gateway write them under the
+            # tenant DEK; legacy rows use the shared key or plaintext).
+            return await maybe_decrypt_secret(db, tenant_id, row["access_token"])
 
-    return await refresh_google_token(db, tenant_id, user_id, row["refresh_token"])
+    refresh_token = await maybe_decrypt_secret(db, tenant_id, row["refresh_token"])
+    return await refresh_google_token(db, tenant_id, user_id, refresh_token)
 
 
 async def refresh_google_token(
@@ -93,7 +98,8 @@ async def refresh_google_token(
             """UPDATE oauth_tokens
                SET access_token = $1, expires_at = $2, updated_at = NOW()
                WHERE tenant_id = $3 AND user_id = $4 AND provider = 'google'""",
-            new_access_token, new_expiry, tenant_id, user_id,
+            await encrypt_tenant_secret(db, tenant_id, new_access_token),
+            new_expiry, tenant_id, user_id,
         )
         log.info("google_oauth.token_refreshed", tenant_id=tenant_id, user_id=user_id)
         return new_access_token

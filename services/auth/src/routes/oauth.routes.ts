@@ -22,15 +22,14 @@ import { createRefreshToken, buildJWTPayload } from "../tokens";
 import { redis } from "@nexcrm/service-common/redis";
 
 // ── OAuth token encryption (AES-256-GCM) ──────────────────────────────────────
-import { decryptSecret, encryptSecret } from "@nexcrm/service-common/secret-crypto";
+import { encryptTenantSecret } from "@nexcrm/service-common/tenant-crypto";
 
 // Tokens from Google / Microsoft are encrypted before being persisted to the DB.
 // The key must be a 64-character hex string (32 bytes) set via OAUTH_ENCRYPTION_KEY.
 
-// Encryption lives in @nexcrm/service-common/secret-crypto: one canonical
-// wire format across auth/gateway/outreach (decrypt accepts legacy formats).
-const encryptToken = encryptSecret;
-const decryptToken = decryptSecret;
+// Secrets are encrypted under the tenant's own DEK (envelope encryption —
+// @nexcrm/service-common/tenant-crypto); decrypt falls back to the legacy
+// shared-key formats for old rows.
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -200,9 +199,9 @@ export async function oauthRoutes(server: FastifyInstance) {
     // If OAUTH_ENCRYPTION_KEY is not configured, skip storage and log a warning.
     const expiresAt = new Date(Date.now() + googleTokens.expires_in * 1000).toISOString();
     try {
-      const encryptedAccess  = encryptToken(googleTokens.access_token);
+      const encryptedAccess  = await encryptTenantSecret(pool, tenantId, googleTokens.access_token);
       const encryptedRefresh = googleTokens.refresh_token
-        ? encryptToken(googleTokens.refresh_token)
+        ? await encryptTenantSecret(pool, tenantId, googleTokens.refresh_token)
         : null;
 
       await pool.query(
