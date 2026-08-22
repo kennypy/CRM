@@ -4,7 +4,12 @@
 
 Each tenant has a **`default_currency`** (ISO 4217, e.g. `EUR`, `USD`).
 Each deal inherits the tenant currency at creation time and **stores its own `currency` field** for future multi-currency support.
-No `value_converted` field exists yet — cross-currency conversion is Phase 2.
+Cross-currency conversion is now supported: each tenant maintains an
+`exchange_rates` table (Settings → Company → Exchange rates; rate = units of
+currency per 1 base unit), and the gateway's `lib/currency.ts` converts deal
+values into the tenant base for cross-currency rollups (e.g.
+`GET /api/v1/forecasting/rollup`). Deals still store and display their own
+currency; conversion happens at aggregation time.
 
 ---
 

@@ -22,6 +22,7 @@ import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { InviteUserModal } from "@/components/settings/invite-user-modal";
 import { TeamsTab } from "@/components/settings/teams-tab";
 import { NavigationTab } from "@/components/settings/navigation-tab";
+import { ExchangeRatesCard } from "@/components/settings/exchange-rates-card";
 import { ProductsImportModal } from "@/components/settings/products-import-modal";
 import { previewEnabled } from "@/lib/feature-flags";
 
@@ -2763,7 +2764,7 @@ function SettingsInner() {
         </div>
         {tab === "profile"      && <ProfileTab user={user} />}
         {tab === "security"     && <SecurityTab />}
-        {tab === "general"      && <GeneralTab user={user} />}
+        {tab === "general"      && (<><GeneralTab user={user} /><ExchangeRatesCard /></>)}
         {tab === "users"        && <UsersTab />}
         {tab === "teams"        && <TeamsTab />}
         {tab === "integrations"   && <IntegrationsTab />}
