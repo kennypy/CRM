@@ -15,6 +15,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
 
 const ActivityTypes     = ["email", "call", "meeting", "note", "document"] as const;
@@ -53,8 +54,6 @@ const GetActivitiesQuery = z.object({
   limit:     z.coerce.number().int().min(1).max(200).default(50),
 });
 
-const IdParam     = z.object({ id: z.string().uuid() });
-const TenantQuery = z.object({ tenantId: z.string().min(1) });
 
 export async function activitiesRoutes(server: FastifyInstance) {
   /**

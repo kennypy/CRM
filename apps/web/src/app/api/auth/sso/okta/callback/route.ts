@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { exchangeCode, fetchUserInfo, oktaConfigured } from "@/lib/okta";
 import { accessCookieHeader, refreshCookieHeader } from "../../../_cookies";
 
+import { AUTH_SERVICE_URL } from "../../../../_env";
+
 const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
-const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
 const SERVICE_TOKEN = process.env.INTERNAL_SERVICE_SECRET ?? "";
 const SECURE = process.env.COOKIE_SECURE === "true" ? "; Secure" : "";
 
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
   // Hand the verified identity to the auth service to provision + mint tokens.
   let provision: Response;
   try {
-    provision = await fetch(`${AUTH_URL}/internal/sso-provision`, {
+    provision = await fetch(`${AUTH_SERVICE_URL}/internal/sso-provision`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-service-token": SERVICE_TOKEN },
       body: JSON.stringify({ email, tenantSlug: stash.tenant || null, firstName, lastName, avatarUrl }),

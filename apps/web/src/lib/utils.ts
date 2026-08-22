@@ -79,3 +79,24 @@ export function formatRelativeTime(
   if (diffDays  < 7)  return labels.daysAgo({ count: diffDays });
   return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
+
+/** Compact number formatting for stat tiles: 1.2K, 3.4M. */
+export function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
+}
+
+/** Human-readable byte size (binary units). */
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
+  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+/** Absolute date, e.g. "4 Mar 2026". */
+export function formatDate(iso: string | null | undefined, locale = "en-GB"): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" });
+}

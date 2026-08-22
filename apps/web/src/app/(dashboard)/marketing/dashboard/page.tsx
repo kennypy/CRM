@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useTenant } from "@/lib/tenant-context";
 import Link from "next/link";
@@ -41,9 +41,7 @@ export default function MarketingDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   const fmtCurrency = (n: number) =>
-    new Intl.NumberFormat(tenant?.locale ?? "en-US", {
-      style: "currency", currency: tenant?.defaultCurrency ?? "USD",
-    }).format(n ?? 0);
+    formatCurrency(n ?? 0, tenant?.defaultCurrency ?? "USD", false, tenant?.locale ?? "en-US");
 
   const fmt = (n: number) => new Intl.NumberFormat(tenant?.locale ?? "en-US").format(n ?? 0);
   const pct = (a: number, b: number) => b > 0 ? `${((a / b) * 100).toFixed(1)}%` : "0%";

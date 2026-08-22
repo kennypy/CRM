@@ -3,42 +3,7 @@
  * Used by Gmail, Outlook, and Slack OAuth flows.
  */
 
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
-
-const ENCRYPTION_KEY = process.env.OAUTH_ENCRYPTION_KEY ?? "";
-
-function getKey(): Buffer {
-  if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 64) {
-    throw new Error("OAUTH_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)");
-  }
-  return Buffer.from(ENCRYPTION_KEY, "hex");
-}
-
-/**
- * Encrypt a string with AES-256-GCM. Returns "iv:authTag:ciphertext" (all hex).
- */
-export function encrypt(plaintext: string): string {
-  const key = getKey();
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-  return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted.toString("hex")}`;
-}
-
-/**
- * Decrypt a string encrypted with encrypt().
- */
-export function decrypt(ciphertext: string): string {
-  const key = getKey();
-  const [ivHex, authTagHex, encHex] = ciphertext.split(":");
-  const iv = Buffer.from(ivHex, "hex");
-  const authTag = Buffer.from(authTagHex, "hex");
-  const encrypted = Buffer.from(encHex, "hex");
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(authTag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
-}
+export { encryptSecret as encrypt, decryptSecret as decrypt } from "@nexcrm/service-common/secret-crypto";
 
 interface TokenResult {
   accessToken: string;

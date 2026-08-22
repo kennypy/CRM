@@ -17,21 +17,10 @@ for something already flagged and open.
 """
 
 import json
-from fastapi import APIRouter, Query, Header, HTTPException
+from fastapi import APIRouter, Query, Header
 
 from ..db import get_pool
-
-
-def _resolve_tenant(x_tenant_id: str | None, query_tenant: str | None) -> str:
-    """Authoritative tenant is the verified x-tenant-id header (set by the gateway
-    from the JWT). A client-supplied ?tenantId is accepted only if it matches;
-    a direct internal-network call without the header is rejected."""
-    header_tenant = (x_tenant_id or "").strip()
-    if not header_tenant:
-        raise HTTPException(status_code=401, detail="Missing tenant context")
-    if query_tenant and query_tenant != header_tenant:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    return header_tenant
+from ..tenancy import resolve_tenant
 
 router = APIRouter()
 
@@ -58,7 +47,7 @@ async def scan(
     x_tenant_id: str | None = Header(default=None, alias="x-tenant-id"),
 ):
     """Run all detectors for a tenant and upsert open alerts. Returns a summary."""
-    tenant_id = _resolve_tenant(x_tenant_id, tenant_id)
+    tenant_id = resolve_tenant(x_tenant_id, tenant_id)
     pool = await get_pool()
     created = 0
 

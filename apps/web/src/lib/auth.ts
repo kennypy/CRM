@@ -66,10 +66,3 @@ export function isAuthenticated(): boolean {
   return !!getStoredUser();
 }
 
-/**
- * @deprecated Tokens are now in HttpOnly cookies and are not readable from JS.
- * Returns null. Kept for backwards compatibility during migration.
- */
-export function getToken(): null {
-  return null;
-}

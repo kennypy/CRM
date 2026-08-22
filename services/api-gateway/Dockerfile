@@ -24,6 +24,12 @@ RUN if [ -d dist/packages/shared-types/src ]; then \
       printf '{"name":"@nexcrm/shared-types","main":"index.js"}' > node_modules/@nexcrm/shared-types/package.json && \
       chown -R node:node node_modules/@nexcrm; \
     fi
+RUN if [ -d dist/packages/service-common/src ]; then \
+      rm -rf node_modules/@nexcrm/service-common && \
+      cp -r dist/packages/service-common/src node_modules/@nexcrm/service-common && \
+      printf '{"name":"@nexcrm/service-common","exports":{"./*":"./*.js"}}' > node_modules/@nexcrm/service-common/package.json && \
+      chown -R node:node node_modules/@nexcrm; \
+    fi
 USER node
 EXPOSE 4000
 CMD ["node", "dist/services/api-gateway/src/index.js"]

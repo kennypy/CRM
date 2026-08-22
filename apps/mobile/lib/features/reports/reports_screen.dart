@@ -5,6 +5,7 @@ import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'package:go_router/go_router.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 const _sourceLabels = <String, String>{
   'activities': 'Activities',
@@ -280,20 +281,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
     );
   }
 
-  String _fmtRelative(String? iso) {
-    if (iso == null || iso.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(iso);
-      final diff = DateTime.now().difference(dt);
-      if (diff.inMinutes < 1) return 'just now';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-      if (diff.inHours < 24) return '${diff.inHours}h ago';
-      if (diff.inDays < 7) return '${diff.inDays}d ago';
-      return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _fmtRelative(String? iso) => formatRelativeTime(iso, fallback: '');
 
   // ── Builder helpers ─────────────────────────────────────────────────
 

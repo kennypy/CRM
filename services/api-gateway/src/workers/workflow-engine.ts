@@ -26,18 +26,11 @@
  */
 
 import { servicePool as pool } from "../db";
+import { dispatchWebhookEvent } from "../routes/outbound-webhooks";
 import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
-import { safePostJson, SsrfBlockedError } from "../lib/ssrf-guard";
-
-// Map a CRM entity_type to its graph-core collection path. Leads are Person
-// nodes, same as contacts.
-const ENTITY_COLLECTION: Record<string, string> = {
-  contact: "contacts",
-  lead: "contacts",
-  company: "companies",
-  deal: "deals",
-};
+import { safePostJson, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
+import { ENTITY_COLLECTION } from "../lib/entity-map";
 
 interface WorkflowDef {
   id: string;
@@ -155,7 +148,10 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
 
   async send_email(config, event, tenantId) {
-    const res = await internalFetch(`${OUTREACH_URL}/api/v1/email/send`, {
+    // NOTE: outreach mounts this at /email/send (no /api/v1 prefix). The payload
+    // still needs a provider/bodyText decision to satisfy SendEmailSchema — see
+    // review report.
+    const res = await internalFetch(`${OUTREACH_URL}/email/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
       body: JSON.stringify({
@@ -234,12 +230,31 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
 
   async add_to_sequence(config, event, tenantId) {
-    const res = await internalFetch(`${OUTREACH_URL}/api/v1/sequences/enroll`, {
+    const sequenceId = String(config?.sequenceId ?? "");
+    if (!sequenceId) return { success: false, error: "No sequenceId specified" };
+
+    // The enroll endpoint takes contact records (email is required), not graph
+    // entity ids — resolve the contact first. (The previous call targeted a
+    // non-existent /api/v1/sequences/enroll route with the wrong body, so this
+    // action always failed silently.)
+    const contactRes = await internalFetch(
+      `${GRAPH_CORE_URL}/contacts/${event.entity_id}?tenantId=${tenantId}`,
+      { headers: { "x-tenant-id": tenantId } }
+    );
+    if (!contactRes.ok) return { success: false, error: `Contact lookup failed (${contactRes.status})` };
+    const contact = ((await contactRes.json()) as { data?: { email?: string; firstName?: string; lastName?: string } }).data;
+    if (!contact?.email) return { success: false, error: "Contact has no email to enroll" };
+
+    const res = await internalFetch(`${OUTREACH_URL}/sequences/${sequenceId}/enroll`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
       body: JSON.stringify({
-        sequenceId: config?.sequenceId,
-        contactId: event.entity_id,
+        contacts: [{
+          id: event.entity_id,
+          email: contact.email,
+          firstName: contact.firstName ?? "",
+          lastName: contact.lastName ?? "",
+        }],
       }),
     });
     return { success: res.ok, result: `Enrolled in sequence (${res.status})` };
@@ -382,6 +397,20 @@ export async function startWorkflowEngine() {
 
       for (const event of events as CrmEvent[]) {
         await processEvent(event);
+        // Fan the event out to any subscribed outbound webhooks. This poll
+        // loop is the central consumer of crm_events, so it is also the
+        // dispatch point (previously dispatchWebhookEvent had no caller and
+        // webhook subscriptions never fired).
+        try {
+          await dispatchWebhookEvent(event.tenant_id, event.event_type, {
+            entityType: event.entity_type,
+            entityId: event.entity_id,
+            payload: event.payload,
+            occurredAt: (event as any).created_at,
+          });
+        } catch (err: any) {
+          console.error("[workflow-engine] webhook dispatch failed:", err.message);
+        }
         lastProcessedAt = (event as any).created_at;
         // Persist the cursor after each event so a crash resumes cleanly.
         await pool.query(

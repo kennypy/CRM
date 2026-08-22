@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assertSafeUrl, SsrfBlockedError } from "../lib/ssrf-guard";
+import { assertSafeUrl, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
 
 describe("assertSafeUrl", () => {
   const opts = { protocols: ["https:", "http:"] };

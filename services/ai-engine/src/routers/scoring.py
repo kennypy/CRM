@@ -22,10 +22,11 @@ from typing import Optional
 
 import asyncpg
 import structlog
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header
 from pydantic import BaseModel
 
 from ..db import get_pool
+from ..tenancy import resolve_tenant
 
 log = structlog.get_logger()
 router = APIRouter()
@@ -154,11 +155,7 @@ async def calculate_reality_score(
 
     # H-AI5: tenant comes from the gateway-set header (derived from the verified
     # JWT), never the request body. A body tenant_id is allowed only if it matches.
-    tenant_id = (x_tenant_id or "").strip()
-    if not tenant_id:
-        raise HTTPException(status_code=403, detail="Tenant context missing")
-    if req.tenant_id and req.tenant_id.strip() and req.tenant_id.strip() != tenant_id:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
+    tenant_id = resolve_tenant(x_tenant_id, req.tenant_id)
 
     recency_val = breadth_val = sentiment_val = budget_val = 50.0
     recency_ev = breadth_ev = sentiment_ev = budget_ev = "No data"
@@ -292,14 +289,8 @@ async def calculate_lead_score(
 ):
     """Score a contact as a lead (0–100). Tiers: cold (<30), warm (30–69), hot (70+)."""
     # H-AI5: tenant comes from the gateway-set header (derived from the verified
-    # JWT), never a client query param. A query tenant_id is allowed only if it
-    # matches. (Matches every sibling endpoint; closes the missing guard.)
-    header_tenant = (x_tenant_id or "").strip()
-    if not header_tenant:
-        raise HTTPException(status_code=403, detail="Tenant context missing")
-    if tenant_id and tenant_id.strip() and tenant_id.strip() != header_tenant:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    tenant_id = header_tenant
+    # JWT), never a client query param. A query tenant_id is allowed only if it matches.
+    tenant_id = resolve_tenant(x_tenant_id, tenant_id)
 
     pool: asyncpg.Pool = await get_pool()
     cnt, last_at = 0, None

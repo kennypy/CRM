@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 class ForecastingScreen extends ConsumerStatefulWidget {
   const ForecastingScreen({super.key});
@@ -251,11 +252,7 @@ class _ForecastingScreenState extends ConsumerState<ForecastingScreen> {
     );
   }
 
-  String _formatCurrency(double value) {
-    if (value >= 1000000) return '\$${(value / 1000000).toStringAsFixed(1)}M';
-    if (value >= 1000) return '\$${(value / 1000).toStringAsFixed(0)}K';
-    return '\$${value.toStringAsFixed(0)}';
-  }
+  String _formatCurrency(double value) => formatCompactCurrency(value);
 }
 
 // ── Metadata bar (model version + calculated at) ────────────────────────────
@@ -413,13 +410,7 @@ Color _stageColor(String? stage) {
   }
 }
 
-String _stageName(String? stage) {
-  if (stage == null) return 'Unknown';
-  return stage.replaceAll('_', ' ').split(' ').map((w) {
-    if (w.isEmpty) return w;
-    return '${w[0].toUpperCase()}${w.substring(1)}';
-  }).join(' ');
-}
+String _stageName(String? stage) => stage == null ? 'Unknown' : humanize(stage);
 
 // ── Forecast card ───────────────────────────────────────────────────────────
 
@@ -673,12 +664,7 @@ class _ForecastCard extends StatelessWidget {
     }
   }
 
-  String _formatValue(dynamic value) {
-    final v = (value is num ? value : double.tryParse(value.toString()) ?? 0).toDouble();
-    if (v >= 1000000) return '\$${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(0)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  String _formatValue(dynamic value) => formatCompactCurrency(asDouble(value));
 
   String _formatTimestamp(dynamic ts) {
     try {

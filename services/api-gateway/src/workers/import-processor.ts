@@ -5,7 +5,7 @@
 
 import { Queue, Worker } from "bullmq";
 import { servicePool as pool } from "../db";
-import { redisConnection } from "../lib/redis";
+import { redisConnection } from "@nexcrm/service-common/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
 
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";

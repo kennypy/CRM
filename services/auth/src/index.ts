@@ -12,7 +12,7 @@ import { authRoutes } from "./routes/auth.routes";
 import { oauthRoutes } from "./routes/oauth.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { internalRoutes } from "./routes/internal.routes";
-import { redis } from "./lib/redis";
+import { redis } from "@nexcrm/service-common/redis";
 import { isTokenDenied } from "./lib/deny-list";
 
 const server = Fastify({

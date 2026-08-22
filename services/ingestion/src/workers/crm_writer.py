@@ -15,14 +15,14 @@ Pipeline:
     review-queue (from extractor)-[review_persister]--> review_queue table
 """
 
-import asyncio
 import json
 from typing import Any
 
 import asyncpg
 import httpx
-import redis.asyncio as aioredis
 import structlog
+
+from nexcrm_shared.event_bus import consume
 
 from ..config import settings
 
@@ -33,42 +33,34 @@ _ENTITY_TYPE = {"Person": "contact", "Company": "company"}
 
 
 async def _consume(stream: str, group: str, consumer: str, handler, block: int = 2000):
-    """Shared Redis Streams consumer loop with a consumer group and per-message ack."""
-    redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    try:
-        await redis.xgroup_create(stream, group, id="0", mkstream=True)
-    except Exception:
-        pass  # group already exists
-    log.info("worker.started", stream=stream, group=group)
+    await consume(settings.REDIS_URL, stream, group, consumer, handler, block=block)
 
-    while True:
-        try:
-            messages = await redis.xreadgroup(
-                groupname=group, consumername=consumer,
-                streams={stream: ">"}, count=10, block=block,
-            )
-            for _, stream_messages in (messages or []):
-                for msg_id, fields in stream_messages:
-                    try:
-                        await handler(json.loads(fields["data"]))
-                    except Exception as e:
-                        # Don't silently drop: park the payload on a dead-letter
-                        # stream (durable, inspectable) before acking, so a
-                        # transient DB error or a poison message is recoverable
-                        # rather than lost. Retrying in-place would wedge the group.
-                        log.error("worker.handler_failed", stream=stream, msg_id=msg_id, error=str(e))
-                        try:
-                            await redis.xadd(
-                                f"{stream}:dead-letter",
-                                {"data": fields.get("data", ""), "error": str(e), "group": group},
-                                maxlen=10000, approximate=True,
-                            )
-                        except Exception as dlq_err:
-                            log.error("worker.dead_letter_failed", stream=stream, error=str(dlq_err))
-                    await redis.xack(stream, group, msg_id)
-        except Exception as e:
-            log.error("worker.loop_error", stream=stream, error=str(e))
-            await asyncio.sleep(5)
+
+async def _insert_crm_event(
+    pool: asyncpg.Pool,
+    *,
+    tenant_id: str,
+    event_type: str,
+    source: str,
+    entity_type: str,
+    entity_id: str,
+    payload: Any,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Single write path for crm_events rows (this file previously carried the
+    same 8-column INSERT three times)."""
+    await pool.execute(
+        """INSERT INTO crm_events
+             (tenant_id, event_type, source, actor_id, entity_type, entity_id, payload, metadata)
+           VALUES ($1::uuid, $2, $3, NULL, $4, $5::uuid, $6::jsonb, $7::jsonb)""",
+        tenant_id,
+        event_type,
+        source,
+        entity_type,
+        entity_id,
+        json.dumps(payload),
+        json.dumps(metadata or {}),
+    )
 
 
 # ── 1. Activity persister: resolved-signals -> crm_events ─────────────────────
@@ -102,17 +94,15 @@ async def persist_activity(pool: asyncpg.Pool, activity: dict[str, Any]) -> None
         "activity_id": activity.get("id"),
         "occurred_at": activity.get("occurred_at"),
     }
-    await pool.execute(
-        """INSERT INTO crm_events
-             (tenant_id, event_type, source, actor_id, entity_type, entity_id, payload, metadata)
-           VALUES ($1::uuid, $2, $3, NULL, $4, $5::uuid, $6::jsonb, $7::jsonb)""",
-        activity["tenant_id"],
-        f"activity.{activity.get('activity_type', 'event')}",
-        activity.get("source", "ingestion"),
-        entity_type,
-        entity_id,
-        json.dumps(payload),
-        json.dumps({"resolved_at": activity.get("resolution_at")}),
+    await _insert_crm_event(
+        pool,
+        tenant_id=activity["tenant_id"],
+        event_type=f"activity.{activity.get('activity_type', 'event')}",
+        source=activity.get("source", "ingestion"),
+        entity_type=entity_type,
+        entity_id=entity_id,
+        payload=payload,
+        metadata={"resolved_at": activity.get("resolution_at")},
     )
     log.info("activity_persisted", activity_id=activity.get("id"), entity_type=entity_type)
 
@@ -194,28 +184,28 @@ async def apply_crm_write(pool: asyncpg.Pool, op: dict[str, Any]) -> None:
         if not entity_id or not tenant_id:
             return
         await _create_graph_node(op)
-        await pool.execute(
-            """INSERT INTO crm_events
-                 (tenant_id, event_type, source, actor_id, entity_type, entity_id, payload, metadata)
-               VALUES ($1::uuid, 'entity.created', 'ingestion', NULL, $2, $3::uuid, $4::jsonb, '{}'::jsonb)""",
-            tenant_id,
-            _ENTITY_TYPE.get(op.get("label"), "contact"),
-            entity_id,
-            json.dumps(props),
+        await _insert_crm_event(
+            pool,
+            tenant_id=tenant_id,
+            event_type="entity.created",
+            source="ingestion",
+            entity_type=_ENTITY_TYPE.get(op.get("label"), "contact"),
+            entity_id=entity_id,
+            payload=props,
         )
         log.info("crm_writer.node_created", label=op.get("label"), entity_id=entity_id)
     elif "changes" in op:
         # Auto-write extraction result (rare; gated on trusted source). Record it
         # as an auditable signal event rather than blindly mutating graph state.
-        await pool.execute(
-            """INSERT INTO crm_events
-                 (tenant_id, event_type, source, actor_id, entity_type, entity_id, payload, metadata)
-               VALUES ($1::uuid, 'signal.extracted', $2, NULL, 'activity', $3::uuid, $4::jsonb, $5::jsonb)""",
-            op["tenant_id"],
-            op.get("source", "extraction"),
-            op.get("activity_id"),
-            json.dumps(op.get("changes", {})),
-            json.dumps({"confidence": op.get("confidence")}),
+        await _insert_crm_event(
+            pool,
+            tenant_id=op["tenant_id"],
+            event_type="signal.extracted",
+            source=op.get("source", "extraction"),
+            entity_type="activity",
+            entity_id=op.get("activity_id"),
+            payload=op.get("changes", {}),
+            metadata={"confidence": op.get("confidence")},
         )
         log.info("crm_writer.extraction_recorded", activity_id=op.get("activity_id"))
 

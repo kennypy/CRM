@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
+import { AUTH_SERVICE_URL } from "../../_env";
+
 
 /**
  * Proxy to the auth service's reset-password endpoint. Used both by the
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${AUTH_URL}/auth/reset-password`, {
+    upstream = await fetch(`${AUTH_SERVICE_URL}/auth/reset-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

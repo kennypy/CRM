@@ -2,9 +2,10 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "CommonJS",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "outDir": "./dist",
-    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -12,8 +13,26 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "rootDirs": [
+      "src",
+      "../../packages/shared-types/src",
+      "../../packages/service-common/src"
+    ],
+    "paths": {
+      "@nexcrm/service-common/*": [
+        "../../packages/service-common/src/*"
+      ],
+      "@nexcrm/shared-types": [
+        "../../packages/shared-types/src"
+      ]
+    }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

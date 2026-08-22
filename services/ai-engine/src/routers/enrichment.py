@@ -3,41 +3,20 @@ Data enrichment router — enriches contacts and companies with external data.
 Uses company domain/website to look up public data and AI to infer additional fields.
 """
 
-import os
 import httpx
 import structlog
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
+from nexcrm_shared.email_domains import is_free_email_provider
+
+from ..config import settings
 from ..db import get_pool
+from ..llm import complete_json
+from ..tenancy import resolve_tenant
 
 log = structlog.get_logger()
 router = APIRouter()
-
-GRAPH_CORE_URL = os.getenv("GRAPH_CORE_URL", "http://localhost:4002")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-
-
-def _resolve_tenant(header_tenant: str | None, body_tenant: str | None) -> str:
-    """
-    H-AI5: derive the tenant strictly from the gateway-provided `x-tenant-id`
-    header. The gateway sets this header from the verified JWT (see
-    api-gateway/src/lib/proxy.ts) and never accepts it from clients, so it is the
-    authoritative tenant context. A tenant_id in the request body is attacker-
-    controllable and MUST NOT be trusted: if present it must match the header,
-    otherwise we reject with 403 to prevent cross-tenant reads/write-backs.
-    """
-    header_tenant = (header_tenant or "").strip()
-    if not header_tenant:
-        raise HTTPException(status_code=403, detail="Tenant context missing")
-    if body_tenant and body_tenant.strip() and body_tenant.strip() != header_tenant:
-        log.warning(
-            "enrichment.tenant_mismatch",
-            header_tenant=header_tenant,
-            body_tenant=body_tenant,
-        )
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    return header_tenant
 
 
 class EnrichRequest(BaseModel):
@@ -63,7 +42,7 @@ async def enrich_entity(
     """Enrich a single entity with external data."""
     pool = await get_pool()
     # H-AI5: tenant is derived from the verified gateway header, not the body.
-    tenant_id = _resolve_tenant(x_tenant_id, request.tenant_id)
+    tenant_id = resolve_tenant(x_tenant_id, request.tenant_id)
 
     # Create enrichment job record
     async with pool.acquire() as conn:
@@ -85,7 +64,7 @@ async def enrich_entity(
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(
-                f"{GRAPH_CORE_URL}/{endpoint}/{entity_id}",
+                f"{settings.GRAPH_CORE_URL}/{endpoint}/{entity_id}",
                 params={"tenantId": tenant_id},
                 headers={"x-tenant-id": tenant_id},
             )
@@ -117,7 +96,7 @@ async def enrich_entity(
         if enriched_data:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 await client.patch(
-                    f"{GRAPH_CORE_URL}/{endpoint}/{entity_id}",
+                    f"{settings.GRAPH_CORE_URL}/{endpoint}/{entity_id}",
                     params={"tenantId": tenant_id},
                     headers={"x-tenant-id": tenant_id, "Content-Type": "application/json"},
                     json=enriched_data,
@@ -172,7 +151,7 @@ async def batch_enrich(
     """Enrich multiple entities. Returns immediately with job IDs."""
     pool = await get_pool()
     # H-AI5: tenant scoped to the verified gateway header, never the request body.
-    tenant_id = _resolve_tenant(x_tenant_id, request.tenant_id)
+    tenant_id = resolve_tenant(x_tenant_id, request.tenant_id)
     jobs = []
 
     for eid in request.entity_ids[:50]:  # Limit to 50 per batch
@@ -191,45 +170,21 @@ async def batch_enrich(
 
 async def _enrich_company(name: str, domain: str) -> tuple[dict, float]:
     """Enrich company data using AI inference from available information."""
-    enriched = {}
-    confidence = 0.5
+    if not settings.ANTHROPIC_API_KEY:
+        return {}, 0.0
 
-    if not ANTHROPIC_API_KEY:
-        return enriched, 0.0
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-haiku-4-5-20251001",
-                    "max_tokens": 500,
-                    "messages": [{
-                        "role": "user",
-                        "content": f"""Given a company named "{name}" with website "{domain}",
-                        provide likely company information in JSON format with these fields:
-                        industry, employee_count_range, founding_year, headquarters_city,
-                        headquarters_country, description (1 sentence).
-                        Only include fields you're reasonably confident about.
-                        Return ONLY valid JSON, no markdown.""",
-                    }],
-                },
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                text = data.get("content", [{}])[0].get("text", "{}")
-                import json
-                enriched = json.loads(text)
-                confidence = 0.7
-    except Exception as e:
-        log.warning("enrichment.ai_error", error=str(e))
-
-    return enriched, confidence
+    result = await complete_json(
+        f"""Given a company named "{name}" with website "{domain}",
+        provide likely company information in JSON format with these fields:
+        industry, employee_count_range, founding_year, headquarters_city,
+        headquarters_country, description (1 sentence).
+        Only include fields you're reasonably confident about.
+        Return ONLY valid JSON, no markdown.""",
+        max_tokens=500,
+    )
+    if isinstance(result, dict) and result:
+        return result, 0.7
+    return {}, 0.5
 
 
 async def _enrich_contact(name: str, email: str, company: str) -> tuple[dict, float]:
@@ -240,42 +195,22 @@ async def _enrich_contact(name: str, email: str, company: str) -> tuple[dict, fl
     # Extract domain from email for company association
     if email and "@" in email:
         domain = email.split("@")[1]
-        if domain not in ("gmail.com", "yahoo.com", "hotmail.com", "outlook.com"):
+        if not is_free_email_provider(domain):
             enriched["company_domain"] = domain
 
-    if not ANTHROPIC_API_KEY:
+    if not settings.ANTHROPIC_API_KEY:
         return enriched, confidence
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-haiku-4-5-20251001",
-                    "max_tokens": 300,
-                    "messages": [{
-                        "role": "user",
-                        "content": f"""Given a person named "{name}" at company "{company}" with email "{email}",
-                        provide likely information in JSON format with these fields:
-                        likely_title, likely_department, seniority_level.
-                        Only include fields you're reasonably confident about.
-                        Return ONLY valid JSON, no markdown.""",
-                    }],
-                },
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                text = data.get("content", [{}])[0].get("text", "{}")
-                import json
-                ai_data = json.loads(text)
-                enriched.update(ai_data)
-                confidence = 0.6
-    except Exception as e:
-        log.warning("enrichment.ai_error", error=str(e))
+    result = await complete_json(
+        f"""Given a person named "{name}" at company "{company}" with email "{email}",
+        provide likely information in JSON format with these fields:
+        likely_title, likely_department, seniority_level.
+        Only include fields you're reasonably confident about.
+        Return ONLY valid JSON, no markdown.""",
+        max_tokens=300,
+    )
+    if isinstance(result, dict) and result:
+        enriched.update(result)
+        confidence = 0.6
 
     return enriched, confidence

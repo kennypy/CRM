@@ -1,4 +1,5 @@
 import "./telemetry";
+import { setTenantContext } from "./db";
 import * as path from "path";
 import * as dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
@@ -102,6 +103,17 @@ async function bootstrap() {
   // and, in production, refuse to fall back to raw headers when no bearer is
   // present (a valid service token is still required by the hook above).
   server.addHook("onRequest", resolveIdentity);
+
+  // ── RLS tenant context ────────────────────────────────────────────────────
+  // Stamp the effective tenant into the async context so the app pool scopes
+  // queries via SET LOCAL app.current_tenant. Trust order: verified bearer
+  // claims, else the gateway-injected x-tenant-id header (a valid service
+  // token is already required by the hook above).
+  server.addHook("onRequest", async (request) => {
+    const claim = request.verifiedIdentity?.tenantId;
+    const header = request.headers["x-tenant-id"];
+    setTenantContext(claim ?? (typeof header === "string" ? header : null));
+  });
 
   // ── Health ─────────────────────────────────────────────────────────────────
   server.get("/health", async () => ({

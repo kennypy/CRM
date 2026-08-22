@@ -26,7 +26,10 @@ import asyncpg
 import httpx
 import structlog
 
+from nexcrm_shared.secret_crypto import encrypt_tenant_secret, maybe_decrypt_secret
+
 from ..config import settings
+from .google_oauth import TOKEN_REFRESH_BUFFER, mark_integration_error
 
 log = structlog.get_logger()
 
@@ -35,7 +38,6 @@ GRAPH_BASE            = "https://graph.microsoft.com/v1.0"
 GRAPH_ME_MESSAGES     = f"{GRAPH_BASE}/me/mailFolders/inbox/messages/delta"
 GRAPH_ME_EVENTS       = f"{GRAPH_BASE}/me/events/delta"
 GRAPH_SUBSCRIPTIONS   = f"{GRAPH_BASE}/subscriptions"
-TOKEN_REFRESH_BUFFER  = 300   # seconds before expiry to refresh
 
 
 class OutlookConnector:
@@ -63,9 +65,10 @@ class OutlookConnector:
                 row["expires_at"].replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
             ).total_seconds()
             if remaining < TOKEN_REFRESH_BUFFER:
-                return await self._refresh_token(tenant_id, user_id, row["refresh_token"])
+                refresh = await maybe_decrypt_secret(self.db, tenant_id, row["refresh_token"])
+                return await self._refresh_token(tenant_id, user_id, refresh)
 
-        return row["access_token"]
+        return await maybe_decrypt_secret(self.db, tenant_id, row["access_token"])
 
     async def _refresh_token(
         self, tenant_id: str, user_id: str, refresh_token: str | None
@@ -101,7 +104,9 @@ class OutlookConnector:
                 SET access_token = $1, refresh_token = $2, expires_at = $3, updated_at = NOW()
                 WHERE tenant_id = $4 AND user_id = $5 AND provider = 'microsoft'
                 """,
-                new_token, new_refresh, expires_at, tenant_id, user_id,
+                await encrypt_tenant_secret(self.db, tenant_id, new_token),
+                await encrypt_tenant_secret(self.db, tenant_id, new_refresh) if new_refresh else None,
+                expires_at, tenant_id, user_id,
             )
             log.info("outlook.token_refreshed", tenant_id=tenant_id, user_id=user_id)
             return new_token
@@ -112,17 +117,7 @@ class OutlookConnector:
             return None
 
     async def _mark_error(self, tenant_id: str, user_id: str, reason: str) -> None:
-        try:
-            await self.db.execute(
-                """
-                UPDATE integrations
-                SET status = 'error', error_message = $1, updated_at = NOW()
-                WHERE tenant_id = $2 AND user_id = $3 AND provider = 'microsoft'
-                """,
-                reason[:500], tenant_id, user_id,
-            )
-        except Exception:
-            pass
+        await mark_integration_error(self.db, tenant_id, user_id, "microsoft", reason)
 
     # ── Webhook subscription ──────────────────────────────────────────────────
 

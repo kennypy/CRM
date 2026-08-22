@@ -6,18 +6,17 @@ and creates an Activity record (type=meeting).
 
 import os
 import json
-import asyncio
 import httpx
 import structlog
-import redis.asyncio as aioredis
 
+from nexcrm_shared.event_bus import consume
+
+from ..config import settings
 from ..db import get_pool
+from ..llm import complete_json
 
 log = structlog.get_logger()
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://:nexcrm_redis_dev_password@localhost:6379")
-GRAPH_CORE_URL = os.getenv("GRAPH_CORE_URL", "http://localhost:4002")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 STREAM_KEY = "nexcrm:zoom_events"
 GROUP_NAME = "meeting-summary-workers"
 CONSUMER_NAME = f"worker-{os.getpid()}"
@@ -25,48 +24,30 @@ CONSUMER_NAME = f"worker-{os.getpid()}"
 
 async def summarize_transcript(transcript: str, participants: list[str]) -> dict:
     """Use Claude to summarize a meeting transcript."""
-    if not ANTHROPIC_API_KEY or not transcript:
+    if not settings.ANTHROPIC_API_KEY or not transcript:
         return {
             "summary": "Meeting transcript received (AI summarization not configured).",
             "action_items": [],
             "sentiment": "neutral",
         }
 
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-haiku-4-5-20251001",
-                    "max_tokens": 1000,
-                    "messages": [{
-                        "role": "user",
-                        "content": f"""Summarize this meeting transcript. Return JSON with:
-                        - summary: 2-3 sentence overview
-                        - action_items: array of {{assignee, task, due_date}} objects
-                        - sentiment: "positive", "neutral", or "negative"
-                        - key_decisions: array of strings
+    result = await complete_json(
+        f"""Summarize this meeting transcript. Return JSON with:
+        - summary: 2-3 sentence overview
+        - action_items: array of {{assignee, task, due_date}} objects
+        - sentiment: "positive", "neutral", or "negative"
+        - key_decisions: array of strings
 
-                        Participants: {', '.join(participants)}
+        Participants: {', '.join(participants)}
 
-                        Transcript:
-                        {transcript[:10000]}
+        Transcript:
+        {transcript[:10000]}
 
-                        Return ONLY valid JSON.""",
-                    }],
-                },
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                text = data.get("content", [{}])[0].get("text", "{}")
-                return json.loads(text)
-    except Exception as e:
-        log.warning("meeting_summary.ai_error", error=str(e))
+        Return ONLY valid JSON.""",
+        max_tokens=1000,
+    )
+    if isinstance(result, dict):
+        return result
 
     return {
         "summary": f"Meeting with {len(participants)} participants.",
@@ -141,7 +122,7 @@ async def process_zoom_event(event_data: dict) -> None:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(
-                f"{GRAPH_CORE_URL}/activities",
+                f"{settings.GRAPH_CORE_URL}/activities",
                 params={"tenantId": tenant_id},
                 headers={"x-tenant-id": tenant_id, "x-user-id": user_id},
                 json={
@@ -169,41 +150,11 @@ async def process_zoom_event(event_data: dict) -> None:
 
 
 async def start_meeting_summary_worker() -> None:
-    """Start the Redis Stream consumer for Zoom events."""
-    r = aioredis.from_url(REDIS_URL)
-
-    # Create consumer group (ignore if exists)
-    try:
-        await r.xgroup_create(STREAM_KEY, GROUP_NAME, id="0", mkstream=True)
-    except Exception:
-        pass  # Group already exists
-
-    log.info("meeting_summary_worker.started")
-
-    while True:
-        try:
-            entries = await r.xreadgroup(
-                groupname=GROUP_NAME,
-                consumername=CONSUMER_NAME,
-                streams={STREAM_KEY: ">"},
-                count=5,
-                block=5000,
-            )
-
-            for stream, messages in entries:
-                for msg_id, data in messages:
-                    try:
-                        payload_str = data.get(b"payload", b"{}").decode("utf-8")
-                        event_data = json.loads(payload_str)
-                        await process_zoom_event(event_data)
-                        await r.xack(STREAM_KEY, GROUP_NAME, msg_id)
-                    except Exception as e:
-                        log.error("meeting_summary.process_error", msg_id=msg_id, error=str(e))
-
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            log.error("meeting_summary_worker.error", error=str(e))
-            await asyncio.sleep(5)
-
-    await r.aclose()
+    """Start the Redis Stream consumer for Zoom events. The gateway publishes
+    these with the JSON under a `payload` field (see api-gateway/src/routes/
+    webhooks.ts), unlike the pipeline streams which use `data`."""
+    await consume(
+        settings.REDIS_URL, STREAM_KEY, GROUP_NAME, CONSUMER_NAME,
+        process_zoom_event,
+        count=5, block=5000, field="payload",
+    )

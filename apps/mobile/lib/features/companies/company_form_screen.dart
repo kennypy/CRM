@@ -46,14 +46,9 @@ class _CompanyFormScreenState extends ConsumerState<CompanyFormScreen> {
       if (_countryController.text.isNotEmpty) data['country'] = _countryController.text.trim();
       if (_addressController.text.isNotEmpty) data['address'] = _addressController.text.trim();
 
-      final res = await ApiClient.instance.dio.post(Endpoints.companies, data: data);
+      await ApiClient.instance.dio.post(Endpoints.companies, data: data);
       if (mounted) {
-        final id = res.data['data']?['id'];
-        if (id != null) {
-          context.pop(true);
-        } else {
-          context.pop(true);
-        }
+        context.pop(true);
       }
     } catch (_) {
       if (mounted) {

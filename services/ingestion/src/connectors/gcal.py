@@ -28,15 +28,14 @@ import httpx
 import structlog
 
 from ..config import settings
+from .google_oauth import get_valid_google_token
 
 log = structlog.get_logger()
 
-GOOGLE_TOKEN_URL   = "https://oauth2.googleapis.com/token"
 GCAL_API_BASE      = "https://www.googleapis.com/calendar/v3"
 GCAL_WATCH_URL     = f"{GCAL_API_BASE}/calendars/{{calendar_id}}/events/watch"
 GCAL_EVENTS_URL    = f"{GCAL_API_BASE}/calendars/{{calendar_id}}/events"
 WATCH_EXPIRY_SECS  = 7 * 24 * 3600   # Google max: 1 week
-TOKEN_REFRESH_BUFFER = 300            # Refresh 5 minutes before expiry
 
 
 class GCalConnector:
@@ -45,88 +44,10 @@ class GCalConnector:
     def __init__(self, db_pool: asyncpg.Pool):
         self.db = db_pool
 
-    # ── Token management ──────────────────────────────────────────────────────
+    # ── Token management (shared with the Gmail connector) ────────────────────
 
     async def get_valid_token(self, tenant_id: str, user_id: str) -> str | None:
-        """Return a valid access token, refreshing proactively if needed."""
-        row = await self.db.fetchrow(
-            """
-            SELECT access_token, refresh_token, expires_at, metadata
-            FROM oauth_tokens
-            WHERE tenant_id = $1 AND user_id = $2 AND provider = 'google'
-            """,
-            tenant_id, user_id,
-        )
-        if not row:
-            log.warning("gcal.no_token", tenant_id=tenant_id, user_id=user_id)
-            return None
-
-        expires_at = row["expires_at"]
-        if expires_at:
-            remaining = (expires_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).total_seconds()
-            if remaining < TOKEN_REFRESH_BUFFER:
-                return await self._refresh_token(tenant_id, user_id, row["refresh_token"])
-
-        return row["access_token"]
-
-    async def _refresh_token(
-        self, tenant_id: str, user_id: str, refresh_token: str | None
-    ) -> str | None:
-        if not refresh_token:
-            log.error("gcal.no_refresh_token", tenant_id=tenant_id, user_id=user_id)
-            await self._mark_integration_error(tenant_id, user_id, "no_refresh_token")
-            return None
-
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    GOOGLE_TOKEN_URL,
-                    data={
-                        "grant_type":    "refresh_token",
-                        "refresh_token": refresh_token,
-                        "client_id":     settings.GOOGLE_CLIENT_ID,
-                        "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                    },
-                )
-            resp.raise_for_status()
-            data = resp.json()
-
-            new_access_token = data["access_token"]
-            expires_in       = data.get("expires_in", 3600)
-            new_expiry       = datetime.fromtimestamp(
-                time.time() + expires_in, tz=timezone.utc
-            )
-
-            await self.db.execute(
-                """
-                UPDATE oauth_tokens
-                SET access_token = $1, expires_at = $2, updated_at = NOW()
-                WHERE tenant_id = $3 AND user_id = $4 AND provider = 'google'
-                """,
-                new_access_token, new_expiry, tenant_id, user_id,
-            )
-            log.info("gcal.token_refreshed", tenant_id=tenant_id, user_id=user_id)
-            return new_access_token
-
-        except Exception as exc:
-            log.error("gcal.refresh_failed", error=str(exc), tenant_id=tenant_id)
-            await self._mark_integration_error(tenant_id, user_id, str(exc))
-            return None
-
-    async def _mark_integration_error(
-        self, tenant_id: str, user_id: str, reason: str
-    ) -> None:
-        try:
-            await self.db.execute(
-                """
-                UPDATE integrations
-                SET status = 'error', error_message = $1, updated_at = NOW()
-                WHERE tenant_id = $2 AND user_id = $3 AND provider = 'google'
-                """,
-                reason[:500], tenant_id, user_id,
-            )
-        except Exception:
-            pass  # integrations table may not exist yet
+        return await get_valid_google_token(self.db, tenant_id, user_id)
 
     # ── Push channel setup ────────────────────────────────────────────────────
 

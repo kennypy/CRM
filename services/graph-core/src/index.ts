@@ -1,4 +1,5 @@
 import "./telemetry";
+import { setTenantContext } from "./db/pool";
 import * as path from "path";
 import * as dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
@@ -127,6 +128,21 @@ async function bootstrap() {
     if (request.headers["x-tenant-id"] && request.headers["x-tenant-id"] !== claimTenant) {
       request.headers["x-tenant-id"] = claimTenant;
     }
+  });
+
+  // ── RLS tenant context ────────────────────────────────────────────────────
+  // Stamp the effective tenant into the async context so the app pool scopes
+  // relational queries via SET LOCAL app.current_tenant. Trust order: the
+  // verified internal-JWT claim (bound above), else the tenantId param —
+  // acceptable for bearer-less calls because validateServiceToken has already
+  // authenticated the caller as a trusted internal service.
+  server.addHook("preHandler", async (request) => {
+    const claim = (request.user as { tenantId?: string } | undefined)?.tenantId;
+    const q = (request.query ?? {}) as Record<string, unknown>;
+    const fallback = typeof q.tenantId === "string" ? q.tenantId
+      : typeof request.headers["x-tenant-id"] === "string" ? (request.headers["x-tenant-id"] as string)
+      : null;
+    setTenantContext(claim ?? fallback);
   });
 
   // Health

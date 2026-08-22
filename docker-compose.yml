@@ -261,6 +261,10 @@ services:
     environment:
       <<: *db-redis
       GRAPH_CORE_PORT: "4002"
+      # RLS role split (shared db-rls mechanism): relational queries run as
+      # nexcrm_app (RLS-subject); AGE/cypher + system paths as nexcrm_service.
+      DATABASE_URL_APP: "postgresql://nexcrm_app:${NEXCRM_APP_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
+      DATABASE_URL_SERVICE: "postgresql://nexcrm_service:${NEXCRM_SERVICE_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
     ports:
       - "127.0.0.1:4002:4002"
     depends_on: [postgres, redis]
@@ -274,6 +278,10 @@ services:
     environment:
       <<: *db-redis
       OUTREACH_PORT: "4003"
+      # RLS role split: request paths run as nexcrm_app (RLS-subject); the
+      # sequence-runner's cross-tenant scans as nexcrm_service.
+      DATABASE_URL_APP: "postgresql://nexcrm_app:${NEXCRM_APP_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
+      DATABASE_URL_SERVICE: "postgresql://nexcrm_service:${NEXCRM_SERVICE_PASSWORD:-nexcrm_dev}@postgres:5432/nexcrm"
       # Internal: only API gateway should reach this service
       API_GATEWAY_URL: http://api-gateway:4000
     ports:

@@ -21,7 +21,6 @@ restricted to a strict entity-type/field allowlist.
 """
 
 import json
-import asyncio
 from typing import Any
 
 import anthropic
@@ -29,11 +28,13 @@ import redis.asyncio as aioredis
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from nexcrm_shared.event_bus import consume
+
 from ..config import settings
+from ..llm import client
 from ..prompts.extraction import EXTRACTION_SYSTEM_PROMPT, build_extraction_prompt
 
 log = structlog.get_logger()
-client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 # C1: strict allowlist of entity types → writable fields. Auto-write only ever
 # applies the intersection of what the model returned and this allowlist, so a
@@ -72,121 +73,86 @@ def _is_trusted_source(activity: dict) -> bool:
 
 async def start_extraction_worker():
     redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    consumer_group = "extractor"
-    stream = settings.STREAM_NORMALIZED
+    await consume(
+        settings.REDIS_URL, settings.STREAM_NORMALIZED, "extractor", "extractor-1",
+        lambda activity: _process_activity(redis, activity),
+        count=5,
+    )
 
-    try:
-        await redis.xgroup_create(stream, consumer_group, id="0", mkstream=True)
-    except Exception:
-        pass
 
-    log.info("extraction_worker.started", stream=stream)
+async def _process_activity(redis, activity: dict):
+    body = activity.get("body_text") or ""
 
-    while True:
-        try:
-            messages = await redis.xreadgroup(
-                groupname=consumer_group,
-                consumername="extractor-1",
-                streams={stream: ">"},
-                count=5,
-                block=2000,
+    if len(body.strip()) < 10:
+        # Too short to extract anything meaningful
+        return
+
+    result = await _extract_with_llm(
+        activity_type=activity.get("activity_type", "email"),
+        subject=activity.get("subject"),
+        body=body,
+    )
+
+    if not result:
+        return
+
+    overall_confidence = _compute_overall_confidence(result)
+
+    # C1: model-reported confidence is a non-authoritative hint. The auto-write
+    # fast-path is only available for explicitly trusted/internal sources AND
+    # when AI_ALLOW_AUTO_WRITE is enabled. Untrusted external content (the normal
+    # case here) ALWAYS goes to human review regardless of confidence — this is
+    # the prompt-injection containment boundary.
+    auto_write_eligible = (
+        settings.AI_ALLOW_AUTO_WRITE
+        and _is_trusted_source(activity)
+        and overall_confidence >= settings.AI_AUTO_APPROVE_THRESHOLD
+    )
+
+    if auto_write_eligible:
+        # Constrain the applied write to the strict allowlist rather than trusting
+        # whatever JSON the model emitted.
+        allowlisted = _build_changes(result, allowlist=AUTO_WRITE_ALLOWLIST)
+        if not allowlisted:
+            # Nothing the model returned is safe to write; fall back to review.
+            log.warning(
+                "extraction.auto_write_empty_after_allowlist",
+                activity_id=activity.get("id"),
             )
-
-            for _, stream_messages in (messages or []):
-                tasks = [
-                    _process_activity(redis, msg_id, fields)
-                    for msg_id, fields in stream_messages
-                ]
-                await asyncio.gather(*tasks, return_exceptions=True)
-
-        except Exception as e:
-            log.error("extraction_worker.error", error=str(e))
-            await asyncio.sleep(5)
-
-
-async def _process_activity(redis, msg_id: str, fields: dict):
-    try:
-        activity = json.loads(fields["data"])
-        body = activity.get("body_text") or ""
-
-        if len(body.strip()) < 10:
-            # Too short to extract anything meaningful
-            await redis.xack(settings.STREAM_NORMALIZED, "extractor", msg_id)
-            return
-
-        result = await _extract_with_llm(
-            activity_type=activity.get("activity_type", "email"),
-            subject=activity.get("subject"),
-            body=body,
-        )
-
-        if not result:
-            await redis.xack(settings.STREAM_NORMALIZED, "extractor", msg_id)
-            return
-
-        overall_confidence = _compute_overall_confidence(result)
-
-        # C1: model-reported confidence is a non-authoritative hint. The auto-write
-        # fast-path is only available for explicitly trusted/internal sources AND
-        # when AI_ALLOW_AUTO_WRITE is enabled. Untrusted external content (the normal
-        # case here) ALWAYS goes to human review regardless of confidence — this is
-        # the prompt-injection containment boundary.
-        auto_write_eligible = (
-            settings.AI_ALLOW_AUTO_WRITE
-            and _is_trusted_source(activity)
-            and overall_confidence >= settings.AI_AUTO_APPROVE_THRESHOLD
-        )
-
-        if auto_write_eligible:
-            # Constrain the applied write to the strict allowlist rather than trusting
-            # whatever JSON the model emitted.
-            allowlisted = _build_allowlisted_changes(result)
-            if not allowlisted:
-                # Nothing the model returned is safe to write; fall back to review.
-                log.warning(
-                    "extraction.auto_write_empty_after_allowlist",
-                    activity_id=activity.get("id"),
-                )
-            else:
-                extraction_record = {
-                    "activity_id": activity.get("id"),
-                    "tenant_id": activity.get("tenant_id"),
-                    "source": activity.get("source"),
-                    "confidence": overall_confidence,
-                    # Only the allowlisted changes are forwarded to the writer.
-                    "changes": allowlisted,
-                    "activity_type": activity.get("activity_type"),
-                }
-                await redis.xadd(settings.STREAM_CRM_WRITES, {"data": json.dumps(extraction_record)})
-                log.info(
-                    "extraction.auto_write",
-                    confidence=overall_confidence,
-                    activity_id=activity.get("id"),
-                    source=activity.get("source"),
-                    fields=len(allowlisted),
-                )
-                await redis.xack(settings.STREAM_NORMALIZED, "extractor", msg_id)
-                return
-
-        if overall_confidence >= settings.AI_CONFIDENCE_THRESHOLD:
-            review_item = {
-                "tenant_id": activity.get("tenant_id"),
-                "extraction_id": activity.get("id"),
-                "confidence": overall_confidence,
-                "summary": _build_review_summary(result),
-                "proposed_changes": json.dumps(_build_proposed_changes(result)),
-                "evidence": body[:500],
-            }
-            await redis.xadd(settings.STREAM_REVIEW_QUEUE, {"data": json.dumps(review_item)})
-            log.info("extraction.review_queue", confidence=overall_confidence, activity_id=activity.get("id"))
-
         else:
-            log.info("extraction.discarded", confidence=overall_confidence, activity_id=activity.get("id"))
+            extraction_record = {
+                "activity_id": activity.get("id"),
+                "tenant_id": activity.get("tenant_id"),
+                "source": activity.get("source"),
+                "confidence": overall_confidence,
+                # Only the allowlisted changes are forwarded to the writer.
+                "changes": allowlisted,
+                "activity_type": activity.get("activity_type"),
+            }
+            await redis.xadd(settings.STREAM_CRM_WRITES, {"data": json.dumps(extraction_record)})
+            log.info(
+                "extraction.auto_write",
+                confidence=overall_confidence,
+                activity_id=activity.get("id"),
+                source=activity.get("source"),
+                fields=len(allowlisted),
+            )
+            return
 
-        await redis.xack(settings.STREAM_NORMALIZED, "extractor", msg_id)
+    if overall_confidence >= settings.AI_CONFIDENCE_THRESHOLD:
+        review_item = {
+            "tenant_id": activity.get("tenant_id"),
+            "extraction_id": activity.get("id"),
+            "confidence": overall_confidence,
+            "summary": _build_review_summary(result),
+            "proposed_changes": json.dumps(_build_changes(result, value_key="proposed_value")),
+            "evidence": body[:500],
+        }
+        await redis.xadd(settings.STREAM_REVIEW_QUEUE, {"data": json.dumps(review_item)})
+        log.info("extraction.review_queue", confidence=overall_confidence, activity_id=activity.get("id"))
 
-    except Exception as e:
-        log.error("extraction.processing_failed", msg_id=msg_id, error=str(e))
+    else:
+        log.info("extraction.discarded", confidence=overall_confidence, activity_id=activity.get("id"))
 
 
 @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -250,21 +216,29 @@ def _build_review_summary(result: dict) -> str:
     return ". ".join(parts) if parts else "Unstructured extraction"
 
 
-def _build_allowlisted_changes(result: dict) -> list[dict]:
+def _build_changes(
+    result: dict,
+    *,
+    allowlist: dict[str, frozenset[str]] | None = None,
+    value_key: str = "value",
+) -> list[dict]:
     """
-    C1: Build the set of writes for the auto-write fast-path, restricted to the
-    AUTO_WRITE_ALLOWLIST. Any entity type or field not on the allowlist is dropped,
-    so a prompt-injected extraction cannot introduce arbitrary entities/fields into
-    the CRM graph even when the trusted-source + confidence gates are satisfied.
+    Flatten extracted entities into change records.
+
+    With `allowlist` set (the C1 auto-write fast-path), any entity type or field
+    not on the allowlist is dropped, so a prompt-injected extraction cannot
+    introduce arbitrary entities/fields into the CRM graph even when the
+    trusted-source + confidence gates are satisfied. Review-queue items use
+    value_key="proposed_value" and no allowlist.
     """
     changes: list[dict] = []
     for i, entity in enumerate(result.get("entities", [])):
         entity_type = entity.get("type")
-        allowed_fields = AUTO_WRITE_ALLOWLIST.get(entity_type)
-        if not allowed_fields:
+        allowed_fields = allowlist.get(entity_type) if allowlist is not None else None
+        if allowlist is not None and not allowed_fields:
             continue  # unknown/disallowed entity type → skip
         for field_name, field_data in entity.get("fields", {}).items():
-            if field_name not in allowed_fields:
+            if allowlist is not None and field_name not in allowed_fields:
                 continue  # field not on allowlist → skip
             if not isinstance(field_data, dict):
                 continue
@@ -273,25 +247,8 @@ def _build_allowlisted_changes(result: dict) -> list[dict]:
                 "entity_type": entity_type,
                 "entity_idx": i,
                 "field": field_name,
-                "value": field_data.get("value"),
+                value_key: field_data.get("value"),
                 "confidence": field_data.get("confidence"),
                 "evidence": field_data.get("evidence"),
             })
-    return changes
-
-
-def _build_proposed_changes(result: dict) -> list[dict]:
-    changes = []
-    for i, entity in enumerate(result.get("entities", [])):
-        for field_name, field_data in entity.get("fields", {}).items():
-            if isinstance(field_data, dict):
-                changes.append({
-                    "operation": "create_or_update",
-                    "entity_type": entity.get("type"),
-                    "entity_idx": i,
-                    "field": field_name,
-                    "proposed_value": field_data.get("value"),
-                    "confidence": field_data.get("confidence"),
-                    "evidence": field_data.get("evidence"),
-                })
     return changes

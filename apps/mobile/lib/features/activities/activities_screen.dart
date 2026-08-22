@@ -5,6 +5,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 const _activityIcons = {
   'call': Icons.phone,
@@ -261,20 +262,7 @@ class _ActivityCard extends StatelessWidget {
     );
   }
 
-  String _formatDate(String? iso) {
-    if (iso == null) return '';
-    try {
-      final d = DateTime.parse(iso);
-      final now = DateTime.now();
-      final diff = now.difference(d);
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-      if (diff.inHours < 24) return '${diff.inHours}h ago';
-      if (diff.inDays < 7) return '${diff.inDays}d ago';
-      return '${d.month}/${d.day}/${d.year}';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _formatDate(String? iso) => formatRelativeTime(iso, fallback: '');
 }
 
 class _Badge extends StatelessWidget {

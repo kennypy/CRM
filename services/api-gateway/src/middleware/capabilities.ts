@@ -47,9 +47,7 @@ export function requireCapability(cap: string) {
       return reply.status(401).send({ success: false, error: { code: "UNAUTHENTICATED" } });
     }
 
-    const { rows } = await pool.query(`SELECT capabilities FROM users WHERE id = $1`, [userId]);
-    const caps = (rows[0]?.capabilities ?? {}) as Record<string, boolean>;
-    if (caps[cap] === true) return;
+    if (await userHasCapability(role, userId, cap)) return;
 
     return reply.status(403).send({
       success: false,

@@ -209,7 +209,7 @@ export async function callsRoutes(fastify: FastifyInstance) {
 
     let creds: TwilioCredentials & { twimlAppSid?: string };
     try {
-      creds = JSON.parse(decrypt(config.native_credentials_enc));
+      creds = JSON.parse(await decrypt(tenantId, config.native_credentials_enc));
     } catch {
       return reply.status(500).send({ success: false, error: { code: "CREDENTIAL_ERROR" } });
     }
@@ -253,7 +253,7 @@ export async function callsRoutes(fastify: FastifyInstance) {
     for (const row of rows) {
       if (!row.native_credentials_enc) continue;
       try {
-        const parsed = JSON.parse(decrypt(row.native_credentials_enc)) as TwilioCredentials;
+        const parsed = JSON.parse(await decrypt(row.tenant_id, row.native_credentials_enc)) as TwilioCredentials;
         if (parsed.accountSid === accountSid) {
           tenantId = row.tenant_id;
           creds = parsed;

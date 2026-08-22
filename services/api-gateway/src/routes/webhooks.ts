@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db";
-import { redis } from "../lib/redis";
+import { redis } from "@nexcrm/service-common/redis";
 
 // ── Stripe signature verification ─────────────────────────────────────────────
 

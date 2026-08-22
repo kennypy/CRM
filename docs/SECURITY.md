@@ -479,10 +479,19 @@ Every data table includes a `tenant_id UUID NOT NULL` column with a foreign key 
 `tenants(id)`. Indexes are structured as `(tenant_id, ...)` for efficient tenant-scoped
 queries.
 
-**Current enforcement:** Application-level `WHERE tenant_id = $1` clauses.
-
-**Not yet implemented:** PostgreSQL Row-Level Security (RLS) policies. See
-[Known Gaps](#11-known-gaps-and-security-roadmap).
+**Current enforcement:** Application-level `WHERE tenant_id = $1` clauses,
+backed by PostgreSQL Row-Level Security as defence-in-depth: migrations
+042/043/059 create role-split DB users (`nexcrm_app` RLS-subject,
+`nexcrm_platform` metadata reads, `nexcrm_service` BYPASSRLS) and
+`tenant_isolation` policies on every tenant-scoped table. The api-gateway,
+graph-core and outreach services stamp the verified tenant into an
+AsyncLocalStorage context and run request-path queries as `nexcrm_app` inside
+`SET LOCAL app.current_tenant` transactions (shared mechanism:
+`@nexcrm/service-common/db-rls`). Background workers and the auth service
+(identity provider — operates before a tenant is known) use the service role
+and scope explicitly in SQL. Enforcement activates when the
+`DATABASE_URL_APP/_PLATFORM/_SERVICE` role URLs are configured; without them
+everything falls back to `DATABASE_URL` unchanged.
 
 ### 5.3 Sub-Workspaces (Hierarchical Tenancy)
 
@@ -765,7 +774,6 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 
 | Gap | Risk | Severity | Mitigation / Notes |
 |-----|------|----------|-------------------|
-| **No PostgreSQL Row-Level Security** | Tenant isolation relies solely on application-level `WHERE tenant_id = $1` clauses. A bug in a query could leak cross-tenant data. | HIGH | All queries are parameterized and tested, but RLS would provide defense-in-depth. Planned for Phase 3. |
 | **No SAML/SCIM** | Enterprise SSO and automated user provisioning are not yet available. | MEDIUM | Planned for Phase 3 (enterprise tier). |
 | **No distributed locking for plan quota enforcement** | Sequence enrollment plan limits (step/contact quotas) have no distributed lock, allowing a race condition on concurrent enrollments. | LOW | Unlikely in practice but could allow minor overages. |
 
@@ -806,7 +814,7 @@ Source: `services/api-gateway/src/routes/compliance.ts`.
 
 - [ ] SAML 2.0 SSO integration
 - [ ] SCIM provisioning for automated user lifecycle
-- [ ] PostgreSQL Row-Level Security (RLS) policies for defense-in-depth tenant isolation
+- [x] PostgreSQL Row-Level Security (RLS) policies for defense-in-depth tenant isolation (migrations 042/043/059 + shared db-rls pools in api-gateway/graph-core/outreach)
 - [ ] Per-tenant encryption keys for enterprise customers
 - [ ] Multi-region data residency (region-pinned Postgres instances)
 - [ ] Custom roles and permissions builder (beyond the fixed 5-role hierarchy)

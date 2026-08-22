@@ -9,6 +9,7 @@ import {
   LineChart, RefreshCw, AlertCircle, TrendingUp, TrendingDown,
   DollarSign, Target, BarChart3, Zap,
 } from "lucide-react";
+import { ForecastCategories } from "@/components/forecasting/forecast-categories";
 
 interface Forecast {
   id: string;
@@ -154,6 +155,8 @@ export default function ForecastingPage() {
           </button>
         </div>
       </div>
+
+      <ForecastCategories />
 
       {/* Summary cards */}
       {summary && (

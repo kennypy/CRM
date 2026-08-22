@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { accessCookieHeader, refreshCookieHeader } from "../../auth/_cookies";
 
-const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
+import { AUTH_SERVICE_URL } from "../../_env";
+
 const IS_PROD = process.env.NODE_ENV === "production";
 
 // Demo tenant credentials — must match the demo seed data.
@@ -15,7 +16,7 @@ const DEMO_USER_PASSWORD = process.env.DEMO_USER_PASSWORD ?? "DemoVisitor@nexcrm
 export async function POST() {
   let upstream: Response;
   try {
-    upstream = await fetch(`${AUTH_URL}/auth/login`, {
+    upstream = await fetch(`${AUTH_SERVICE_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { REFRESH_COOKIE, accessCookieHeader, refreshCookieHeader, clearCookieHeaders } from "../_cookies";
 
-const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
+import { AUTH_SERVICE_URL } from "../../_env";
+
 
 // ── Sliding-window rate limiter (in-process) ──────────────────────────────────
 // Limits refresh attempts to 10 per IP per minute to prevent token brute-force.
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${AUTH_URL}/auth/refresh`, {
+    upstream = await fetch(`${AUTH_SERVICE_URL}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),

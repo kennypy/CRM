@@ -6,7 +6,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ACCESS_COOKIE } from "../auth/_cookies";
 
-const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
+import { AUTH_SERVICE_URL } from "../_env";
+
 
 export async function adminProxy(
   request: NextRequest,
@@ -22,7 +23,7 @@ export async function adminProxy(
     ? await request.text()
     : undefined;
 
-  const upstream = await fetch(`${AUTH_URL}/admin${path}`, {
+  const upstream = await fetch(`${AUTH_SERVICE_URL}/admin${path}`, {
     method: method ?? request.method,
     headers: {
       "Content-Type": "application/json",

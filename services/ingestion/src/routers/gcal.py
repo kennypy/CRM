@@ -17,6 +17,7 @@ from fastapi import APIRouter, Request, Response, BackgroundTasks
 import redis.asyncio as aioredis
 
 from ..config import settings
+from ..db import get_pool
 from ..models import RawSignalEvent
 
 log = structlog.get_logger()
@@ -29,14 +30,11 @@ async def _process_notification(
     calendar_id: str,
 ) -> None:
     """Background task: fetch new events and publish to raw-signals."""
-    # Import here to avoid circular imports and to allow lazy DB init
-    import asyncpg
     from ..connectors.gcal import GCalConnector
 
     try:
-        db = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=2)
         redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        connector = GCalConnector(db)
+        connector = GCalConnector(await get_pool())
 
         events = await connector.fetch_new_events(tenant_id, user_id, calendar_id)
 
@@ -59,7 +57,6 @@ async def _process_notification(
             event_count=len(events),
         )
 
-        await db.close()
         await redis.aclose()
 
     except Exception as exc:
@@ -89,9 +86,8 @@ async def gcal_notifications(request: Request, background_tasks: BackgroundTasks
     # is attacker-controllable and must NOT be trusted on its own; we verify the
     # X-Goog-Channel-Token against the per-channel secret stored at watch-setup
     # time (constant-time) and resolve tenant/user from that row (C2).
-    import asyncpg
     try:
-        db = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=2)
+        db = await get_pool()
         row = await db.fetchrow(
             """
             SELECT tenant_id, user_id,
@@ -103,7 +99,6 @@ async def gcal_notifications(request: Request, background_tasks: BackgroundTasks
             """,
             channel_id,
         )
-        await db.close()
     except Exception as exc:
         log.error("gcal.channel_lookup_failed", error=str(exc))
         return Response(status_code=200)

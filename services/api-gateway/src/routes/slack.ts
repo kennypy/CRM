@@ -12,11 +12,12 @@
 
 import { createHmac, timingSafeEqual } from "crypto";
 import type { FastifyInstance } from "fastify";
-import { pool } from "../db";
+import { pool, servicePool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
-import { exchangeSlackCode, encrypt } from "../lib/oauth-exchange";
+import { exchangeSlackCode } from "../lib/oauth-exchange";
+import { decryptTenantSecret, encryptTenantSecret } from "@nexcrm/service-common/tenant-crypto";
 import { listSlackUsers } from "../lib/slack-client";
-import { handleCloseDateInteraction } from "../workers/close-date-handler";
+import { handleCloseDateInteraction, handleCloseDateModalSubmit } from "../workers/close-date-handler";
 import { createOAuthState, consumeOAuthState } from "../lib/oauth-state";
 
 function verifySlackRequest(rawBody: Buffer, timestamp: string, signature: string): boolean {
@@ -86,7 +87,7 @@ export async function slackRoutes(server: FastifyInstance) {
       const redirectUri = `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/slack/callback`;
       const result = await exchangeSlackCode(code, redirectUri);
 
-      const encToken = encrypt(result.botToken);
+      const encToken = await encryptTenantSecret(servicePool, tenantId, result.botToken);
 
       await pool.query(
         `INSERT INTO slack_workspaces
@@ -117,10 +118,16 @@ export async function slackRoutes(server: FastifyInstance) {
     const body = request.body as Record<string, string>;
     const payload = JSON.parse(body.payload ?? "{}");
 
-    // Route to appropriate handler
-    const actionId = payload.actions?.[0]?.action_id ?? "";
-    if (actionId.startsWith("close_date_")) {
-      await handleCloseDateInteraction(payload);
+    // Route to appropriate handler. view_submission payloads (the "pick a
+    // date" modal) carry no actions array — previously they matched nothing,
+    // so the modal silently did nothing.
+    if (payload.type === "view_submission") {
+      await handleCloseDateModalSubmit(payload);
+    } else {
+      const actionId = payload.actions?.[0]?.action_id ?? "";
+      if (actionId.startsWith("close_date_")) {
+        await handleCloseDateInteraction(payload);
+      }
     }
 
     // Acknowledge immediately

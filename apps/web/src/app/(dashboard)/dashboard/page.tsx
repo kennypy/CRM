@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { previewEnabled } from "@/lib/feature-flags";
-import { formatCurrency, cn } from "@/lib/utils";
+import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
@@ -122,21 +122,6 @@ const ACTIVITY_ICON_MAP: Record<string, { icon: typeof Mail; color: string }> = 
   note:     { icon: CheckSquare, color: "bg-orange-100 text-orange-600" },
   document: { icon: CheckSquare, color: "bg-orange-100 text-orange-600" },
 };
-
-function timeAgo(isoDate: string): string {
-  const now = Date.now();
-  const then = new Date(isoDate).getTime();
-  const diffMs = now - then;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHrs = Math.floor(diffMin / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return `${Math.floor(diffDays / 7)}w ago`;
-}
 
 function daysSince(isoDate: string): number {
   return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000);
@@ -640,7 +625,7 @@ function RepDashboard({ currency, locale }: { currency: string; locale: string }
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{a.subject || `${a.type} activity`}</p>
-                      <p className="text-xs text-muted-foreground">{timeAgo(a.occurredAt)}</p>
+                      <p className="text-xs text-muted-foreground">{formatRelativeTime(a.occurredAt)}</p>
                     </div>
                   </div>
                 );

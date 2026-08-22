@@ -13,11 +13,11 @@ Flow:
 
 import hmac
 
-import asyncpg
 import structlog
 from fastapi import APIRouter, Request, Response, BackgroundTasks
 
 from ..config import settings
+from ..db import get_pool
 from ..models import RawSignalEvent
 
 log = structlog.get_logger()
@@ -37,20 +37,17 @@ async def _resolve_subscription(subscription_id: str, client_state: str) -> dict
     if not subscription_id or not client_state:
         return None
 
-    db = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=2)
-    try:
-        row = await db.fetchrow(
-            """
-            SELECT tenant_id, user_id,
-                   metadata->>'outlook_client_state_secret' AS client_state_secret
-            FROM oauth_tokens
-            WHERE provider = 'microsoft'
-              AND metadata->>'outlook_subscription_id' = $1
-            """,
-            subscription_id,
-        )
-    finally:
-        await db.close()
+    db = await get_pool()
+    row = await db.fetchrow(
+        """
+        SELECT tenant_id, user_id,
+               metadata->>'outlook_client_state_secret' AS client_state_secret
+        FROM oauth_tokens
+        WHERE provider = 'microsoft'
+          AND metadata->>'outlook_subscription_id' = $1
+        """,
+        subscription_id,
+    )
 
     if not row:
         log.warning("outlook.unknown_subscription", sub_id=subscription_id)
@@ -81,9 +78,8 @@ async def _process_notification(notification: dict, tenant_id: str, user_id: str
     resource = notification.get("resource", "")
 
     try:
-        db = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=2)
         redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        connector = OutlookConnector(db)
+        connector = OutlookConnector(await get_pool())
 
         # Determine resource type and fetch full payload
         raw_payload: dict | None = None
@@ -101,12 +97,10 @@ async def _process_notification(notification: dict, tenant_id: str, user_id: str
             resource_type = "outlook_cal"
         else:
             log.debug("outlook.unsupported_resource", resource=resource)
-            await db.close()
             await redis.aclose()
             return
 
         if not raw_payload or not source_event_id:
-            await db.close()
             await redis.aclose()
             return
 
@@ -120,7 +114,6 @@ async def _process_notification(notification: dict, tenant_id: str, user_id: str
         await redis.xadd(settings.STREAM_RAW_SIGNALS, {"data": raw.model_dump_json()})
         log.info("outlook.signal_published", resource_type=resource_type)
 
-        await db.close()
         await redis.aclose()
 
     except Exception as exc:

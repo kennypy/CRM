@@ -16,7 +16,6 @@ for the LLM extraction worker to consume.
 """
 
 import json
-import asyncio
 import logging
 import re
 import uuid
@@ -26,7 +25,11 @@ from typing import Any
 import asyncpg
 import redis.asyncio as aioredis
 
+from nexcrm_shared.email_domains import is_free_email_provider as _is_free_email_provider
+from nexcrm_shared.event_bus import consume
+
 from ..config import settings
+from .crm_writer import persist_review_item
 
 log = logging.getLogger(__name__)
 
@@ -350,25 +353,22 @@ class EntityResolver:
         instead of silently dropping it. Best-effort: failures are logged, never
         raised, so resolution of the rest of the activity proceeds.
         """
-        extraction_id = f"entity-create:{kind}:{identifier}"
-        summary = f"Proposed new {kind} '{identifier}' held for review ({reason})"
-        proposed = {
-            "operation": "create_node",
-            "kind": kind,
-            "identifier": identifier,
-            "reason": reason,
-        }
         try:
-            await self.db.execute(
-                """
-                INSERT INTO review_queue
-                    (tenant_id, extraction_id, status, confidence, summary,
-                     proposed_changes, evidence)
-                VALUES ($1, $2, 'pending', $3, $4, $5::jsonb, $6)
-                """,
-                tenant_id, extraction_id, UNALIGNED_CONFIDENCE, summary,
-                json.dumps(proposed), f"auto_create_blocked:{reason}",
-            )
+            # Reuse the single review_queue write path (status defaults to
+            # 'pending' in the schema).
+            await persist_review_item(self.db, {
+                "tenant_id": tenant_id,
+                "extraction_id": f"entity-create:{kind}:{identifier}",
+                "confidence": UNALIGNED_CONFIDENCE,
+                "summary": f"Proposed new {kind} '{identifier}' held for review ({reason})",
+                "proposed_changes": {
+                    "operation": "create_node",
+                    "kind": kind,
+                    "identifier": identifier,
+                    "reason": reason,
+                },
+                "evidence": f"auto_create_blocked:{reason}",
+            })
         except Exception as e:
             log.warning("entity_resolver.review_enqueue_failed kind=%s id=%s error=%s",
                         kind, identifier, e)
@@ -390,54 +390,18 @@ async def start_resolver_worker(db_pool: asyncpg.Pool):
     redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     resolver = EntityResolver(db_pool, redis)
 
-    consumer_group = "resolver"
-    stream = settings.STREAM_NORMALIZED
+    async def _process(activity: dict):
+        enriched = await resolver.resolve_activity(activity)
+        await redis.xadd(settings.STREAM_RESOLVED, {"data": json.dumps(enriched)})
+        log.debug("resolver.processed activity_id=%s", activity.get("id"))
 
-    try:
-        await redis.xgroup_create(stream, consumer_group, id="0", mkstream=True)
-    except Exception:
-        pass
-
-    log.info("resolver_worker.started stream=%s", stream)
-
-    while True:
-        try:
-            messages = await redis.xreadgroup(
-                groupname=consumer_group,
-                consumername="resolver-1",
-                streams={stream: ">"},
-                count=10,
-                block=2000,
-            )
-
-            for _, stream_messages in (messages or []):
-                for msg_id, fields in stream_messages:
-                    try:
-                        activity = json.loads(fields["data"])
-                        enriched = await resolver.resolve_activity(activity)
-                        await redis.xadd(
-                            settings.STREAM_RESOLVED,
-                            {"data": json.dumps(enriched)},
-                        )
-                        await redis.xack(stream, consumer_group, msg_id)
-                        log.debug("resolver.processed activity_id=%s", activity.get("id"))
-                    except Exception as e:
-                        log.error("resolver.processing_failed msg_id=%s error=%s", msg_id, e)
-
-        except Exception as e:
-            log.error("resolver_worker.error error=%s", e)
-            await asyncio.sleep(5)
+    await consume(
+        settings.REDIS_URL, settings.STREAM_NORMALIZED, "resolver", "resolver-1",
+        _process,
+    )
 
 
 # ── Utility functions ─────────────────────────────────────────────────────────
-
-FREE_EMAIL_PROVIDERS = frozenset([
-    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com",
-    "protonmail.com", "aol.com", "mail.com", "zoho.com", "yandex.com",
-])
-
-def _is_free_email_provider(domain: str) -> bool:
-    return domain.lower() in FREE_EMAIL_PROVIDERS
 
 def _domain_to_name(domain: str) -> str:
     """'acme-corp.com' → 'Acme Corp', 'techstart.io' → 'Techstart'"""

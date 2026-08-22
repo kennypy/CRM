@@ -4,8 +4,11 @@ import { requireRep, requireManager } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { blockReadOnlyFields } from "../middleware/field-access";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { moduleAccessGate } from "../middleware/module-access";
 
 export async function activitiesRoutes(fastify: FastifyInstance) {
+  // Custom-role permission grid (Settings → Users → Profiles)
+  fastify.addHook("preHandler", moduleAccessGate("activities"));
   const proxy = createProxy({ baseUrl: GRAPH_CORE, stripPrefix: "/api/v1", maskEntity: "activity" });
   const blockRO = blockReadOnlyFields("activity");
 

@@ -17,7 +17,7 @@
  */
 
 import { Queue, Worker, type Job } from "bullmq";
-import { pool, emitEvent } from "../db";
+import { pool, servicePool, runWithTenant, emitEvent } from "../db";
 import { sendViaGmail }   from "../lib/gmail-send";
 import { sendViaOutlook } from "../lib/outlook-send";
 import { assertNotOptedOut, OptOutError, personalizeTemplate } from "../lib/compliance";
@@ -25,30 +25,13 @@ import { assertEmailQuota, incrementEmailUsage } from "../lib/plan-limits";
 import { computeScheduledAt } from "../lib/scheduler";
 import { decrypt } from "../lib/encrypt";
 import { unsubscribeSigParams } from "../lib/unsubscribe-sign";
+import { redisConnection } from "@nexcrm/service-common/redis";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const QUEUE_NAME  = "nexcrm-sequence-steps";
 const BATCH_SIZE  = 50;
 const APP_URL     = () => process.env.APP_URL ?? "http://localhost:3000";
-
-function redisConnection() {
-  const url = process.env.REDIS_URL;
-  if (!url && process.env.NODE_ENV === "production") {
-    throw new Error(
-      "FATAL: REDIS_URL environment variable is not set. " +
-      "Refusing to start in production with hardcoded dev credentials.",
-    );
-  }
-  const redisUrl = url ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
-  const u = new URL(redisUrl);
-  return {
-    host:     u.hostname || "localhost",
-    port:     parseInt(u.port || "6379", 10),
-    password: u.password ? decodeURIComponent(u.password) : undefined,
-    maxRetriesPerRequest: null as null,
-  };
-}
 
 // ── Shared queue instance (exported so routes can enqueue ad-hoc jobs) ────────
 
@@ -103,7 +86,10 @@ export async function startSequenceRunner(): Promise<void> {
       if (job.name === "tick") {
         await scheduleDueSteps();
       } else if (job.name === "execute-step") {
-        await processOneExecution(job.data as DueExecution);
+        // Scope the whole execution to its tenant so every pool.query in the
+        // call tree (templates, quotas, counters, events) is RLS-scoped.
+        const exec = job.data as DueExecution;
+        await runWithTenant(exec.tenant_id, () => processOneExecution(exec));
       }
     },
     {
@@ -116,8 +102,9 @@ export async function startSequenceRunner(): Promise<void> {
     if (!job) return;
     if (job.name === "execute-step") {
       const exec = job.data as DueExecution;
-      // All retries exhausted — persist the failure to the DB.
-      pool.query(
+      // All retries exhausted — persist the failure to the DB (worker context,
+      // no request ALS → use the service pool).
+      servicePool.query(
         `UPDATE sequence_step_executions
             SET status = 'failed',
                 error_message = $1,
@@ -126,13 +113,13 @@ export async function startSequenceRunner(): Promise<void> {
           WHERE id = $2`,
         [err.message.slice(0, 500), exec.id],
       ).then(() =>
-        pool.query(
+        servicePool.query(
           `UPDATE sequence_enrollments
               SET status = 'error', updated_at = NOW()
             WHERE id = $1`,
           [exec.enrollment_id],
         ),
-      ).then(() => updateSequenceCounters(exec.sequence_id, exec.tenant_id, "remove_active"))
+      ).then(() => runWithTenant(exec.tenant_id, () => updateSequenceCounters(exec.sequence_id, exec.tenant_id, "remove_active")))
        .catch((dbErr: Error) => console.error("[sequence-worker] DB update after permanent failure:", dbErr.message));
     }
     console.error(
@@ -151,7 +138,8 @@ export async function startSequenceRunner(): Promise<void> {
 // ── Scheduler: find due steps and enqueue them ────────────────────────────────
 
 async function scheduleDueSteps(): Promise<void> {
-  const { rows: due } = await pool.query<DueExecution>(
+  // Cross-tenant scan — must bypass RLS (servicePool); rows carry tenant_id.
+  const { rows: due } = await servicePool.query<DueExecution>(
     `SELECT
        e.id, e.tenant_id, e.enrollment_id, e.step_id, e.step_number, e.type, e.scheduled_at,
        en.contact_email, en.contact_first_name, en.contact_last_name, en.contact_timezone,
@@ -173,7 +161,7 @@ async function scheduleDueSteps(): Promise<void> {
   if (!due.length) return;
 
   // Reset to 'pending' — FOR UPDATE SKIP LOCKED already prevents re-picking.
-  await pool.query(
+  await servicePool.query(
     `UPDATE sequence_step_executions
         SET status = 'pending', updated_at = NOW()
       WHERE id = ANY($1)`,
@@ -306,7 +294,7 @@ async function executeEmailStep(exec: DueExecution): Promise<{
 
   let accessToken: string;
   try {
-    accessToken = decrypt(token.access_token);
+    accessToken = await decrypt(exec.tenant_id, token.access_token);
   } catch {
     return { success: false, errorMessage: "Failed to decrypt OAuth token", retryable: false };
   }

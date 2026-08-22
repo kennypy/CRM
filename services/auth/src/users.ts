@@ -5,8 +5,7 @@
 
 import bcrypt from "bcryptjs";
 import { pool } from "./db";
-import type { User, UserRole, ROLE_SCOPES } from "@nexcrm/shared-types";
-import { ROLE_SCOPES as SCOPES_MAP } from "@nexcrm/shared-types";
+import { ROLE_SCOPES as SCOPES_MAP, type User, type UserRole } from "@nexcrm/shared-types";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -160,17 +159,6 @@ export function toPublicTenant(t: { id: string; name: string; slug: string; plan
 
 export function scopesForRole(role: UserRole): string[] {
   return SCOPES_MAP[role] ?? [];
-}
-
-/** Find a super_admin user by email (checks the _platform tenant). */
-export async function findSuperAdminByEmail(email: string): Promise<DBUser | null> {
-  const { rows } = await pool.query<DBUser>(
-    `SELECT u.* FROM users u
-     JOIN tenants t ON u.tenant_id = t.id
-     WHERE t.slug = '_platform' AND u.email = $1 AND u.role = 'super_admin' AND u.deleted_at IS NULL`,
-    [email.toLowerCase()]
-  );
-  return rows[0] ?? null;
 }
 
 /** Find a super_admin user by id (checks the _platform tenant). Used to
@@ -411,13 +399,14 @@ export async function updateTenantSettings(
 /** Update tenant basic info (name, plan). */
 export async function updateTenant(
   tenantId: string,
-  data: { name?: string; plan?: string }
+  data: { name?: string; plan?: string; dataRegion?: string }
 ): Promise<void> {
   const sets: string[] = [];
   const vals: unknown[] = [];
   let idx = 1;
   if (data.name) { sets.push(`name = $${++idx}`); vals.push(data.name); }
   if (data.plan) { sets.push(`plan = $${++idx}`); vals.push(data.plan); }
+  if (data.dataRegion) { sets.push(`data_region = $${++idx}`); vals.push(data.dataRegion); }
   if (sets.length === 0) return;
   await pool.query(
     `UPDATE tenants SET ${sets.join(", ")} WHERE id = $1`,

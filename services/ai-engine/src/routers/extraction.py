@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header
 from pydantic import BaseModel
+
+from ..tenancy import resolve_tenant
 
 router = APIRouter()
 
@@ -23,11 +25,7 @@ async def manual_extraction(
     Used for testing and by the review queue editor.
     """
     # H-AI5: derive tenant from the gateway-set header, never from the request body.
-    header_tenant = (x_tenant_id or "").strip()
-    if not header_tenant:
-        raise HTTPException(status_code=403, detail="Tenant context missing")
-    if request.tenant_id and request.tenant_id.strip() and request.tenant_id.strip() != header_tenant:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
+    resolve_tenant(x_tenant_id, request.tenant_id)
     from ..workers.extraction_worker import _extract_with_llm, _compute_overall_confidence
     result = await _extract_with_llm(
         activity_type=request.activity_type,

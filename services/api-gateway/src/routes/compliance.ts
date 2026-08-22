@@ -109,6 +109,83 @@ export async function complianceRoutes(server: FastifyInstance) {
   server.addHook("preHandler", denyApiKeys);
   server.addHook("preHandler", requireAdmin);
 
+  // ── Legal holds ─────────────────────────────────────────────────────────
+  // An active hold blocks DELETE on in-scope records (gateway guard) and
+  // denies matching erasure DSRs (dsr-processor).
+
+  server.get("/compliance/legal-holds", async (request) => {
+    const { tenantId } = request.user;
+    const { rows } = await readPool.query(
+      `SELECT lh.id, lh.name, lh.description, lh.status, lh.scope,
+              lh.created_at, lh.released_at,
+              cu.first_name || ' ' || cu.last_name AS created_by_name,
+              ru.first_name || ' ' || ru.last_name AS released_by_name
+       FROM legal_holds lh
+       LEFT JOIN users cu ON cu.id = lh.created_by
+       LEFT JOIN users ru ON ru.id = lh.released_by
+       WHERE lh.tenant_id = $1
+       ORDER BY (lh.status = 'active') DESC, lh.created_at DESC`,
+      [tenantId],
+    );
+    return { success: true, data: rows };
+  });
+
+  const legalHoldSchema = z.object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(2000).optional(),
+    scope: z.object({
+      entityTypes: z.array(z.enum(["contact", "company", "deal", "activity", "task"])).max(10).optional(),
+      entityIds: z.array(z.string().max(100)).max(500).optional(),
+      custodianEmails: z.array(z.string().email().max(320)).max(200).optional(),
+    }).default({}),
+  });
+
+  server.post("/compliance/legal-holds", async (request, reply) => {
+    const { tenantId, sub: userId } = request.user;
+    const parsed = legalHoldSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid legal hold" });
+    }
+    const { name, description, scope } = parsed.data;
+
+    const { rows } = await pool.query(
+      `INSERT INTO legal_holds (tenant_id, name, description, scope, created_by)
+       VALUES ($1, $2, $3, $4::jsonb, $5)
+       RETURNING id, name, description, status, scope, created_at`,
+      [tenantId, name, description ?? null, JSON.stringify(scope), userId],
+    );
+
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, user_id, action, entity_type, entity_id, metadata)
+       VALUES ($1, $2, 'legal_hold.created', 'legal_hold', $3, $4::jsonb)`,
+      [tenantId, userId, rows[0].id, JSON.stringify({ name, scope })],
+    ).catch(() => undefined);
+
+    return reply.status(201).send({ success: true, data: rows[0] });
+  });
+
+  server.post<{ Params: { id: string } }>("/compliance/legal-holds/:id/release", async (request, reply) => {
+    const { tenantId, sub: userId } = request.user;
+    const { rows } = await pool.query(
+      `UPDATE legal_holds
+       SET status = 'released', released_by = $1, released_at = NOW()
+       WHERE id = $2 AND tenant_id = $3 AND status = 'active'
+       RETURNING id, name`,
+      [userId, request.params.id, tenantId],
+    );
+    if (rows.length === 0) {
+      return reply.status(404).send({ success: false, error: "Active legal hold not found" });
+    }
+
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, user_id, action, entity_type, entity_id, metadata)
+       VALUES ($1, $2, 'legal_hold.released', 'legal_hold', $3, $4::jsonb)`,
+      [tenantId, userId, rows[0].id, JSON.stringify({ name: rows[0].name })],
+    ).catch(() => undefined);
+
+    return { success: true, data: rows[0] };
+  });
+
   // ── GET /compliance/status ──────────────────────────────────────────────
   server.get("/compliance/status", async (request, reply) => {
     const { tenantId } = request.user;

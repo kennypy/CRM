@@ -15,7 +15,9 @@ import asyncio
 
 import structlog
 
-from .telemetry import setup_telemetry
+from nexcrm_shared.telemetry import setup_telemetry
+
+from .config import settings
 from .db import get_pool, close_pool
 from .workers.extraction_worker import start_extraction_worker
 from .workers.meeting_summary import start_meeting_summary_worker
@@ -24,7 +26,10 @@ log = structlog.get_logger()
 
 
 async def main() -> None:
-    setup_telemetry()
+    setup_telemetry(
+        service_name="ai-engine",
+        endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT,
+    )
     await get_pool()  # warm shared DB pool used by the workers
     log.info("ai_engine_worker.starting")
     try:

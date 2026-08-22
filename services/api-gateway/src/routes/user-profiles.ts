@@ -17,6 +17,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
 import { denyApiKeys } from "../middleware/scope";
+import { PERMISSION_MODULES, PERMISSION_MODULE_KEYS } from "../middleware/module-access";
 
 /** Canonical feature capabilities. Referenced by the users route too. */
 export const CAPABILITIES = [
@@ -28,6 +29,18 @@ export const CAPABILITIES = [
 ] as const;
 
 export const CAPABILITY_KEYS = CAPABILITIES.map((c) => c.key);
+
+/** Coerce an arbitrary object to a clean { module: none|read|write } grid. */
+export function sanitizePermissions(input: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (input && typeof input === "object") {
+    for (const k of PERMISSION_MODULE_KEYS) {
+      const v = (input as Record<string, unknown>)[k];
+      if (v === "none" || v === "read" || v === "write") out[k] = v;
+    }
+  }
+  return out;
+}
 
 /** Coerce an arbitrary object to a clean { capKey: boolean } bag. */
 export function sanitizeCapabilities(input: unknown): Record<string, boolean> {
@@ -52,6 +65,7 @@ const CreateSchema = z.object({
   description:     z.string().max(500).optional().nullable(),
   baseRole:        z.enum(["admin", "manager", "rep", "read_only"]).default("rep"),
   capabilities:    z.record(z.boolean()).optional(),
+  permissions:     z.record(z.enum(["none", "read", "write"])).optional(),
   defaultTimezone: z.string().max(64).optional().nullable(),
   defaultLanguage: z.string().max(20).optional().nullable(),
 });
@@ -61,6 +75,7 @@ function toProfile(r: Record<string, unknown>) {
   return {
     id: r.id, name: r.name, description: r.description ?? null,
     baseRole: r.base_role, capabilities: r.capabilities ?? {},
+    permissions: r.permissions ?? {},
     defaultTimezone: r.default_timezone ?? null, defaultLanguage: r.default_language ?? null,
     isBuiltin: r.is_builtin, sortOrder: r.sort_order,
     createdAt: r.created_at, updatedAt: r.updated_at,
@@ -83,6 +98,11 @@ export async function userProfilesRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: CAPABILITIES });
   });
 
+  // Catalog of modules for the permissions-grid editor.
+  server.get("/permission-modules", { preHandler: [requireRep] }, async (_request, reply) => {
+    return reply.send({ success: true, data: PERMISSION_MODULES });
+  });
+
   server.get("/", { preHandler: [requireRep] }, async (request, reply) => {
     const { tenantId } = request.user;
     let { rows } = await pool.query(`SELECT * FROM user_profiles WHERE tenant_id = $1 ORDER BY sort_order, name`, [tenantId]);
@@ -100,9 +120,9 @@ export async function userProfilesRoutes(server: FastifyInstance) {
     const d = parsed.data;
     try {
       const { rows } = await pool.query(
-        `INSERT INTO user_profiles (tenant_id, name, description, base_role, capabilities, default_timezone, default_language, is_builtin, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,false, 100) RETURNING *`,
-        [tenantId, d.name, d.description ?? null, d.baseRole, JSON.stringify(sanitizeCapabilities(d.capabilities)), d.defaultTimezone ?? null, d.defaultLanguage ?? null]
+        `INSERT INTO user_profiles (tenant_id, name, description, base_role, capabilities, permissions, default_timezone, default_language, is_builtin, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,false, 100) RETURNING *`,
+        [tenantId, d.name, d.description ?? null, d.baseRole, JSON.stringify(sanitizeCapabilities(d.capabilities)), JSON.stringify(sanitizePermissions(d.permissions)), d.defaultTimezone ?? null, d.defaultLanguage ?? null]
       );
       return reply.status(201).send({ success: true, data: toProfile(rows[0]) });
     } catch (err: any) {
@@ -124,6 +144,7 @@ export async function userProfilesRoutes(server: FastifyInstance) {
     if (d.description !== undefined)      push("description", d.description);
     if (d.baseRole !== undefined)         push("base_role", d.baseRole);
     if (d.capabilities !== undefined)     push("capabilities", JSON.stringify(sanitizeCapabilities(d.capabilities)));
+    if (d.permissions !== undefined)      push("permissions", JSON.stringify(sanitizePermissions(d.permissions)));
     if (d.defaultTimezone !== undefined)  push("default_timezone", d.defaultTimezone);
     if (d.defaultLanguage !== undefined)  push("default_language", d.defaultLanguage);
     if (!sets.length) return reply.status(400).send({ success: false, error: { code: "NO_FIELDS" } });

@@ -16,6 +16,7 @@ import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { requireCapability } from "../middleware/capabilities";
+import { moduleAccessGate } from "../middleware/module-access";
 
 const CAMPAIGN_TYPES = ["email", "social", "event", "webinar", "content", "paid_search", "paid_social", "abm", "referral", "other"] as const;
 const CAMPAIGN_STATUSES = ["draft", "scheduled", "active", "paused", "completed", "archived"] as const;
@@ -109,6 +110,8 @@ function toCampaign(row: Record<string, unknown>) {
 }
 
 export async function campaignsRoutes(server: FastifyInstance) {
+  // Custom-role permission grid (Settings → Users → Profiles)
+  server.addHook("preHandler", moduleAccessGate("campaigns"));
   // ── GET /api/v1/campaigns ───────────────────────────────────────────────
   server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const tenantId = request.user.tenantId;

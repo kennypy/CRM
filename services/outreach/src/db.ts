@@ -1,20 +1,29 @@
-import { Pool } from "pg";
+import { createTenantScopedPools } from "@nexcrm/service-common/db-rls";
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL ?? "postgresql://nexcrm:nexcrm_dev@localhost:5432/nexcrm",
+/**
+ * Tenant-scoped pools (shared RLS mechanism — see db-rls in service-common).
+ * Request paths use `pool` (scoped by the resolveIdentity hook in index.ts);
+ * the sequence-runner's cross-tenant scans use `servicePool` and wrap
+ * per-execution work in `runWithTenant`.
+ */
+const db = createTenantScopedPools({
+  serviceName: "outreach",
   min: parseInt(process.env.DATABASE_POOL_MIN ?? "2", 10),
   max: parseInt(process.env.DATABASE_POOL_MAX ?? "10", 10),
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
 });
 
-pool.on("error", (err) => {
-  console.error("Unexpected PG pool error:", err);
-});
+export const pool = db.pool;
+export const servicePool = db.servicePool;
+export const setTenantContext = db.setTenantContext;
+export const runWithTenant = db.runWithTenant;
 
 // Graceful shutdown — drain connections on process termination
 const shutdown = async () => {
-  await pool.end().catch((err) => console.error("Pool shutdown error:", err));
+  await Promise.all([
+    pool.end().catch((err) => console.error("Pool shutdown error:", err)),
+    servicePool.end().catch(() => {}),
+    db.platformPool.end().catch(() => {}),
+  ]);
 };
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);

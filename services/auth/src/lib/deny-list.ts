@@ -18,7 +18,7 @@
  *             the marker outlives every token it must reject).
  */
 
-import { redis } from "./redis";
+import { redis } from "@nexcrm/service-common/redis";
 
 const DENY_KEY_PREFIX = "auth:deny:user:";
 

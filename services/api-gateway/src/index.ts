@@ -27,6 +27,8 @@ import { outreachRoutes }  from "./routes/outreach";
 import { workflowsRoutes } from "./routes/workflows";
 import { usersRoutes }     from "./routes/users";
 import { userProfilesRoutes } from "./routes/user-profiles";
+import { navRoutes } from "./routes/nav";
+import { residencyGuard } from "./middleware/residency";
 import { quotesRoutes }    from "./routes/quotes";
 import { productsRoutes }  from "./routes/products";
 import { productsImportRoutes } from "./routes/products-import";
@@ -65,6 +67,8 @@ import { startImportProcessorWorker }   from "./workers/import-processor";
 import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
 import { startDsrProcessorWorker }      from "./workers/dsr-processor";
 import { startScheduledReportsWorker }   from "./workers/scheduled-reports";
+import { startExportProcessorWorker }    from "./workers/export-processor";
+import { recordApiCall, recordAiEvent, startUsageRecorder } from "./lib/usage-recorder";
 import { dedupRoutes }                   from "./routes/dedup";
 import { adminRoutes }                   from "./routes/admin";
 import { kbRoutes }                      from "./routes/kb";
@@ -74,7 +78,7 @@ import { bookingRoutes }                 from "./routes/booking";
 import { auditLogRoutes }                from "./routes/audit-log";
 import { searchRoutes }                  from "./routes/search";
 import { teamsRoutes }                   from "./routes/teams";
-import { redis }                        from "./lib/redis";
+import { redis }                        from "@nexcrm/service-common/redis";
 import { setTenantContext, pool }       from "./db";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
 
@@ -189,6 +193,20 @@ async function bootstrap() {
     setTenantContext(tenantId);
   });
 
+  // Data-residency backstop: refuse requests for tenants pinned to another
+  // region when this stack declares DEPLOYMENT_REGION (no-op otherwise).
+  server.addHook("preHandler", residencyGuard);
+
+  // Usage metering — count every authenticated API call per tenant (batched;
+  // flushed to workspace_usage_stats by the usage recorder). AI endpoints
+  // additionally count as AI events for quota/consumption reporting.
+  server.addHook("onResponse", async (request) => {
+    const tenantId = (request.user as { tenantId?: string } | undefined)?.tenantId;
+    if (!tenantId) return;
+    recordApiCall(tenantId);
+    if (request.url.startsWith("/api/v1/ai/")) recordAiEvent(tenantId);
+  });
+
   // Diagnostic: confirms the AsyncLocalStorage → SET LOCAL chain end-to-end.
   // Returns the JWT tenant and the DB-side app.current_tenant seen inside a
   // wrapped query; they must match. Admin/super_admin only, read-only, cheap.
@@ -215,6 +233,7 @@ async function bootstrap() {
   await server.register(workflowsRoutes,    { prefix: "/api/v1/workflows" });
   await server.register(usersRoutes,        { prefix: "/api/v1/users" });
   await server.register(userProfilesRoutes, { prefix: "/api/v1/user-profiles" });
+  await server.register(navRoutes,          { prefix: "/api/v1/nav" });
   await server.register(quotesRoutes,       { prefix: "/api/v1/quotes" });
   await server.register(productsRoutes,     { prefix: "/api/v1/products" });
   await server.register(productsImportRoutes, { prefix: "/api/v1/products/import" });
@@ -283,6 +302,8 @@ async function bootstrap() {
   startCloseDateCheckerWorker();
   startDsrProcessorWorker();
   startScheduledReportsWorker();
+  startExportProcessorWorker();
+  startUsageRecorder();
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

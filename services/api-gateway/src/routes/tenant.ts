@@ -10,6 +10,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { denyApiKeys } from "../middleware/scope";
+import { requireAdmin } from "../middleware/rbac";
+import { getTenantRates, invalidateRates } from "../lib/currency";
 
 const UpdateSchema = z.object({
   defaultCurrency: z.string().regex(/^[A-Z]{3}$/, "Must be a 3-letter ISO 4217 code").optional(),
@@ -151,5 +153,50 @@ export async function tenantRoutes(server: FastifyInstance) {
         tcvTiers:        cfg.tcvTiers ?? [],
       },
     });
+  });
+
+  // ── Exchange rates (multi-currency) ───────────────────────────────────────
+  // rate = units of <currency> per 1 unit of the tenant base currency.
+  server.get("/exchange-rates", { preHandler: [denyApiKeys] }, async (request, reply) => {
+    const tenantId = request.user?.tenantId;
+    if (!tenantId) return reply.status(401).send({ success: false, error: { code: "UNAUTHORIZED" } });
+    const tr = await getTenantRates(tenantId);
+    return reply.send({ success: true, data: { base: tr.base, rates: tr.rates } });
+  });
+
+  server.put("/exchange-rates", { preHandler: [denyApiKeys, requireAdmin] }, async (request, reply) => {
+    const tenantId = request.user.tenantId;
+    const parsed = z.object({
+      rates: z.record(
+        z.string().regex(/^[A-Z]{3}$/),
+        z.number().positive().max(1e9)
+      ).refine((r) => Object.keys(r).length <= 50, { message: "Too many currencies" }),
+    }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`DELETE FROM exchange_rates WHERE tenant_id = $1`, [tenantId]);
+      for (const [currency, rate] of Object.entries(parsed.data.rates)) {
+        await client.query(
+          `INSERT INTO exchange_rates (tenant_id, currency, rate, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [tenantId, currency, rate, request.user.sub]
+        );
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    invalidateRates(tenantId);
+    const tr = await getTenantRates(tenantId);
+    return reply.send({ success: true, data: { base: tr.base, rates: tr.rates } });
   });
 }

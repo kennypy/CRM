@@ -13,8 +13,11 @@ import { createProxy } from "../lib/proxy";
 import { requireRep, requireManager, requireAdmin } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { OUTREACH_URL } from "../lib/service-urls";
+import { moduleAccessGate } from "../middleware/module-access";
 
 export async function outreachRoutes(fastify: FastifyInstance) {
+  // Custom-role permission grid (Settings → Users → Profiles)
+  fastify.addHook("preHandler", moduleAccessGate("sequences"));
   const proxy = createProxy({ baseUrl: OUTREACH_URL, stripPrefix: "/api/v1/outreach" });
 
   // ── Email ──────────────────────────────────────────────────────────────────

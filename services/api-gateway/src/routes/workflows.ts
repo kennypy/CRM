@@ -16,6 +16,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
+import { moduleAccessGate } from "../middleware/module-access";
 
 const CreateSchema = z.object({
   name:        z.string().min(1).max(255),
@@ -56,6 +57,8 @@ function toWorkflow(row: Record<string, unknown>) {
 }
 
 export async function workflowsRoutes(server: FastifyInstance) {
+  // Custom-role permission grid (Settings → Users → Profiles)
+  server.addHook("preHandler", moduleAccessGate("workflows"));
   // ── GET /api/v1/workflows ─────────────────────────────────────────────────
   server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const tenantId = request.user.tenantId;

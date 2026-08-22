@@ -5,6 +5,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 const _stages = ['discovery', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
 
@@ -106,7 +107,7 @@ class _DealsScreenState extends ConsumerState<DealsScreen> with SingleTickerProv
     }
   }
 
-  double _getNum(dynamic v) => v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0;
+  double _getNum(dynamic v) => asDouble(v);
 
   // Forecast calculations
   double get _openPipelineTotal {
@@ -133,11 +134,7 @@ class _DealsScreenState extends ConsumerState<DealsScreen> with SingleTickerProv
         .fold(0.0, (s, d) => s + _getNum(d['value']));
   }
 
-  String _fmtCurrency(double v) {
-    if (v >= 1000000) return '\$${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(1)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  String _fmtCurrency(double v) => formatCompactCurrency(v);
 
   @override
   Widget build(BuildContext context) {
@@ -322,7 +319,7 @@ class _DealCard extends StatelessWidget {
     required this.onTap, required this.onMovePrev, required this.onMoveNext,
   });
 
-  double _getNum(dynamic v) => v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0;
+  double _getNum(dynamic v) => asDouble(v);
 
   @override
   Widget build(BuildContext context) {
@@ -442,12 +439,8 @@ class _DealCard extends StatelessWidget {
     );
   }
 
-  String _formatValue(dynamic value, String currency) {
-    final v = value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '') ?? 0;
-    if (v >= 1000000) return '$currency ${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '$currency ${(v / 1000).toStringAsFixed(1)}K';
-    return '$currency ${v.toStringAsFixed(0)}';
-  }
+  String _formatValue(dynamic value, String currency) =>
+      '$currency ${formatCompactNumber(asDouble(value))}';
 
   String _formatDate(String? iso) {
     if (iso == null) return '';

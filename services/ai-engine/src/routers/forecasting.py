@@ -3,19 +3,17 @@ Pipeline forecasting router — generates AI-powered forecast narratives
 by analyzing deal velocity, stage conversion rates, and historical win rates.
 """
 
-import os
 import json
-import httpx
+
 import structlog
-from fastapi import APIRouter, Query, Header, HTTPException
+from fastapi import APIRouter, Query, Header
 
 from ..db import get_pool
+from ..llm import complete_text
+from ..tenancy import resolve_tenant
 
 log = structlog.get_logger()
 router = APIRouter()
-
-GRAPH_CORE_URL = os.getenv("GRAPH_CORE_URL", "http://localhost:4002")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 
 @router.get("/forecast")
@@ -25,15 +23,8 @@ async def get_forecast(
     x_tenant_id: str | None = Header(default=None, alias="x-tenant-id"),
 ):
     """Generate pipeline forecast with AI narrative."""
-    # Authoritative tenant is the verified x-tenant-id header (set by the gateway
-    # from the JWT); a client-supplied ?tenantId must match, and a header-less
-    # direct call is rejected.
-    header_tenant = (x_tenant_id or "").strip()
-    if not header_tenant:
-        raise HTTPException(status_code=401, detail="Missing tenant context")
-    if tenant_id and tenant_id != header_tenant:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    tenant_id = header_tenant
+    # H-AI5: tenant comes from the verified gateway header, never the query string.
+    tenant_id = resolve_tenant(x_tenant_id, tenant_id)
 
     pool = await get_pool()
 
@@ -132,45 +123,22 @@ async def get_forecast(
 
 async def _generate_forecast_narrative(data: dict) -> str:
     """Use Claude to generate a natural-language forecast narrative."""
-    if not ANTHROPIC_API_KEY:
-        return _fallback_narrative(data)
+    narrative = await complete_text(
+        f"""You are a sales analytics expert. Given this pipeline data, write a
+        concise 3-4 sentence forecast narrative for a sales manager. Be specific with numbers.
+        Include: current pipeline health, projected close rate, key risks, and one recommendation.
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-haiku-4-5-20251001",
-                    "max_tokens": 600,
-                    "messages": [{
-                        "role": "user",
-                        "content": f"""You are a sales analytics expert. Given this pipeline data, write a
-                        concise 3-4 sentence forecast narrative for a sales manager. Be specific with numbers.
-                        Include: current pipeline health, projected close rate, key risks, and one recommendation.
+        Pipeline data:
+        - Stages: {json.dumps(data.get('stages', []))}
+        - Win rate (90d): {data.get('winRate', 0)}%
+        - Average deal velocity: {data.get('avgVelocityDays', 0)} days
+        - Revenue last 30 days: ${data.get('recentRevenue30d', 0):,.0f}
+        - Period: {data.get('period', 'quarter')}
 
-                        Pipeline data:
-                        - Stages: {json.dumps(data.get('stages', []))}
-                        - Win rate (90d): {data.get('winRate', 0)}%
-                        - Average deal velocity: {data.get('avgVelocityDays', 0)} days
-                        - Revenue last 30 days: ${data.get('recentRevenue30d', 0):,.0f}
-                        - Period: {data.get('period', 'quarter')}
-
-                        Write in a direct, professional tone. No headers or bullet points.""",
-                    }],
-                },
-            )
-            if resp.status_code == 200:
-                result = resp.json()
-                return result.get("content", [{}])[0].get("text", _fallback_narrative(data))
-    except Exception as e:
-        log.warning("forecast.ai_error", error=str(e))
-
-    return _fallback_narrative(data)
+        Write in a direct, professional tone. No headers or bullet points.""",
+        max_tokens=600,
+    )
+    return narrative if narrative else _fallback_narrative(data)
 
 
 def _fallback_narrative(data: dict) -> str:

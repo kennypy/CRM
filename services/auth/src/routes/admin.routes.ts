@@ -132,6 +132,7 @@ export async function adminRoutes(server: FastifyInstance) {
     const schema = z.object({
       name: z.string().min(2).max(100).optional(),
       plan: z.enum(["starter", "growth", "enterprise"]).optional(),
+      dataRegion: z.enum(["us", "eu", "apac"]).optional(),
     });
 
     const body = schema.safeParse(request.body);

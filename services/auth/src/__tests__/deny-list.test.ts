@@ -15,7 +15,7 @@ const { store, redisMock } = vi.hoisted(() => {
   return { store, redisMock };
 });
 
-vi.mock("../lib/redis", () => ({ redis: redisMock }));
+vi.mock("@nexcrm/service-common/redis", () => ({ redis: redisMock }));
 
 import { denyUserTokens, isTokenDenied, ACCESS_TOKEN_TTL_SECONDS } from "../lib/deny-list";
 

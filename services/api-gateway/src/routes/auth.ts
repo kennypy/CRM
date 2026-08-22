@@ -5,9 +5,9 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { createProxy } from "../lib/proxy";
+import { AUTH_SERVICE_URL } from "../lib/service-urls";
 import { authMiddleware } from "../middleware/auth";
 
-const AUTH_SERVICE = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
 
 /**
  * Lightweight proxy for pre-auth routes (login, register, etc.) that don't
@@ -16,7 +16,7 @@ const AUTH_SERVICE = process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
 function createPublicAuthProxy() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const hasBody = ["POST", "PUT", "PATCH"].includes(request.method);
-    const downstream = `${AUTH_SERVICE}${request.url}`;
+    const downstream = `${AUTH_SERVICE_URL}${request.url}`;
 
     try {
       const resp = await fetch(downstream, {
@@ -49,7 +49,7 @@ export async function authRoutes(server: FastifyInstance) {
   server.post("/reset-password",   publicProxy);
 
   // /me requires a valid JWT — use the tenant-aware proxy
-  const authedProxy = createProxy({ baseUrl: AUTH_SERVICE });
+  const authedProxy = createProxy({ baseUrl: AUTH_SERVICE_URL });
   server.get("/me", { preHandler: [authMiddleware] }, authedProxy);
 
   // OAuth initiation requires a valid JWT — prevents CSRF where an attacker

@@ -12,7 +12,7 @@
  * A token is denied when its `iat` predates the marker.
  */
 
-import { redis } from "./redis";
+import { redis } from "@nexcrm/service-common/redis";
 
 const DENY_KEY_PREFIX = "auth:deny:user:";
 

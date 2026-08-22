@@ -10,7 +10,7 @@ import {
   Settings, Bell, ChevronDown, LogOut, User, Search,
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
   Headphones, Target, Globe, GraduationCap, ShieldCheck,
-  Cog, LineChart, MailPlus, ShieldAlert, Store, Megaphone,
+  Cog, LineChart, ShieldAlert, Store, Megaphone,
   ScrollText, BookOpen, CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,7 @@ import { useCommandBarStore } from "@/stores/command-bar-store";
 import { usePermissions } from "@/lib/permissions";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { isRouteEnabled } from "@/lib/feature-flags";
+import { useNavTabs } from "@/lib/use-nav-tabs";
 import type { StoredUser } from "@/lib/auth";
 
 const PRIMARY_NAV = [
@@ -37,7 +38,6 @@ const MORE_NAV = [
   { href: "/tasks",        icon: CheckSquare,  labelKey: "tasks"          },
   { href: "/scheduler",    icon: CalendarClock, labelKey: "scheduler"     },
   { href: "/quotes",       icon: FileText,     labelKey: "quotes"         },
-  { href: "/templates",    icon: MailPlus,      labelKey: "templates"     },
   { href: "/reports",      icon: BarChart3,    labelKey: "reports"        },
   { href: "/insights",     icon: LineChart,     labelKey: "insights"      },
   { href: "/forecasting",  icon: Target,        labelKey: "forecasting"   },
@@ -54,6 +54,16 @@ const MORE_NAV = [
   { href: "/audit-log",    icon: ScrollText,    labelKey: "auditLog", adminOnly: true },
   { href: "/admin",        icon: Cog,           labelKey: "admin", superAdminOnly: true },
 ].filter((item) => isRouteEnabled(item.href));
+
+type NavItem = (typeof PRIMARY_NAV)[number] | (typeof MORE_NAV)[number];
+
+/** Registry of every nav item by href, for resolving configured tab groups. */
+const NAV_BY_HREF = new Map<string, NavItem>(
+  [...PRIMARY_NAV, ...MORE_NAV].map((n) => [n.href, n])
+);
+
+/** How many configured tabs render inline before the rest fold into "More". */
+const PRIMARY_TAB_LIMIT = 6;
 
 interface Notification {
   id: string; type: string; title: string; body: string; time: string; read: boolean;
@@ -189,11 +199,10 @@ function ProfileDropdown({ user, onClose }: { user: StoredUser; onClose: () => v
   );
 }
 
-function MoreMenu({ pathname }: { pathname: string }) {
+function MoreMenu({ pathname, items }: { pathname: string; items: NavItem[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const t = useTranslations("nav");
-  const { isAdmin, isSuperAdmin, can } = usePermissions();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -201,17 +210,9 @@ function MoreMenu({ pathname }: { pathname: string }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Hide entries the user can't reach: admin-only (audit log), super-admin-only
-  // (the provider console /admin), and capability-gated modules (marketing needs
-  // can_campaigns). The backend also enforces this — this just avoids dead links
-  // and honours per-role/department module visibility.
-  const items = MORE_NAV.filter((n) => {
-    if ("superAdminOnly" in n && n.superAdminOnly) return isSuperAdmin;
-    if ("adminOnly" in n && n.adminOnly) return isAdmin;
-    if ("cap" in n && n.cap) return can(n.cap as string);
-    return true;
-  });
   const isActive = items.some((n) => pathname === n.href);
+
+  if (!items.length) return null;
 
   return (
     <div ref={ref} className="relative">
@@ -240,6 +241,33 @@ export function TopNav() {
   const pathname = usePathname();
   const open     = useCommandBarStore((s) => s.open);
   const t        = useTranslations("nav");
+  const { isAdmin, isSuperAdmin, can } = usePermissions();
+  const { tabs: configuredTabs } = useNavTabs();
+
+  // Hide entries the user can't reach: admin-only (audit log), super-admin-only
+  // (the provider console /admin), and capability-gated modules (marketing needs
+  // can_campaigns). The backend also enforces this — this just avoids dead links.
+  const gate = (n: NavItem) => {
+    if ("superAdminOnly" in n && n.superAdminOnly) return isSuperAdmin;
+    if ("adminOnly" in n && n.adminOnly) return isAdmin;
+    if ("cap" in n && n.cap) return can(n.cap as string);
+    return true;
+  };
+
+  // Tab groups (Settings → Navigation): when configured, the group's ordered
+  // tab list replaces the built-in nav — first few inline, the rest in "More".
+  let primaryItems: NavItem[] = PRIMARY_NAV.filter(gate);
+  let moreItems: NavItem[]    = MORE_NAV.filter(gate);
+  if (configuredTabs?.length) {
+    const resolved = configuredTabs
+      .map((href) => NAV_BY_HREF.get(href))
+      .filter((n): n is NavItem => Boolean(n))
+      .filter(gate);
+    if (resolved.length) {
+      primaryItems = resolved.slice(0, PRIMARY_TAB_LIMIT);
+      moreItems    = resolved.slice(PRIMARY_TAB_LIMIT);
+    }
+  }
 
   const [user, setUser]               = useState<StoredUser | null>(null);
   const [showNotif, setShowNotif]     = useState(false);
@@ -278,7 +306,7 @@ export function TopNav() {
       <div className="h-5 w-px bg-border" />
 
       <nav className="flex items-center gap-0.5">
-        {PRIMARY_NAV.map((n) => {
+        {primaryItems.map((n) => {
           const active = pathname === n.href;
           return (
             <Link key={n.href} href={n.href}
@@ -289,7 +317,7 @@ export function TopNav() {
             </Link>
           );
         })}
-        <MoreMenu pathname={pathname} />
+        <MoreMenu pathname={pathname} items={moreItems} />
       </nav>
 
       <div className="flex-1" />

@@ -13,8 +13,8 @@ import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { requireAiRead, requireAiWrite } from "../middleware/scope";
 import { createProxy } from "../lib/proxy";
+import { AI_ENGINE_URL } from "../lib/service-urls";
 
-const AI_ENGINE = process.env.AI_ENGINE_URL ?? "http://localhost:5001";
 
 const UpdateSchema = z.object({
   status: z.enum(["acknowledged", "resolved", "dismissed"]),
@@ -167,6 +167,6 @@ export async function anomaliesRoutes(server: FastifyInstance) {
 
   // ── POST /api/v1/anomalies/scan ─────────────────────────────────────────
   server.post("/scan", { preHandler: [requireManager, requireAiWrite] },
-    createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/anomalies" })
+    createProxy({ baseUrl: AI_ENGINE_URL, stripPrefix: "/api/v1/anomalies" })
   );
 }
