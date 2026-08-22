@@ -27,6 +27,7 @@ import { outreachRoutes }  from "./routes/outreach";
 import { workflowsRoutes } from "./routes/workflows";
 import { usersRoutes }     from "./routes/users";
 import { userProfilesRoutes } from "./routes/user-profiles";
+import { navRoutes } from "./routes/nav";
 import { quotesRoutes }    from "./routes/quotes";
 import { productsRoutes }  from "./routes/products";
 import { productsImportRoutes } from "./routes/products-import";
@@ -227,6 +228,7 @@ async function bootstrap() {
   await server.register(workflowsRoutes,    { prefix: "/api/v1/workflows" });
   await server.register(usersRoutes,        { prefix: "/api/v1/users" });
   await server.register(userProfilesRoutes, { prefix: "/api/v1/user-profiles" });
+  await server.register(navRoutes,          { prefix: "/api/v1/nav" });
   await server.register(quotesRoutes,       { prefix: "/api/v1/quotes" });
   await server.register(productsRoutes,     { prefix: "/api/v1/products" });
   await server.register(productsImportRoutes, { prefix: "/api/v1/products/import" });

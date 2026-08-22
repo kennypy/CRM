@@ -517,7 +517,8 @@
       "products": "Products",
       "customFields": "Fields",
       "customObjects": "Objects",
-      "permissions": "Permissions"
+      "permissions": "Permissions",
+      "navigation": "Navigation"
     },
     "personalInfo": "Personal Information",
     "firstName": "First name",

@@ -11,7 +11,7 @@ import {
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
   FileText, Package, ChevronDown, Columns3, Box, LockKeyhole, UsersRound, Upload,
-  Copy, Check, CalendarClock,
+  Copy, Check, CalendarClock, Layers,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -21,6 +21,7 @@ import { useTranslations } from "next-intl";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { InviteUserModal } from "@/components/settings/invite-user-modal";
 import { TeamsTab } from "@/components/settings/teams-tab";
+import { NavigationTab } from "@/components/settings/navigation-tab";
 import { ProductsImportModal } from "@/components/settings/products-import-modal";
 import { previewEnabled } from "@/lib/feature-flags";
 
@@ -95,7 +96,7 @@ function detectedTimezone(): string {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
 }
 
-type Tab = "profile" | "general" | "users" | "teams" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions";
+type Tab = "profile" | "general" | "users" | "teams" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions" | "navigation";
 
 // ── Theme Selector ─────────────────────────────────────────────────────────────
 
@@ -2686,12 +2687,14 @@ function useTabs() {
     { id: "custom-fields" as Tab,    label: t("tabs.customFields"),   icon: Columns3,   adminOnly: true },
     { id: "custom-objects" as Tab,   label: t("tabs.customObjects"),  icon: Box,        adminOnly: true },
     { id: "permissions" as Tab,      label: t("tabs.permissions"),    icon: LockKeyhole, adminOnly: true },
+    { id: "navigation" as Tab,       label: t("tabs.navigation"),     icon: Layers,      adminOnly: true },
   ] satisfies { id: Tab; label: string; icon: React.FC<{ className?: string }>; adminOnly?: boolean }[];
 }
 
 const VALID_TAB_IDS: Set<string> = new Set([
-  "profile", "security", "general", "users", "integrations", "quoting",
+  "profile", "security", "general", "users", "teams", "integrations", "quoting",
   "products", "communications", "billing", "custom-fields", "custom-objects", "permissions",
+  "navigation",
 ]);
 
 function SettingsInner() {
@@ -2771,6 +2774,7 @@ function SettingsInner() {
         {tab === "custom-fields"  && <CustomFieldsTab />}
         {tab === "custom-objects" && <CustomObjectsTab />}
         {tab === "permissions"    && <PermissionsTab />}
+        {tab === "navigation"     && <NavigationTab />}
       </div>
     </div>
   );
