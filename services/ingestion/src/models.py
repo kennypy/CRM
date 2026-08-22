@@ -55,11 +55,3 @@ class ActivityEvent(BaseModel):
     recording_url: Optional[str] = None
 
     normalized_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class EntityResolutionResult(BaseModel):
-    """Output of entity resolver — maps emails to Person/Company node IDs."""
-    activity_event_id: str
-    resolved_persons: list[dict[str, Any]]   # [{email, node_id, is_new, confidence}]
-    resolved_companies: list[dict[str, Any]] # [{domain, node_id, is_new, confidence}]
-    resolution_confidence: float             # overall confidence 0–1

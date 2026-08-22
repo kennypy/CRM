@@ -15,10 +15,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..config import settings
+from ..llm import client
 
 router = APIRouter()
 log = structlog.get_logger()
-client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 NL_SYSTEM_PROMPT = """You are NexCRM's intelligent command interface. You help sales reps manage their CRM using natural language.
 

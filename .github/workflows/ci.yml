@@ -176,6 +176,9 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
+      - name: Lint shared package
+        run: ruff check services/_shared
+
       - name: Lint ai-engine
         run: ruff check services/ai-engine/src
 

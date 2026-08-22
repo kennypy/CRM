@@ -16,7 +16,7 @@ import pytest
 
 
 # ── Reference implementation of the H-AI5 rule (kept in lock-step with
-#    enrichment._resolve_tenant). The header always wins; a non-empty body tenant
+#    src.tenancy.resolve_tenant). The header always wins; a non-empty body tenant
 #    that disagrees with the header is a hard 403; a missing header is a hard 403. ──
 def _decide(header_tenant, body_tenant):
     """Return resolved tenant or raise ValueError(status_code, reason)."""
@@ -64,11 +64,11 @@ def test_body_never_overrides_header():
 )
 def test_production_resolver_matches_contract():
     from fastapi import HTTPException
-    from src.routers.enrichment import _resolve_tenant
+    from src.tenancy import resolve_tenant
 
-    assert _resolve_tenant("tenant-A", None) == "tenant-A"
-    assert _resolve_tenant("tenant-A", "tenant-A") == "tenant-A"
+    assert resolve_tenant("tenant-A", None) == "tenant-A"
+    assert resolve_tenant("tenant-A", "tenant-A") == "tenant-A"
     with pytest.raises(HTTPException):
-        _resolve_tenant("tenant-A", "tenant-B")
+        resolve_tenant("tenant-A", "tenant-B")
     with pytest.raises(HTTPException):
-        _resolve_tenant(None, "tenant-A")
+        resolve_tenant(None, "tenant-A")

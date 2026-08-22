@@ -11,27 +11,19 @@ Handles all LLM-based intelligence:
   - Smart email composition suggestions
 """
 
-import os
 from contextlib import asynccontextmanager
+
 import structlog
-import sentry_sdk
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+
+from nexcrm_shared.bootstrap import configure_app, init_sentry
+from nexcrm_shared.health import make_health_router
 
 from .config import settings
 
-# Only initialize Sentry when a DSN is configured. The `enabled` option was
-# removed from sentry-sdk, so passing it raises TypeError on init and crashes
-# the service on boot — guard on the DSN instead (no DSN → Sentry stays off).
-_sentry_dsn = os.getenv("SENTRY_DSN")
-if _sentry_dsn:
-    sentry_sdk.init(
-        dsn=_sentry_dsn,
-        environment=os.getenv("NODE_ENV", "development"),
-        traces_sample_rate=0.1 if os.getenv("NODE_ENV") == "production" else 0.0,
-    )
-from .routers import extraction, scoring, nl_command, health, enrichment, forecasting, anomalies  # noqa: E402
-from .telemetry import setup_telemetry  # noqa: E402
+init_sentry()
+
+from .routers import extraction, scoring, nl_command, enrichment, forecasting, anomalies  # noqa: E402
 from .db import get_pool, close_pool  # noqa: E402
 
 log = structlog.get_logger()
@@ -53,22 +45,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[settings.API_GATEWAY_URL],
-    allow_methods=["*"],
-    allow_headers=["*"],
+configure_app(
+    app,
+    service_name="ai-engine",
+    api_gateway_url=settings.API_GATEWAY_URL,
+    otlp_endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT,
 )
 
-from .middleware.service_token import ServiceTokenMiddleware  # noqa: E402
-app.add_middleware(ServiceTokenMiddleware)
-
-# Instrument at import time — newer Starlette forbids add_middleware (which OTEL
-# instrument_app does under the hood) once the app has started, so this must run
-# before the lifespan startup, not inside it.
-setup_telemetry(app)
-
-app.include_router(health.router)
+app.include_router(make_health_router("ai-engine"))
 app.include_router(extraction.router, prefix="/extraction")
 app.include_router(scoring.router, prefix="/scoring")
 app.include_router(nl_command.router, prefix="/nl")

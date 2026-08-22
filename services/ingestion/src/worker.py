@@ -1,14 +1,11 @@
 """
 Ingestion worker entrypoint.
 
-Runs the async pipeline workers that were previously defined but never started
-(the old comment claimed "workers are started via Celery separately" — there is
-no Celery, and no process started them, so the pipeline never ran). This module
-is the process launched by the `ingestion-worker` container:
+This module is the process launched by the `ingestion-worker` container:
 
     python -m src.worker
 
-It opens a shared asyncpg pool and runs every consumer concurrently:
+It opens the shared asyncpg pool and runs every consumer concurrently:
   - normalizer:          raw-signals  -> normalized-signals
   - entity resolver:     normalized   -> resolved-signals (+ crm-writes, review-queue)
   - activity persister:  resolved     -> crm_events
@@ -18,11 +15,12 @@ It opens a shared asyncpg pool and runs every consumer concurrently:
 
 import asyncio
 
-import asyncpg
 import structlog
 
+from nexcrm_shared.telemetry import setup_telemetry
+
 from .config import settings
-from .telemetry import setup_telemetry
+from .db import close_pool, get_pool
 from .workers.normalizer import start_normalizer_workers
 from .workers.entity_resolver import start_resolver_worker
 from .workers.crm_writer import (
@@ -35,8 +33,11 @@ log = structlog.get_logger()
 
 
 async def main() -> None:
-    setup_telemetry()
-    pool = await asyncpg.create_pool(settings.DATABASE_URL, min_size=2, max_size=10)
+    setup_telemetry(
+        service_name="ingestion",
+        endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT,
+    )
+    pool = await get_pool(min_size=2, max_size=10)
     log.info("ingestion_worker.starting")
     try:
         await asyncio.gather(
@@ -47,7 +48,7 @@ async def main() -> None:
             start_review_persister(pool),
         )
     finally:
-        await pool.close()
+        await close_pool()
         log.info("ingestion_worker.stopped")
 
 

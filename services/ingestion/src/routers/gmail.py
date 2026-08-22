@@ -18,10 +18,10 @@ import base64
 import structlog
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-import asyncpg
 import redis.asyncio as aioredis
 
 from ..config import settings
+from ..db import get_pool
 from ..models import RawSignalEvent
 from ..connectors.gmail import GmailConnector
 
@@ -87,20 +87,17 @@ async def _resolve_owner(email_address: str | None) -> dict | None:
     if not email_address:
         return None
 
-    db = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=2)
-    try:
-        row = await db.fetchrow(
-            """
-            SELECT tenant_id, user_id, metadata->>'gmail_history_id' AS gmail_history_id
-            FROM oauth_tokens
-            WHERE provider = 'google'
-              AND lower(metadata->>'gmail_email_address') = lower($1)
-            LIMIT 1
-            """,
-            email_address,
-        )
-    finally:
-        await db.close()
+    db = await get_pool()
+    row = await db.fetchrow(
+        """
+        SELECT tenant_id, user_id, metadata->>'gmail_history_id' AS gmail_history_id
+        FROM oauth_tokens
+        WHERE provider = 'google'
+          AND lower(metadata->>'gmail_email_address') = lower($1)
+        LIMIT 1
+        """,
+        email_address,
+    )
 
     if not row:
         return None
@@ -147,19 +144,10 @@ async def gmail_push_notification(request: Request):
         # id on first notification), then publish one raw signal per real message
         # so the normalizer receives a full Gmail payload (id/internalDate/payload).
         start_history_id = owner.get("gmail_history_id") or str(history_id)
-        db = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=2)
-        try:
-            connector = GmailConnector(
-                db_pool=db,
-                google_client_id=settings.GOOGLE_CLIENT_ID,
-                google_client_secret=settings.GOOGLE_CLIENT_SECRET,
-                pubsub_topic="",
-            )
-            messages = await connector.fetch_new_messages(
-                owner["tenant_id"], owner["user_id"], start_history_id
-            )
-        finally:
-            await db.close()
+        connector = GmailConnector(await get_pool())
+        messages = await connector.fetch_new_messages(
+            owner["tenant_id"], owner["user_id"], start_history_id
+        )
 
         redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         try:

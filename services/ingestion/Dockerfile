@@ -12,6 +12,7 @@ ENV PYTHONUNBUFFERED=1
 RUN useradd --system --uid 1000 --user-group --no-create-home appuser
 COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=deps /usr/local/bin /usr/local/bin
+COPY --chown=appuser:appuser services/_shared/nexcrm_shared ./nexcrm_shared
 COPY --chown=appuser:appuser services/ingestion/src ./src
 USER appuser
 EXPOSE 5002

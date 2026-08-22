@@ -27,6 +27,7 @@ import httpx
 import structlog
 
 from ..config import settings
+from .google_oauth import TOKEN_REFRESH_BUFFER, mark_integration_error
 
 log = structlog.get_logger()
 
@@ -35,7 +36,6 @@ GRAPH_BASE            = "https://graph.microsoft.com/v1.0"
 GRAPH_ME_MESSAGES     = f"{GRAPH_BASE}/me/mailFolders/inbox/messages/delta"
 GRAPH_ME_EVENTS       = f"{GRAPH_BASE}/me/events/delta"
 GRAPH_SUBSCRIPTIONS   = f"{GRAPH_BASE}/subscriptions"
-TOKEN_REFRESH_BUFFER  = 300   # seconds before expiry to refresh
 
 
 class OutlookConnector:
@@ -112,17 +112,7 @@ class OutlookConnector:
             return None
 
     async def _mark_error(self, tenant_id: str, user_id: str, reason: str) -> None:
-        try:
-            await self.db.execute(
-                """
-                UPDATE integrations
-                SET status = 'error', error_message = $1, updated_at = NOW()
-                WHERE tenant_id = $2 AND user_id = $3 AND provider = 'microsoft'
-                """,
-                reason[:500], tenant_id, user_id,
-            )
-        except Exception:
-            pass
+        await mark_integration_error(self.db, tenant_id, user_id, "microsoft", reason)
 
     # ── Webhook subscription ──────────────────────────────────────────────────
 
