@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 const _notificationIcons = {
   'ai_review': Icons.auto_awesome,
@@ -330,27 +331,7 @@ class _NotificationTile extends StatelessWidget {
     );
   }
 
-  String _formatTypeLabel(String type) {
-    return type
-        .replaceAll('_', ' ')
-        .split(' ')
-        .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
-        .join(' ');
-  }
+  String _formatTypeLabel(String type) => humanize(type);
 
-  String _formatDate(String? iso) {
-    if (iso == null) return '';
-    try {
-      final d = DateTime.parse(iso);
-      final now = DateTime.now();
-      final diff = now.difference(d);
-      if (diff.inMinutes < 1) return 'just now';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-      if (diff.inHours < 24) return '${diff.inHours}h ago';
-      if (diff.inDays < 7) return '${diff.inDays}d ago';
-      return '${d.month}/${d.day}/${d.year}';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _formatDate(String? iso) => formatRelativeTime(iso, fallback: '');
 }

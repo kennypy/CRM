@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 // ---------------------------------------------------------------------------
 // Filter tab enum
@@ -217,17 +218,7 @@ class _ReviewQueueScreenState extends ConsumerState<ReviewQueueScreen>
     return Colors.orange;
   }
 
-  String _relativeTime(String? iso) {
-    if (iso == null) return '';
-    final dt = DateTime.tryParse(iso);
-    if (dt == null) return '';
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${(diff.inDays / 7).floor()}w ago';
-  }
+  String _relativeTime(String? iso) => formatRelativeTime(iso, fallback: '');
 
   IconData _sourceIcon(String? source) {
     switch (source) {

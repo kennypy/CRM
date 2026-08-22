@@ -95,11 +95,6 @@ class Endpoints {
   // static String get insightsPipeline => '$apiUrl/api/v1/insights/pipeline';
   // static String get insightsTeam => '$apiUrl/api/v1/insights/team';
 
-  // Calling / Power Dialer — routed through outreach service
-  static String get callingQueue => '$apiUrl/api/v1/outreach/calls';
-  static String get callingHistory => '$apiUrl/api/v1/outreach/calls';
-  static String get callingDisposition => '$apiUrl/api/v1/outreach/calls';
-
   // Coaching
   static String get coachingAlerts => '$apiUrl/api/v1/coaching/alerts';
   static String get coachingReps => '$apiUrl/api/v1/coaching/reps';

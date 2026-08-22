@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -235,13 +236,9 @@ class _CoachingScreenState extends ConsumerState<CoachingScreen>
     return names.toList()..sort();
   }
 
-  double _getNum(dynamic v) => v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0;
+  double _getNum(dynamic v) => asDouble(v);
 
-  String _fmtCurrency(double v) {
-    if (v >= 1000000) return '\$${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(0)}k';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  String _fmtCurrency(double v) => formatCompactCurrency(v);
 
   /* ---- Build ---- */
 

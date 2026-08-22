@@ -5,6 +5,7 @@ import '../../core/api/endpoints.dart';
 import '../../shared/widgets/loading_indicator.dart';
 import '../../shared/widgets/error_view.dart';
 import '../../shared/widgets/empty_state.dart';
+import '../../core/utils/formatters.dart';
 
 class CustomObjectsBrowserScreen extends ConsumerStatefulWidget {
   final String objectKey;
@@ -441,15 +442,7 @@ class _CustomObjectsBrowserScreenState
     }
   }
 
-  String _fmtDate(String? iso) {
-    if (iso == null || iso.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(iso);
-      return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) {
-      return iso;
-    }
-  }
+  String _fmtDate(String? iso) => formatShortDate(iso, fallback: '');
 }
 
 // ── Record Form Sheet ─────────────────────────────────────────────────

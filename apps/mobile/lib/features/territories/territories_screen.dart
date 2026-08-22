@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 // ── Data Models ──────────────────────────────────────────────────────────────
 
@@ -334,14 +335,7 @@ const _kDemoRules = <Map<String, dynamic>>[
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-String _formatCurrency(double value) {
-  if (value >= 1000000) {
-    return '\$${(value / 1000000).toStringAsFixed(1)}M';
-  } else if (value >= 1000) {
-    return '\$${(value / 1000).toStringAsFixed(0)}K';
-  }
-  return '\$${value.toStringAsFixed(0)}';
-}
+String _formatCurrency(double value) => formatCompactCurrency(value);
 
 Color _attainmentColor(double pct) {
   if (pct >= 80) return Colors.green;

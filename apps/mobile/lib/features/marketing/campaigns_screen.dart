@@ -5,6 +5,7 @@ import '../../core/api/endpoints.dart';
 import '../../shared/widgets/loading_indicator.dart';
 import '../../shared/widgets/error_view.dart';
 import '../../shared/widgets/empty_state.dart';
+import '../../core/utils/formatters.dart';
 
 class CampaignsScreen extends ConsumerStatefulWidget {
   const CampaignsScreen({super.key});
@@ -187,10 +188,9 @@ class _CampaignsScreenState extends ConsumerState<CampaignsScreen>
 
   // ── Formatting helpers ──────────────────────────────────────────────
 
-  String _fmtNum(num n) => n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
+  String _fmtNum(num n) => formatCompactNumber(n);
 
-  String _fmtCurrency(num n) =>
-      '\$${n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : n.toStringAsFixed(0)}';
+  String _fmtCurrency(num n) => formatCompactCurrency(n);
 
   String _fmtPct(num a, num b) =>
       b > 0 ? '${((a / b) * 100).toStringAsFixed(1)}%' : '0%';

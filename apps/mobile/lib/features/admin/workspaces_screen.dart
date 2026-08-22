@@ -6,6 +6,15 @@ import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_service.dart';
 import '../../shared/widgets/error_view.dart';
 import '../../shared/widgets/empty_state.dart';
+import '../../core/utils/formatters.dart';
+
+const Map<String, Color> _planColors = {
+  'enterprise': Colors.purple,
+  'professional': Colors.blue,
+  'growth': Colors.teal,
+  'starter': Colors.orange,
+  'free': Colors.grey,
+};
 
 class WorkspacesScreen extends ConsumerStatefulWidget {
   const WorkspacesScreen({super.key});
@@ -36,14 +45,6 @@ class _WorkspacesScreenState extends ConsumerState<WorkspacesScreen> {
     _PlanFilterOption('starter', 'Starter'),
     _PlanFilterOption('free', 'Free'),
   ];
-
-  static const Map<String, Color> _planColors = {
-    'enterprise': Colors.purple,
-    'professional': Colors.blue,
-    'growth': Colors.teal,
-    'starter': Colors.orange,
-    'free': Colors.grey,
-  };
 
   @override
   void initState() {
@@ -147,15 +148,7 @@ class _WorkspacesScreenState extends ConsumerState<WorkspacesScreen> {
     setState(() => _currentPage = page);
   }
 
-  String _formatDate(String? date) {
-    if (date == null || date.isEmpty) return '-';
-    try {
-      final dt = DateTime.parse(date);
-      return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) {
-      return date;
-    }
-  }
+  String _formatDate(String? date) => formatShortDate(date);
 
   void _showWorkspaceDetail(Map<String, dynamic> workspace) {
     Navigator.of(context).push(
@@ -587,14 +580,6 @@ class _WorkspaceDetailViewState extends State<_WorkspaceDetailView> {
   Map<String, dynamic>? _stats;
   bool _loading = true;
 
-  static const Map<String, Color> _planColors = {
-    'enterprise': Colors.purple,
-    'professional': Colors.blue,
-    'growth': Colors.teal,
-    'starter': Colors.orange,
-    'free': Colors.grey,
-  };
-
   @override
   void initState() {
     super.initState();
@@ -654,23 +639,9 @@ class _WorkspaceDetailViewState extends State<_WorkspaceDetailView> {
     }
   }
 
-  String _formatDate(String? date) {
-    if (date == null || date.isEmpty) return '-';
-    try {
-      final dt = DateTime.parse(date);
-      return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) {
-      return date;
-    }
-  }
+  String _formatDate(String? date) => formatShortDate(date);
 
-  String _fmtNumber(dynamic n) {
-    if (n == null) return '0';
-    final v = n is num ? n : num.tryParse(n.toString()) ?? 0;
-    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toString();
-  }
+  String _fmtNumber(dynamic n) => formatCompactNumber(asDouble(n));
 
   void _showCreateSubWorkspaceDialog() {
     final formKey = GlobalKey<FormState>();

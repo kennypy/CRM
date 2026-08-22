@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../core/auth/auth_provider.dart';
+import '../../core/utils/formatters.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -283,8 +283,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return list.take(10).toList();
   }
 
-  double _getNum(dynamic v) =>
-      v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0;
+  double _getNum(dynamic v) => asDouble(v);
 
   @override
   Widget build(BuildContext context) {
@@ -561,13 +560,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }).toList();
   }
 
-  String _formatCurrency(int value) {
-    if (value >= 1000000) {
-      return '\$${(value / 1000000).toStringAsFixed(1)}M';
-    }
-    if (value >= 1000) return '\$${(value / 1000).toStringAsFixed(0)}K';
-    return '\$$value';
-  }
+  String _formatCurrency(int value) => formatCompactCurrency(value);
 }
 
 // ============================================================
@@ -654,11 +647,7 @@ class _StaleDealTile extends StatelessWidget {
     );
   }
 
-  String _fmtValue(double v) {
-    if (v >= 1000000) return '\$${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(1)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  String _fmtValue(double v) => formatCompactCurrency(v);
 }
 
 // ============================================================
@@ -668,14 +657,9 @@ class _ForecastSummaryCard extends StatelessWidget {
   final Map<String, dynamic> forecast;
   const _ForecastSummaryCard({required this.forecast});
 
-  double _getNum(dynamic v) =>
-      v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0;
+  double _getNum(dynamic v) => asDouble(v);
 
-  String _fmtCurrency(double v) {
-    if (v >= 1000000) return '\$${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(1)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  String _fmtCurrency(double v) => formatCompactCurrency(v);
 
   @override
   Widget build(BuildContext context) {
@@ -820,14 +804,9 @@ class _TeamPerformanceCard extends StatelessWidget {
   final List<Map<String, dynamic>> members;
   const _TeamPerformanceCard({required this.members});
 
-  String _fmtCurrency(double v) {
-    if (v >= 1000000) return '\$${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(1)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  String _fmtCurrency(double v) => formatCompactCurrency(v);
 
-  double _getNum(dynamic v) =>
-      v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0;
+  double _getNum(dynamic v) => asDouble(v);
 
   @override
   Widget build(BuildContext context) {

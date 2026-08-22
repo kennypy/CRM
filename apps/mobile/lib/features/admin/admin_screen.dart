@@ -6,6 +6,7 @@ import '../../core/api/endpoints.dart';
 import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_service.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
@@ -192,13 +193,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> with SingleTickerProv
     finally { if (mounted) setState(() => _loadingGdpr = false); }
   }
 
-  String _fmtNumber(dynamic n) {
-    if (n == null) return '0';
-    final v = n is num ? n : num.tryParse(n.toString()) ?? 0;
-    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toString();
-  }
+  String _fmtNumber(dynamic n) => formatCompactNumber(asDouble(n));
 
   void _showCreateOrgDialog() {
     final formKey = GlobalKey<FormState>();

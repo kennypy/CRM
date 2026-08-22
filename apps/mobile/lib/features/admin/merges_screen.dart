@@ -4,6 +4,18 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/error_view.dart';
 import '../../shared/widgets/empty_state.dart';
+import '../../core/utils/formatters.dart';
+
+Color _statusColor(String status) {
+  switch (status.toLowerCase()) {
+    case 'pending': return Colors.blue;
+    case 'running': case 'in_progress': return Colors.amber;
+    case 'completed': return Colors.green;
+    case 'failed': return Colors.red;
+    case 'cancelled': return Colors.grey;
+    default: return Colors.grey;
+  }
+}
 
 class MergesScreen extends ConsumerStatefulWidget {
   const MergesScreen({super.key});
@@ -75,17 +87,6 @@ class _MergesScreenState extends ConsumerState<MergesScreen> {
     }
   }
 
-  Color _statusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending': return Colors.blue;
-      case 'running': case 'in_progress': return Colors.amber;
-      case 'completed': return Colors.green;
-      case 'failed': return Colors.red;
-      case 'cancelled': return Colors.grey;
-      default: return Colors.grey;
-    }
-  }
-
   IconData _statusIcon(String status) {
     switch (status.toLowerCase()) {
       case 'pending': return Icons.schedule;
@@ -97,15 +98,7 @@ class _MergesScreenState extends ConsumerState<MergesScreen> {
     }
   }
 
-  String _formatDate(String? date) {
-    if (date == null || date.isEmpty) return '-';
-    try {
-      final dt = DateTime.parse(date);
-      return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return date;
-    }
-  }
+  String _formatDate(String? date) => formatShortDateTime(date);
 
   void _showMergeDetail(Map<String, dynamic> merge) {
     Navigator.of(context).push(
@@ -331,26 +324,7 @@ class _MergeDetailViewState extends State<_MergeDetailView> {
     finally { if (mounted) setState(() => _loading = false); }
   }
 
-  Color _statusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending': return Colors.blue;
-      case 'running': case 'in_progress': return Colors.amber;
-      case 'completed': return Colors.green;
-      case 'failed': return Colors.red;
-      case 'cancelled': return Colors.grey;
-      default: return Colors.grey;
-    }
-  }
-
-  String _formatDate(String? date) {
-    if (date == null || date.isEmpty) return '-';
-    try {
-      final dt = DateTime.parse(date);
-      return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return date;
-    }
-  }
+  String _formatDate(String? date) => formatShortDateTime(date);
 
   @override
   Widget build(BuildContext context) {

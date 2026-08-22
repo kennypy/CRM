@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../shared/widgets/error_view.dart';
 import '../../shared/widgets/empty_state.dart';
+import '../../core/utils/formatters.dart';
 
 class DedupScreen extends ConsumerStatefulWidget {
   const DedupScreen({super.key});
@@ -268,14 +269,7 @@ class _DedupScreenState extends ConsumerState<DedupScreen> with SingleTickerProv
     );
   }
 
-  String _formatFieldName(String field) {
-    return field.replaceAllMapped(RegExp(r'([A-Z])'), (m) => ' ${m[1]}')
-        .replaceAll('_', ' ')
-        .trim()
-        .split(' ')
-        .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
-        .join(' ');
-  }
+  String _formatFieldName(String field) => humanize(field);
 
   @override
   Widget build(BuildContext context) {

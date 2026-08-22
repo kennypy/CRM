@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
+import '../../core/utils/formatters.dart';
 
 class UsersSettingsScreen extends ConsumerStatefulWidget {
   const UsersSettingsScreen({super.key});
@@ -59,21 +60,8 @@ class _UsersSettingsScreenState extends ConsumerState<UsersSettingsScreen>
     return managers;
   }
 
-  String _formatLastLogin(dynamic lastLogin) {
-    if (lastLogin == null) return 'Never';
-    try {
-      final dt = DateTime.parse(lastLogin.toString());
-      final now = DateTime.now();
-      final diff = now.difference(dt);
-      if (diff.inMinutes < 1) return 'Just now';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-      if (diff.inHours < 24) return '${diff.inHours}h ago';
-      if (diff.inDays < 7) return '${diff.inDays}d ago';
-      return '${dt.month}/${dt.day}/${dt.year}';
-    } catch (_) {
-      return lastLogin.toString();
-    }
-  }
+  String _formatLastLogin(dynamic lastLogin) =>
+      formatRelativeTime(lastLogin?.toString(), fallback: 'Never');
 
   Future<void> _toggleUserStatus(Map<String, dynamic> user) async {
     final currentStatus = user['status'] ?? 'active';

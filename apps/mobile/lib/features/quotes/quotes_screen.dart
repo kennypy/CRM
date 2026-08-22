@@ -5,6 +5,7 @@ import '../../core/api/endpoints.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'package:go_router/go_router.dart';
 import '../../shared/widgets/error_view.dart';
+import '../../core/utils/formatters.dart';
 
 const _statusColors = <String, Color>{
   'draft': Colors.grey,
@@ -109,11 +110,7 @@ class _QuotesScreenState extends ConsumerState<QuotesScreen> {
     return (won / decided * 100).round();
   }
 
-  String _fmtCurrency(double v) {
-    if (v >= 1000000) return '\$${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(1)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  String _fmtCurrency(double v) => formatCompactCurrency(v);
 
   Future<void> _sendQuote(String id) async {
     try {
