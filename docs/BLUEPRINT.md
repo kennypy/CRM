@@ -654,8 +654,11 @@ Tenant Isolation:
     scoped by the tenant claim from the verified JWT (never client input), and
     graph-core binds the effective tenant to the signed claim (overrides any
     client-supplied tenantId).
-  - Postgres Row-Level Security (defence-in-depth backstop): NOT yet implemented
-    — planned for Phase 3. See SECURITY.md.
+  - Postgres Row-Level Security (defence-in-depth backstop): implemented across
+    api-gateway, graph-core and outreach via a shared tenant-scoped pool
+    mechanism (@nexcrm/service-common/db-rls) + role-split connection strings;
+    the auth service deliberately runs as the BYPASSRLS service role (identity
+    provider operates pre-tenant). See SECURITY.md.
   - Separate encryption keys per enterprise tenant (Phase 3)
   - Data residency: region-pinned Postgres instances (Phase 3)
 
