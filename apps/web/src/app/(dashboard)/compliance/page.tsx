@@ -12,12 +12,12 @@ import {
   RefreshCw, Upload, Download, Play, TestTube,
   ChevronRight, Calendar, FileText, Archive,
   HardDrive, Cloud, Settings, Eye, Trash2,
-  AlertTriangle, Info, Plus, Search, Edit3, Save, X,
+  AlertTriangle, Info, Plus, Search, Edit3, Save, X, Scale,
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 
-type Tab = "soc2" | "escrow" | "mirroring" | "residency" | "encryption" | "retention";
+type Tab = "soc2" | "escrow" | "mirroring" | "residency" | "encryption" | "retention" | "legal_holds";
 
 type ControlStatus = "implemented" | "in_progress" | "not_started";
 
@@ -1472,6 +1472,258 @@ function RetentionTab() {
   );
 }
 
+// ── Legal Holds Tab ─────────────────────────────────────────────────────────────
+
+interface LegalHold {
+  id: string;
+  name: string;
+  description: string | null;
+  status: "active" | "released";
+  scope: { entityTypes?: string[]; entityIds?: string[]; custodianEmails?: string[] };
+  created_at: string;
+  released_at: string | null;
+  created_by_name: string | null;
+  released_by_name: string | null;
+}
+
+const HOLD_ENTITY_TYPES = ["contact", "company", "deal", "activity", "task"];
+
+function holdScopeSummary(scope: LegalHold["scope"]): string {
+  const parts: string[] = [];
+  parts.push(scope.entityTypes?.length ? scope.entityTypes.join(", ") : "all entity types");
+  if (scope.entityIds?.length) parts.push(`${scope.entityIds.length} specific record(s)`);
+  parts.push(scope.custodianEmails?.length
+    ? `${scope.custodianEmails.length} custodian(s)`
+    : "all data subjects");
+  return parts.join(" · ");
+}
+
+function LegalHoldsTab() {
+  const [holds, setHolds] = useState<LegalHold[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [entityTypes, setEntityTypes] = useState<string[]>([]);
+  const [custodianEmails, setCustodianEmails] = useState("");
+
+  const load = async () => {
+    try {
+      const res = await api.get("/api/v1/compliance/legal-holds");
+      const json = await res.json().catch(() => null);
+      if (json?.success) setHolds(json.data);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const createHold = async () => {
+    if (!name.trim()) { setError("Name is required"); return; }
+    setSaving(true);
+    setError(null);
+    const emails = custodianEmails.split(/[,\n;]/).map((e) => e.trim()).filter(Boolean);
+    const res = await api.post("/api/v1/compliance/legal-holds", {
+      name: name.trim(),
+      description: description.trim() || undefined,
+      scope: {
+        ...(entityTypes.length ? { entityTypes } : {}),
+        ...(emails.length ? { custodianEmails: emails } : {}),
+      },
+    }).catch(() => null);
+    setSaving(false);
+    const json = await res?.json().catch(() => null);
+    if (!res?.ok || !json?.success) {
+      setError(json?.error ?? "Failed to create legal hold");
+      return;
+    }
+    setName(""); setDescription(""); setEntityTypes([]); setCustodianEmails("");
+    setShowForm(false);
+    await load();
+  };
+
+  const releaseHold = async (hold: LegalHold) => {
+    if (!confirm(`Release legal hold "${hold.name}"? Deletion and erasure of its data will be allowed again.`)) return;
+    const res = await api.post(`/api/v1/compliance/legal-holds/${hold.id}/release`, {}).catch(() => null);
+    if (!res?.ok) { setError("Failed to release hold"); return; }
+    await load();
+  };
+
+  if (loading) return <div className="h-40 animate-pulse rounded-xl bg-muted" />;
+
+  const active = holds.filter((h) => h.status === "active");
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Legal Holds</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            An active hold blocks deletion of in-scope records and denies GDPR/CCPA
+            erasure requests for its custodians until the hold is released.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" /> New Hold
+        </button>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          <AlertCircle className="h-4 w-4 shrink-0" />{error}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="space-y-4 rounded-xl border border-border p-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Name</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Smith v. Acme litigation"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Description</label>
+              <input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Matter reference, counsel, context…"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Entity types in scope</label>
+            <p className="mb-2 text-xs text-muted-foreground">Leave all unchecked to cover every entity type.</p>
+            <div className="flex flex-wrap gap-3">
+              {HOLD_ENTITY_TYPES.map((t) => (
+                <label key={t} className="inline-flex items-center gap-2 text-sm capitalize">
+                  <input
+                    type="checkbox"
+                    checked={entityTypes.includes(t)}
+                    onChange={(e) =>
+                      setEntityTypes((prev) => e.target.checked ? [...prev, t] : prev.filter((x) => x !== t))
+                    }
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  {t}s
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Custodian emails</label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Data subjects whose erasure requests are denied while the hold is active.
+              Comma or newline separated; leave empty to cover every subject.
+            </p>
+            <textarea
+              value={custodianEmails}
+              onChange={(e) => setCustodianEmails(e.target.value)}
+              rows={2}
+              placeholder="jane@example.com, john@example.com"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowForm(false)}
+              className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={createHold}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" /> {saving ? "Creating…" : "Create Hold"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {active.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {active.length} active hold{active.length === 1 ? "" : "s"} — deletion and erasure are suspended for the data in scope.
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
+              <th className="px-4 py-2 font-medium">Hold</th>
+              <th className="px-4 py-2 font-medium">Scope</th>
+              <th className="px-4 py-2 font-medium">Status</th>
+              <th className="px-4 py-2 font-medium">Created</th>
+              <th className="px-4 py-2 font-medium" />
+            </tr>
+          </thead>
+          <tbody>
+            {holds.map((h) => (
+              <tr key={h.id} className="border-b border-border last:border-0">
+                <td className="px-4 py-3">
+                  <p className="font-medium">{h.name}</p>
+                  {h.description && <p className="text-xs text-muted-foreground">{h.description}</p>}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">{holdScopeSummary(h.scope)}</td>
+                <td className="px-4 py-3">
+                  <span className={cn(
+                    "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+                    h.status === "active"
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                  )}>
+                    {h.status}
+                  </span>
+                  {h.status === "released" && h.released_at && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {new Date(h.released_at).toLocaleDateString()}
+                      {h.released_by_name ? ` by ${h.released_by_name}` : ""}
+                    </p>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {new Date(h.created_at).toLocaleDateString()}
+                  {h.created_by_name ? ` by ${h.created_by_name}` : ""}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {h.status === "active" && (
+                    <button
+                      onClick={() => releaseHold(h)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                    >
+                      Release
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {holds.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  No legal holds. Create one to suspend deletion of records relevant to litigation or an investigation.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ──────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: typeof Shield }[] = [
@@ -1481,6 +1733,7 @@ const TABS: { id: Tab; label: string; icon: typeof Shield }[] = [
   { id: "residency", label: "Data Residency", icon: Globe },
   { id: "encryption", label: "Encryption", icon: Lock },
   { id: "retention", label: "Retention", icon: Clock },
+  { id: "legal_holds", label: "Legal Holds", icon: Scale },
 ];
 
 export default function CompliancePage() {
@@ -1549,6 +1802,7 @@ function CompliancePageInner() {
         {activeTab === "residency" && <ResidencyTab />}
         {activeTab === "encryption" && <EncryptionTab />}
         {activeTab === "retention" && <RetentionTab />}
+        {activeTab === "legal_holds" && <LegalHoldsTab />}
       </div>
     </div>
   );

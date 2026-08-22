@@ -4,6 +4,7 @@ import { requireManager, requireRep } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { blockReadOnlyFields } from "../middleware/field-access";
 import { checkRecordAccess } from "../middleware/record-access";
+import { blockLegalHold } from "../middleware/legal-hold-guard";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 import { moduleAccessGate } from "../middleware/module-access";
 
@@ -17,6 +18,7 @@ export async function dealsRoutes(server: FastifyInstance) {
   const aclRead   = checkRecordAccess("deal", "read");
   const aclWrite  = checkRecordAccess("deal", "write");
   const aclDelete = checkRecordAccess("deal", "delete");
+  const holdGuard = blockLegalHold("deal");
 
   // Read: all authenticated users
   server.get("/",                  { preHandler: [requireCrmRead] }, graphProxy);
@@ -29,5 +31,5 @@ export async function dealsRoutes(server: FastifyInstance) {
   server.patch("/:id", { preHandler: [requireRep, requireCrmWrite, aclWrite, blockRO] },     graphProxy);
 
   // Delete: manager+
-  server.delete("/:id", { preHandler: [requireManager, requireCrmWrite, aclDelete] }, graphProxy);
+  server.delete("/:id", { preHandler: [requireManager, requireCrmWrite, aclDelete, holdGuard] }, graphProxy);
 }

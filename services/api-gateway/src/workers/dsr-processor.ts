@@ -16,6 +16,7 @@ import { Queue, Worker } from "bullmq";
 import { servicePool as pool } from "../db";
 import { redisConnection } from "@nexcrm/service-common/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
+import { subjectHold } from "../lib/legal-hold";
 
 const QUEUE_NAME = "nexcrm-dsr-processor";
 
@@ -250,9 +251,27 @@ export function startDsrProcessorWorker(): void {
           break;
 
         case "erasure":
-        case "ccpa_delete":
+        case "ccpa_delete": {
+          // A legal hold suspends erasure for in-scope data subjects.
+          const hold = await subjectHold(pool, tenantId, subjectEmail);
+          if (hold) {
+            await pool.query(
+              `UPDATE data_subject_requests
+               SET status = 'denied', processed_by_worker = TRUE,
+                   resolution = $1, completed_at = NOW(), updated_at = NOW()
+               WHERE id = $2`,
+              [`Erasure blocked by active legal hold "${hold}"`, dsrId],
+            );
+            await pool.query(
+              `INSERT INTO audit_log (tenant_id, action, entity_type, entity_id, metadata)
+               VALUES ($1, 'dsr.erasure.denied_legal_hold', 'data_subject_request', $2, $3::jsonb)`,
+              [tenantId, dsrId, JSON.stringify({ subjectEmail, hold })],
+            );
+            break;
+          }
           await processErasureRequest(dsrId, tenantId, subjectEmail);
           break;
+        }
 
         case "do_not_sell":
           await processDoNotSell(dsrId, tenantId, subjectEmail);
