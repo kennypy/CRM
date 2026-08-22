@@ -88,6 +88,7 @@ const GRAPH_SOURCES: SourceId[] = ["deals", "companies", "contacts"];
 const SQL_SOURCES:   SourceId[] = ["activities", "quotes", "users"];
 
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { moduleAccessGate } from "../middleware/module-access";
 
 // Field definitions per source (used for validation + UI metadata)
 export const SOURCE_FIELDS: Record<SourceId, { key: string; label: string }[]> = {
@@ -518,6 +519,8 @@ export async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
 // ── Route handlers ────────────────────────────────────────────────────────────
 
 export async function reportsRoutes(server: FastifyInstance) {
+  // Custom-role permission grid (Settings → Users → Profiles)
+  server.addHook("preHandler", moduleAccessGate("reports"));
   // ── POST /api/v1/reports/run ─────────────────────────────────────────────
   server.post("/reports/run", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { tenantId, role } = request.user;

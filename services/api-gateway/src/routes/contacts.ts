@@ -5,8 +5,11 @@ import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { blockReadOnlyFields } from "../middleware/field-access";
 import { checkRecordAccess } from "../middleware/record-access";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { moduleAccessGate } from "../middleware/module-access";
 
 export async function contactsRoutes(server: FastifyInstance) {
+  // Custom-role permission grid (Settings → Users → Profiles)
+  server.addHook("preHandler", moduleAccessGate("contacts"));
   const proxy = createProxy({ baseUrl: GRAPH_CORE, stripPrefix: "/api/v1", maskEntity: "contact" });
   const blockRO = blockReadOnlyFields("contact");
   // Record-level ACLs (record_permissions / record_permission_defaults) —

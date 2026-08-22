@@ -15,6 +15,7 @@ import { pool } from "../db";
 import { requireAdmin, requireRep } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { userHasCapability } from "../middleware/capabilities";
+import { moduleAccessGate } from "../middleware/module-access";
 
 const LineItemSchema = z.object({
   productId:   z.string().uuid().optional(),
@@ -126,6 +127,8 @@ function toQuote(r: Record<string, unknown>, items: Record<string, unknown>[] = 
 }
 
 export async function quotesRoutes(server: FastifyInstance) {
+  // Custom-role permission grid (Settings → Users → Profiles)
+  server.addHook("preHandler", moduleAccessGate("quotes"));
   // ── GET /api/v1/quotes ───────────────────────────────────────────────────
   server.get("/", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { tenantId } = request.user;

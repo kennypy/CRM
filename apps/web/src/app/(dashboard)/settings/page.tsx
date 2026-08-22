@@ -41,10 +41,13 @@ interface UserProfile {
   id: string; name: string; description?: string | null;
   baseRole: "admin" | "manager" | "rep" | "read_only";
   capabilities: Record<string, boolean>;
+  permissions?: Record<string, ModuleAccess>;
   defaultTimezone?: string | null; defaultLanguage?: string | null;
   isBuiltin: boolean; sortOrder: number;
 }
 interface Capability { key: string; label: string; }
+type ModuleAccess = "none" | "read" | "write";
+interface PermModule { key: string; label: string; }
 
 
 const INTEGRATIONS = [
@@ -492,6 +495,7 @@ function ProfilesManagerModal({ onClose }: { onClose: () => void }) {
   const ROLE_LABELS = useRoleLabels();
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [caps,     setCaps]     = useState<Capability[]>([]);
+  const [modules,  setModules]  = useState<PermModule[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState<string | null>(null);
   const [editing,  setEditing]  = useState<Partial<UserProfile> | null>(null); // null = list view
@@ -500,12 +504,14 @@ function ProfilesManagerModal({ onClose }: { onClose: () => void }) {
   const load = async () => {
     setLoading(true);
     try {
-      const [pj, cj] = await Promise.all([
+      const [pj, cj, mj] = await Promise.all([
         api.get("/api/v1/user-profiles").then((r) => r.json()).catch(() => null),
         api.get("/api/v1/user-profiles/capabilities").then((r) => r.json()).catch(() => null),
+        api.get("/api/v1/user-profiles/permission-modules").then((r) => r.json()).catch(() => null),
       ]);
       if (pj?.success) setProfiles(pj.data as UserProfile[]);
       if (cj?.success) setCaps(cj.data as Capability[]);
+      if (mj?.success) setModules(mj.data as PermModule[]);
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -513,8 +519,8 @@ function ProfilesManagerModal({ onClose }: { onClose: () => void }) {
   const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
   const labelCls = "mb-1.5 block text-sm font-medium";
 
-  const startNew = () => setEditing({ name: "", description: "", baseRole: "rep", capabilities: {}, defaultTimezone: null });
-  const startEdit = (p: UserProfile) => setEditing({ ...p, capabilities: { ...p.capabilities } });
+  const startNew = () => setEditing({ name: "", description: "", baseRole: "rep", capabilities: {}, permissions: {}, defaultTimezone: null });
+  const startEdit = (p: UserProfile) => setEditing({ ...p, capabilities: { ...p.capabilities }, permissions: { ...(p.permissions ?? {}) } });
 
   const save = async () => {
     if (!editing?.name?.trim()) { setError("Name is required"); return; }
@@ -522,6 +528,7 @@ function ProfilesManagerModal({ onClose }: { onClose: () => void }) {
     const body = {
       name: editing.name, description: editing.description ?? null,
       baseRole: editing.baseRole ?? "rep", capabilities: editing.capabilities ?? {},
+      permissions: editing.permissions ?? {},
       defaultTimezone: editing.defaultTimezone ?? null,
     };
     try {
@@ -548,6 +555,15 @@ function ProfilesManagerModal({ onClose }: { onClose: () => void }) {
 
   const toggleCap = (key: string) =>
     setEditing((e) => e ? { ...e, capabilities: { ...(e.capabilities ?? {}), [key]: !(e.capabilities ?? {})[key] } } : e);
+
+  const setModuleAccess = (key: string, value: string) =>
+    setEditing((e) => {
+      if (!e) return e;
+      const next = { ...(e.permissions ?? {}) };
+      if (value === "") delete next[key];
+      else next[key] = value as ModuleAccess;
+      return { ...e, permissions: next };
+    });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -597,6 +613,29 @@ function ProfilesManagerModal({ onClose }: { onClose: () => void }) {
                         (editing.capabilities ?? {})[c.key] ? "translate-x-4" : "translate-x-0")} />
                     </button>
                   </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Module access</label>
+              <p className="mb-1.5 text-xs text-muted-foreground">
+                Restrict which parts of the CRM this role can see or change. &ldquo;Default&rdquo; leaves the base role in charge.
+              </p>
+              <div className="space-y-1.5 rounded-lg border border-border p-2">
+                {modules.map((m) => (
+                  <div key={m.key} className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted">
+                    <span className="text-sm">{m.label}</span>
+                    <select
+                      value={(editing.permissions ?? {})[m.key] ?? ""}
+                      onChange={(e) => setModuleAccess(m.key, e.target.value)}
+                      className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    >
+                      <option value="">Default</option>
+                      <option value="none">Hidden</option>
+                      <option value="read">Read only</option>
+                      <option value="write">Read &amp; write</option>
+                    </select>
+                  </div>
                 ))}
               </div>
             </div>
