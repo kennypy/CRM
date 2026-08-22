@@ -65,6 +65,8 @@ import { startImportProcessorWorker }   from "./workers/import-processor";
 import { startCloseDateCheckerWorker }  from "./workers/close-date-checker";
 import { startDsrProcessorWorker }      from "./workers/dsr-processor";
 import { startScheduledReportsWorker }   from "./workers/scheduled-reports";
+import { startExportProcessorWorker }    from "./workers/export-processor";
+import { recordApiCall, recordAiEvent, startUsageRecorder } from "./lib/usage-recorder";
 import { dedupRoutes }                   from "./routes/dedup";
 import { adminRoutes }                   from "./routes/admin";
 import { kbRoutes }                      from "./routes/kb";
@@ -189,6 +191,16 @@ async function bootstrap() {
     setTenantContext(tenantId);
   });
 
+  // Usage metering — count every authenticated API call per tenant (batched;
+  // flushed to workspace_usage_stats by the usage recorder). AI endpoints
+  // additionally count as AI events for quota/consumption reporting.
+  server.addHook("onResponse", async (request) => {
+    const tenantId = (request.user as { tenantId?: string } | undefined)?.tenantId;
+    if (!tenantId) return;
+    recordApiCall(tenantId);
+    if (request.url.startsWith("/api/v1/ai/")) recordAiEvent(tenantId);
+  });
+
   // Diagnostic: confirms the AsyncLocalStorage → SET LOCAL chain end-to-end.
   // Returns the JWT tenant and the DB-side app.current_tenant seen inside a
   // wrapped query; they must match. Admin/super_admin only, read-only, cheap.
@@ -283,6 +295,8 @@ async function bootstrap() {
   startCloseDateCheckerWorker();
   startDsrProcessorWorker();
   startScheduledReportsWorker();
+  startExportProcessorWorker();
+  startUsageRecorder();
 
   // ── Start ─────────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT ?? "4000", 10);

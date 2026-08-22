@@ -7,13 +7,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createProxy } from "../lib/proxy";
-import { ENTITY_COLLECTION } from "../lib/entity-map";
 import { pool } from "../db";
+import { approveReviewItem, listReviewItems, rejectReviewItem } from "../lib/review-queue";
 import { requireRep } from "../middleware/rbac";
 import { requireAiRead, requireAiWrite } from "../middleware/scope";
 
-import { GRAPH_CORE_URL as GRAPH_CORE, AI_ENGINE_URL as AI_ENGINE } from "../lib/service-urls";
-import { internalFetch } from "../lib/internal-fetch";
+import { AI_ENGINE_URL as AI_ENGINE } from "../lib/service-urls";
 
 // Allowed entity types — prevents unexpected query patterns
 const ENTITY_TYPES = ["person", "company", "deal", "activity"] as const;
@@ -43,16 +42,7 @@ export async function aiRoutes(server: FastifyInstance) {
     const status = q.status ?? "pending";
     const limit = Math.min(parseInt(q.limit ?? "20", 10), 100);
 
-    const { rows } = await pool.query(
-      `SELECT id, tenant_id, status, confidence, summary,
-              proposed_changes, evidence, reviewed_by, reviewed_at,
-              rejection_reason, created_at, updated_at
-       FROM review_queue
-       WHERE tenant_id = $1 AND status = $2
-       ORDER BY confidence ASC, created_at DESC
-       LIMIT $3`,
-      [jwt.tenantId, status, limit]
-    );
+    const rows = await listReviewItems(jwt.tenantId, status, limit);
 
     return reply.send({
       success: true,
@@ -66,50 +56,16 @@ export async function aiRoutes(server: FastifyInstance) {
     const { id } = request.params as { id: string };
     const jwt = request.user;
 
-    const { rows } = await pool.query(
-      `UPDATE review_queue
-       SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()
-       WHERE id = $2 AND tenant_id = $3 AND status = 'pending'
-       RETURNING *`,
-      [jwt.sub, id, jwt.tenantId]
+    const approved = await approveReviewItem(
+      { userId: jwt.sub, tenantId: jwt.tenantId, role: jwt.role ?? "" },
+      id,
+      server.log
     );
-
-    if (!rows.length) {
+    if (!approved) {
       return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
     }
 
-    // Apply proposed changes to graph-core
-    const approved = rows[0];
-    const changes = (approved.proposed_changes as any[]) ?? [];
-
-    for (const change of changes) {
-      const { entityType, entityId, field, proposedValue } = change;
-      if (!entityType || !entityId || !field) continue;
-
-      const endpoint = ENTITY_COLLECTION[entityType];
-      if (!endpoint) continue;
-
-      try {
-        const downstream = `${GRAPH_CORE}/${endpoint}/${entityId}?tenantId=${jwt.tenantId}`;
-        await internalFetch(downstream, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            "x-user-id": jwt.sub,
-            "x-tenant-id": jwt.tenantId,
-            "x-user-role": jwt.role ?? "",
-          },
-          body: JSON.stringify({ [field]: proposedValue }),
-        });
-        server.log.info({ reviewId: id, entityType, entityId, field }, "review.change_applied");
-      } catch (err: any) {
-        server.log.error({ reviewId: id, entityType, entityId, err: err.message }, "review.apply_failed");
-      }
-    }
-
-    server.log.info({ reviewId: id, userId: jwt.sub, changesApplied: changes.length }, "review.approved");
-
-    return reply.send({ success: true, data: toReviewItem(rows[0]) });
+    return reply.send({ success: true, data: toReviewItem(approved) });
   });
 
   // Reject a review item — feedback loop for extraction quality
@@ -119,21 +75,17 @@ export async function aiRoutes(server: FastifyInstance) {
     const bodyParsed = ReviewRejectBody.safeParse(request.body);
     const body = bodyParsed.success ? bodyParsed.data : { reason: undefined };
 
-    const { rows } = await pool.query(
-      `UPDATE review_queue
-       SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(),
-           rejection_reason = $2
-       WHERE id = $3 AND tenant_id = $4 AND status = 'pending'
-       RETURNING *`,
-      [jwt.sub, body?.reason ?? null, id, jwt.tenantId]
+    const rejected = await rejectReviewItem(
+      { userId: jwt.sub, tenantId: jwt.tenantId, role: jwt.role ?? "" },
+      id,
+      body?.reason ?? null,
+      server.log
     );
-
-    if (!rows.length) {
+    if (!rejected) {
       return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
     }
 
-    server.log.info({ reviewId: id, reason: body?.reason }, "review.rejected");
-    return reply.send({ success: true, data: toReviewItem(rows[0]) });
+    return reply.send({ success: true, data: toReviewItem(rejected) });
   });
 
   // ── Enrichment endpoints ─────────────────────────────────────────────────

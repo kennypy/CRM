@@ -15,8 +15,8 @@
 import { createHmac, randomBytes } from "crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { pool } from "../db";
-import { encrypt } from "../lib/oauth-exchange";
+import { pool, servicePool } from "../db";
+import { decrypt, encrypt } from "../lib/oauth-exchange";
 import { webhookDeliveryQueue } from "../workers/webhook-delivery";
 import { assertSafeUrl, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
 import { requireAdmin } from "../middleware/rbac";
@@ -59,7 +59,9 @@ export async function dispatchWebhookEvent(
   eventType: string,
   payload:   Record<string, unknown>,
 ): Promise<void> {
-  const { rows } = await pool.query<{ id: string }>(
+  // Called from worker context (no request/tenant ALS) — use the service pool
+  // so the subscription lookup works under RLS.
+  const { rows } = await servicePool.query<{ id: string }>(
     `SELECT id FROM outbound_webhooks
       WHERE tenant_id = $1
         AND is_active = TRUE
@@ -214,7 +216,7 @@ export async function outboundWebhooksRoutes(server: FastifyInstance) {
       timestamp: new Date().toISOString(),
     };
     const body      = JSON.stringify(testPayload);
-    const signature = createHmac("sha256", wh.secret).update(body).digest("hex");
+    const signature = createHmac("sha256", decrypt(wh.secret)).update(body).digest("hex");
 
     try {
       const resp = await fetch(wh.url, {

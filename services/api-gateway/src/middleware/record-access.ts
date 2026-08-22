@@ -60,8 +60,11 @@ export async function hasRecordAccess(
   );
 
   if (defaults.length === 0) {
-    // No defaults configured — allow read for all, write/delete only for managers+
-    return access === "read" || userRole === "manager";
+    // No explicit grant and no tenant defaults configured → record-level ACLs
+    // are not in use for this entity type. Allow, and let the route's RBAC
+    // preHandlers (rep+ for write, manager+ for delete) remain the gate —
+    // matching behaviour before ACL enforcement was wired in.
+    return true;
   }
 
   const def = defaults[0];

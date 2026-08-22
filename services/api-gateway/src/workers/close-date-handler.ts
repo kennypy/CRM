@@ -67,7 +67,7 @@ export async function handleCloseDateInteraction(payload: SlackInteractionPayloa
   const { rows: [mapping] } = await pool.query(
     `SELECT sum.tenant_id, sum.user_id
      FROM slack_user_mappings sum
-     JOIN slack_connections sc ON sc.tenant_id = sum.tenant_id AND sc.workspace_id = $1
+     JOIN slack_workspaces sc ON sc.tenant_id = sum.tenant_id AND sc.team_id = $1
      WHERE sum.slack_user_id = $2
      LIMIT 1`,
     [workspaceId, slackUserId]
@@ -173,7 +173,7 @@ export async function handleCloseDateModalSubmit(payload: SlackInteractionPayloa
   const { rows: [mapping] } = await pool.query(
     `SELECT sum.tenant_id
      FROM slack_user_mappings sum
-     JOIN slack_connections sc ON sc.tenant_id = sum.tenant_id AND sc.workspace_id = $1
+     JOIN slack_workspaces sc ON sc.tenant_id = sum.tenant_id AND sc.team_id = $1
      WHERE sum.slack_user_id = $2
      LIMIT 1`,
     [workspaceId, slackUserId]

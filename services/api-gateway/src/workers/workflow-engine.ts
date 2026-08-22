@@ -26,6 +26,7 @@
  */
 
 import { servicePool as pool } from "../db";
+import { dispatchWebhookEvent } from "../routes/outbound-webhooks";
 import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
 import { safePostJson, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
@@ -396,6 +397,20 @@ export async function startWorkflowEngine() {
 
       for (const event of events as CrmEvent[]) {
         await processEvent(event);
+        // Fan the event out to any subscribed outbound webhooks. This poll
+        // loop is the central consumer of crm_events, so it is also the
+        // dispatch point (previously dispatchWebhookEvent had no caller and
+        // webhook subscriptions never fired).
+        try {
+          await dispatchWebhookEvent(event.tenant_id, event.event_type, {
+            entityType: event.entity_type,
+            entityId: event.entity_id,
+            payload: event.payload,
+            occurredAt: (event as any).created_at,
+          });
+        } catch (err: any) {
+          console.error("[workflow-engine] webhook dispatch failed:", err.message);
+        }
         lastProcessedAt = (event as any).created_at;
         // Persist the cursor after each event so a crash resumes cleanly.
         await pool.query(

@@ -16,7 +16,7 @@ import { pool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
 import { exchangeSlackCode, encrypt } from "../lib/oauth-exchange";
 import { listSlackUsers } from "../lib/slack-client";
-import { handleCloseDateInteraction } from "../workers/close-date-handler";
+import { handleCloseDateInteraction, handleCloseDateModalSubmit } from "../workers/close-date-handler";
 import { createOAuthState, consumeOAuthState } from "../lib/oauth-state";
 
 function verifySlackRequest(rawBody: Buffer, timestamp: string, signature: string): boolean {
@@ -117,10 +117,16 @@ export async function slackRoutes(server: FastifyInstance) {
     const body = request.body as Record<string, string>;
     const payload = JSON.parse(body.payload ?? "{}");
 
-    // Route to appropriate handler
-    const actionId = payload.actions?.[0]?.action_id ?? "";
-    if (actionId.startsWith("close_date_")) {
-      await handleCloseDateInteraction(payload);
+    // Route to appropriate handler. view_submission payloads (the "pick a
+    // date" modal) carry no actions array — previously they matched nothing,
+    // so the modal silently did nothing.
+    if (payload.type === "view_submission") {
+      await handleCloseDateModalSubmit(payload);
+    } else {
+      const actionId = payload.actions?.[0]?.action_id ?? "";
+      if (actionId.startsWith("close_date_")) {
+        await handleCloseDateInteraction(payload);
+      }
     }
 
     // Acknowledge immediately

@@ -138,6 +138,26 @@ export async function incrementEmailUsage(tenantId: string): Promise<void> {
      DO UPDATE SET emails_sent = outreach_usage.emails_sent + 1`,
     [tenantId, currentMonth()],
   ).catch((err) => console.error("increment email usage failed:", err.message));
+  await mirrorWorkspaceUsage(tenantId, "emails_sent");
+}
+
+/**
+ * Mirror outreach counters into workspace_usage_stats so the admin usage
+ * dashboards (auth service getWorkspaceStats/getPlatformStats) reflect
+ * emails/calls — previously nothing wrote those columns.
+ */
+async function mirrorWorkspaceUsage(
+  tenantId: string,
+  column: "emails_sent" | "calls_made",
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO workspace_usage_stats (tenant_id, period, ${column})
+     VALUES ($1, $2, 1)
+     ON CONFLICT (tenant_id, period)
+     DO UPDATE SET ${column} = workspace_usage_stats.${column} + 1,
+                   updated_at = NOW()`,
+    [tenantId, currentMonth()],
+  ).catch((err) => console.error("workspace usage mirror failed:", err.message));
 }
 
 /** Increment call counter (call after successful call log). */
@@ -149,6 +169,7 @@ export async function incrementCallUsage(tenantId: string): Promise<void> {
      DO UPDATE SET calls_made = outreach_usage.calls_made + 1`,
     [tenantId, currentMonth()],
   ).catch((err) => console.error("increment call usage failed:", err.message));
+  await mirrorWorkspaceUsage(tenantId, "calls_made");
 }
 
 /** Return the current usage + limits for a tenant (for Settings UI display). */

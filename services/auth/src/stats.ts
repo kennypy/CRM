@@ -4,6 +4,9 @@
  */
 
 import { pool } from "./db";
+
+// NOTE: usage WRITES happen in the api-gateway (lib/usage-recorder.ts, plus
+// the outreach mirror in plan-limits.ts); this module only reads/aggregates.
 import type { WorkspaceUsageStats } from "@nexcrm/shared-types";
 
 /** Alias — the canonical shape lives in @nexcrm/shared-types. */
@@ -84,32 +87,7 @@ export async function aggregateChildStats(parentId: string): Promise<
   }));
 }
 
-/** Increment API call counter for a tenant (current month). */
-export async function recordApiCall(tenantId: string): Promise<void> {
-  const period = new Date().toISOString().slice(0, 7);
-  await pool.query(
-    `INSERT INTO workspace_usage_stats (tenant_id, period, api_calls)
-     VALUES ($1, $2, 1)
-     ON CONFLICT (tenant_id, period) DO UPDATE SET
-       api_calls = workspace_usage_stats.api_calls + 1,
-       updated_at = NOW()`,
-    [tenantId, period]
-  );
-}
 
-/** Increment AI events counter for a tenant (current month). */
-export async function recordAiEvent(tenantId: string, tokens: number = 0): Promise<void> {
-  const period = new Date().toISOString().slice(0, 7);
-  await pool.query(
-    `INSERT INTO workspace_usage_stats (tenant_id, period, ai_events, ai_tokens)
-     VALUES ($1, $2, 1, $3)
-     ON CONFLICT (tenant_id, period) DO UPDATE SET
-       ai_events = workspace_usage_stats.ai_events + 1,
-       ai_tokens = workspace_usage_stats.ai_tokens + $3,
-       updated_at = NOW()`,
-    [tenantId, period, tokens]
-  );
-}
 
 /** Get platform-wide aggregated stats for the current month. */
 export async function getPlatformStats(): Promise<UsageRow> {

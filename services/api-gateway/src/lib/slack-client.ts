@@ -16,7 +16,7 @@ interface SlackApiResponse {
 
 async function getBotToken(tenantId: string): Promise<string | null> {
   const { rows } = await pool.query(
-    `SELECT bot_token_enc FROM slack_connections WHERE tenant_id = $1 LIMIT 1`,
+    `SELECT bot_token_enc FROM slack_workspaces WHERE tenant_id = $1 AND is_active = TRUE LIMIT 1`,
     [tenantId]
   );
   if (!rows.length) return null;
