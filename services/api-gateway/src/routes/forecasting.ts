@@ -12,8 +12,8 @@ import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { requireAiRead, requireAiWrite } from "../middleware/scope";
 import { createProxy } from "../lib/proxy";
+import { AI_ENGINE_URL } from "../lib/service-urls";
 
-const AI_ENGINE = process.env.AI_ENGINE_URL ?? "http://localhost:5001";
 
 function toForecast(row: Record<string, unknown>) {
   return {
@@ -117,6 +117,6 @@ export async function forecastingRoutes(server: FastifyInstance) {
 
   // ── POST /api/v1/forecasting/compute ────────────────────────────────────
   server.post("/compute", { preHandler: [requireManager, requireAiWrite] },
-    createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/forecasting" })
+    createProxy({ baseUrl: AI_ENGINE_URL, stripPrefix: "/api/v1/forecasting" })
   );
 }

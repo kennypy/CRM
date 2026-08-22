@@ -21,9 +21,9 @@ import { requireCrmRead } from "../middleware/scope";
 import { requireCapability } from "../middleware/capabilities";
 import { internalFetch } from "../lib/internal-fetch";
 import { GRAPH_CORE_URL } from "../lib/service-urls";
+import { redisConnection } from "@nexcrm/service-common/redis";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
-const exportQueue = new Queue("export", { connection: { url: REDIS_URL } });
+const exportQueue = new Queue("export", { connection: redisConnection() });
 
 // ── S3 client ─────────────────────────────────────────────────────────────────
 

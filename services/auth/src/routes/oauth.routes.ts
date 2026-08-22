@@ -19,40 +19,18 @@ import {
   scopesForRole,
 } from "../users";
 import { createRefreshToken, buildJWTPayload } from "../tokens";
-import { redis } from "../lib/redis";
+import { redis } from "@nexcrm/service-common/redis";
 
 // ── OAuth token encryption (AES-256-GCM) ──────────────────────────────────────
+import { decryptSecret, encryptSecret } from "@nexcrm/service-common/secret-crypto";
+
 // Tokens from Google / Microsoft are encrypted before being persisted to the DB.
 // The key must be a 64-character hex string (32 bytes) set via OAUTH_ENCRYPTION_KEY.
 
-function getEncryptionKey(): Buffer {
-  const hex = process.env.OAUTH_ENCRYPTION_KEY ?? "";
-  if (hex.length !== 64) {
-    throw new Error("OAUTH_ENCRYPTION_KEY must be a 64-character hex string (32 bytes)");
-  }
-  return Buffer.from(hex, "hex");
-}
-
-function encryptToken(plaintext: string): string {
-  const key  = getEncryptionKey();
-  const iv   = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-  const enc  = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag  = cipher.getAuthTag();
-  // Format: base64(iv):base64(tag):base64(ciphertext)
-  return [iv.toString("base64"), tag.toString("base64"), enc.toString("base64")].join(":");
-}
-
-function decryptToken(encrypted: string): string {
-  const [ivB64, tagB64, encB64] = encrypted.split(":");
-  const key    = getEncryptionKey();
-  const iv     = Buffer.from(ivB64,  "base64");
-  const tag    = Buffer.from(tagB64, "base64");
-  const enc    = Buffer.from(encB64, "base64");
-  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(tag);
-  return decipher.update(enc).toString("utf8") + decipher.final("utf8");
-}
+// Encryption lives in @nexcrm/service-common/secret-crypto: one canonical
+// wire format across auth/gateway/outreach (decrypt accepts legacy formats).
+const encryptToken = encryptSecret;
+const decryptToken = decryptSecret;
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";

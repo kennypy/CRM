@@ -126,7 +126,8 @@ async function processSubscriptions() {
              ${result.rowCount > 20 ? `<p><em>Showing 20 of ${result.rowCount} rows</em></p>` : ""}`
           : "<p>No data for this period.</p>";
 
-        await internalFetch(`${OUTREACH_URL}/api/v1/email/send`, {
+        // NOTE: outreach mounts this at /email/send (no /api/v1 prefix).
+        await internalFetch(`${OUTREACH_URL}/email/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-tenant-id": sub.tenant_id },
           body: JSON.stringify({

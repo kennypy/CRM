@@ -18,7 +18,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { encrypt } from "../lib/oauth-exchange";
 import { webhookDeliveryQueue } from "../workers/webhook-delivery";
-import { assertSafeUrl, SsrfBlockedError } from "../lib/ssrf-guard";
+import { assertSafeUrl, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
 import { requireAdmin } from "../middleware/rbac";
 
 // Customer webhook URLs must be public https endpoints. Set

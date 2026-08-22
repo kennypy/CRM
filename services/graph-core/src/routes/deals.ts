@@ -8,6 +8,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
 import { computeRealityScore } from "../lib/reality-score";
 
@@ -39,8 +40,6 @@ const GetDealsQuery = z.object({
   limit:    z.coerce.number().int().min(1).max(200).default(50),
 });
 
-const IdParam     = z.object({ id: z.string().uuid() });
-const TenantQuery = z.object({ tenantId: z.string().min(1) });
 
 // ── Shared map return used in all deal queries ────────────────────────────────
 function dealReturnMap() {

@@ -7,13 +7,27 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "rootDirs": ["src", "../../packages/shared-types/src"],
+    "rootDirs": [
+      "src",
+      "../../packages/shared-types/src",
+      "../../packages/service-common/src"
+    ],
     "baseUrl": ".",
     "skipLibCheck": true,
     "paths": {
-      "@nexcrm/shared-types": ["../../packages/shared-types/src"]
+      "@nexcrm/shared-types": [
+        "../../packages/shared-types/src"
+      ],
+      "@nexcrm/service-common/*": [
+        "../../packages/service-common/src/*"
+      ]
     }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

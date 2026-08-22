@@ -6,7 +6,7 @@
 import { Queue, Worker } from "bullmq";
 import { servicePool as pool } from "../db";
 import { sendDM } from "../lib/slack-client";
-import { redisConnection } from "../lib/redis";
+import { redisConnection } from "@nexcrm/service-common/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
 
 const QUEUE_NAME = "nexcrm-slack-notifications";

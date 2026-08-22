@@ -74,7 +74,7 @@ import { bookingRoutes }                 from "./routes/booking";
 import { auditLogRoutes }                from "./routes/audit-log";
 import { searchRoutes }                  from "./routes/search";
 import { teamsRoutes }                   from "./routes/teams";
-import { redis }                        from "./lib/redis";
+import { redis }                        from "@nexcrm/service-common/redis";
 import { setTenantContext, pool }       from "./db";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
 

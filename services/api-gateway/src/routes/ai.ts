@@ -7,6 +7,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createProxy } from "../lib/proxy";
+import { ENTITY_COLLECTION } from "../lib/entity-map";
 import { pool } from "../db";
 import { requireRep } from "../middleware/rbac";
 import { requireAiRead, requireAiWrite } from "../middleware/scope";
@@ -85,10 +86,7 @@ export async function aiRoutes(server: FastifyInstance) {
       const { entityType, entityId, field, proposedValue } = change;
       if (!entityType || !entityId || !field) continue;
 
-      const entityMap: Record<string, string> = {
-        person: "contacts", company: "companies", deal: "deals",
-      };
-      const endpoint = entityMap[entityType];
+      const endpoint = ENTITY_COLLECTION[entityType];
       if (!endpoint) continue;
 
       try {

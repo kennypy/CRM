@@ -13,7 +13,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { decrypt } from "./encrypt";
-import { assertSafeUrl, SsrfBlockedError } from "./ssrf-guard";
+import { assertSafeUrl, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
 
 export interface AIProviderConfig {
   provider: "anthropic" | "openai_compat";

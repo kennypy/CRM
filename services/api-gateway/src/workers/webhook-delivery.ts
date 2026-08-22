@@ -14,9 +14,9 @@ import { createHmac } from "crypto";
 import { Queue, Worker } from "bullmq";
 import { servicePool as pool } from "../db";
 import { decrypt } from "../lib/oauth-exchange";
-import { redisConnection } from "../lib/redis";
+import { redisConnection } from "@nexcrm/service-common/redis";
 import { attachWorkerErrorHandler } from "./worker-utils";
-import { assertSafeUrl, safePostJson, SsrfBlockedError } from "../lib/ssrf-guard";
+import { assertSafeUrl, safePostJson, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
 
 const QUEUE_NAME = "nexcrm-webhook-deliveries";
 

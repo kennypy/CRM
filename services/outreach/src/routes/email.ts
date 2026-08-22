@@ -235,7 +235,7 @@ export async function emailRoutes(fastify: FastifyInstance) {
     // Sign the unsubscribe link (HMAC over tenant|email|channel) so the public
     // handler can reject forged/cross-tenant opt-out injections.
     const unsubChannel = "email";
-    const unsubUrl = `${APP_URL()}/unsubscribe`
+    const unsubUrl = `${APP_URL()}/api/v1/outreach/email/unsubscribe`
       + `?t=${encodeURIComponent(tenantId)}&e=${encodeURIComponent(body.to[0])}&ch=${unsubChannel}`
       + unsubscribeSigParams(tenantId, body.to[0], unsubChannel);
 

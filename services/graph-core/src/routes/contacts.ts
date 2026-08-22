@@ -9,7 +9,9 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
+import { getEgoNetwork } from "../queries/graph-queries";
 
 const SeniorityValues = [
   "individual_contributor", "manager", "director", "vp", "c_suite", "founder",
@@ -37,8 +39,6 @@ const GetContactsQuery = z.object({
   limit:     z.coerce.number().int().min(1).max(100).default(20),
 });
 
-const IdParam     = z.object({ id: z.string().uuid() });
-const TenantQuery = z.object({ tenantId: z.string().min(1) });
 
 // ── Shared map return for fetch-after-write ────────────────────────────────────
 const FETCH_ONE = `
@@ -364,12 +364,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     const { id } = paramParsed.data;
     const { tenantId } = queryParsed.data;
 
-    const rows = await cypher(
-      `MATCH path = (center {id: $nodeId, tenant_id: $tenantId})-[*1..2]-(neighbor {tenant_id: $tenantId})
-       RETURN DISTINCT {id: neighbor.id, label: labels(neighbor)[0]}
-       LIMIT 200`,
-      { nodeId: id, tenantId }
-    );
+    const rows = await getEgoNetwork(id, tenantId);
 
     return reply.send({ success: true, data: rows });
   });

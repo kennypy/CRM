@@ -4,16 +4,10 @@
  */
 
 import { pool } from "./db";
+import type { WorkspaceUsageStats } from "@nexcrm/shared-types";
 
-export interface UsageRow {
-  period: string;
-  apiCalls: number;
-  aiEvents: number;
-  aiTokens: number;
-  emailsSent: number;
-  callsMade: number;
-  storageBytes: number;
-}
+/** Alias — the canonical shape lives in @nexcrm/shared-types. */
+export type UsageRow = WorkspaceUsageStats;
 
 function mapRow(r: any): UsageRow {
   return {

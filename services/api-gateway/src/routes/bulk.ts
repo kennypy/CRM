@@ -12,6 +12,7 @@ import { requireRep, requireManager } from "../middleware/rbac";
 import { requireCrmWrite } from "../middleware/scope";
 import { getFieldPermissions, getReadOnlyFields } from "../middleware/field-access";
 import { createProxy } from "../lib/proxy";
+import { ENTITY_COLLECTION } from "../lib/entity-map";
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
 
@@ -95,7 +96,7 @@ export async function bulkRoutes(server: FastifyInstance) {
     const errors: Array<{ id: string; error: string }> = [];
 
     if (GRAPH_ENTITIES.has(entity_type)) {
-      const path = entity_type === "contact" ? "contacts" : entity_type === "company" ? "companies" : "deals";
+      const path = ENTITY_COLLECTION[entity_type] ?? "deals";
       // Process in concurrent batches of 20 to avoid overwhelming graph-core
       const concurrency = 20;
       for (let i = 0; i < ids.length; i += concurrency) {
@@ -186,7 +187,7 @@ export async function bulkRoutes(server: FastifyInstance) {
     const errors: Array<{ id: string; error: string }> = [];
 
     if (GRAPH_ENTITIES.has(entity_type)) {
-      const path = entity_type === "contact" ? "contacts" : entity_type === "company" ? "companies" : "deals";
+      const path = ENTITY_COLLECTION[entity_type] ?? "deals";
       const concurrency = 20;
       for (let i = 0; i < ids.length; i += concurrency) {
         const batch = ids.slice(i, i + concurrency);

@@ -1,5 +1,5 @@
 /**
- * Shared Redis client for the API gateway service.
+ * Shared Redis client for the Node services.
  *
  * In production, REDIS_URL must be set — the service will refuse to start with
  * hardcoded dev credentials. In development, falls back to the local Docker

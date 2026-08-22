@@ -27,7 +27,7 @@ import {
   sendPasswordResetEmail,
 } from "../lib/email";
 import { pool } from "../db";
-import { redis } from "../lib/redis";
+import { redis } from "@nexcrm/service-common/redis";
 
 // Per-email rate limit for password reset: max 3 requests per email per hour.
 // The email is SHA-256 hashed before use as a Redis key to avoid storing PII.

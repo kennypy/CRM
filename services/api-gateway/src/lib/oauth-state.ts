@@ -10,7 +10,7 @@
  */
 
 import { randomBytes } from "crypto";
-import { redis } from "./redis";
+import { redis } from "@nexcrm/service-common/redis";
 
 const OAUTH_STATE_TTL_S = 600;
 

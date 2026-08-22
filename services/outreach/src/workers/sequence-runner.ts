@@ -25,30 +25,13 @@ import { assertEmailQuota, incrementEmailUsage } from "../lib/plan-limits";
 import { computeScheduledAt } from "../lib/scheduler";
 import { decrypt } from "../lib/encrypt";
 import { unsubscribeSigParams } from "../lib/unsubscribe-sign";
+import { redisConnection } from "@nexcrm/service-common/redis";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const QUEUE_NAME  = "nexcrm-sequence-steps";
 const BATCH_SIZE  = 50;
 const APP_URL     = () => process.env.APP_URL ?? "http://localhost:3000";
-
-function redisConnection() {
-  const url = process.env.REDIS_URL;
-  if (!url && process.env.NODE_ENV === "production") {
-    throw new Error(
-      "FATAL: REDIS_URL environment variable is not set. " +
-      "Refusing to start in production with hardcoded dev credentials.",
-    );
-  }
-  const redisUrl = url ?? "redis://:nexcrm_redis_dev_password@localhost:6379";
-  const u = new URL(redisUrl);
-  return {
-    host:     u.hostname || "localhost",
-    port:     parseInt(u.port || "6379", 10),
-    password: u.password ? decodeURIComponent(u.password) : undefined,
-    maxRetriesPerRequest: null as null,
-  };
-}
 
 // ── Shared queue instance (exported so routes can enqueue ad-hoc jobs) ────────
 
