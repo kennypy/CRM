@@ -33,6 +33,17 @@ function resolveMigrationsDir(): string {
 
 const MIGRATIONS_DIR = resolveMigrationsDir();
 
+/**
+ * Files that were renamed after shipping (tracked by filename in _migrations).
+ * Maps new filename → old filename. If the old name is recorded as applied,
+ * the new name is marked applied without re-running the SQL — the file is not
+ * idempotent, and it already ran on that database.
+ */
+const RENAMED_MIGRATIONS: Record<string, string> = {
+  // 014_phase2_features.sql collided with 014_custom_objects_fields.sql
+  "047_phase2_features.sql": "014_phase2_features.sql",
+};
+
 async function main() {
   const client = await pool.connect();
   try {
@@ -96,6 +107,19 @@ async function main() {
       if (rows.length > 0) {
         console.log(`[migrate] Already applied: ${filename}`);
         continue;
+      }
+
+      const oldName = RENAMED_MIGRATIONS[filename];
+      if (oldName) {
+        const prior = await client.query(
+          `SELECT 1 FROM _migrations WHERE filename = $1`,
+          [oldName]
+        );
+        if (prior.rows.length > 0) {
+          await client.query(`INSERT INTO _migrations (filename) VALUES ($1)`, [filename]);
+          console.log(`[migrate] Already applied as ${oldName}: ${filename} (recorded rename)`);
+          continue;
+        }
       }
 
       console.log(`[migrate] Applying: ${filename} …`);

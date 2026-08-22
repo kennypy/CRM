@@ -1,4 +1,4 @@
--- Migration 014: Phase 2 features — lead scoring, marketplace, anomaly detection, Zoom/Slack ingestion
+-- Migration 047 (formerly 014): Phase 2 features — lead scoring, marketplace, anomaly detection, Zoom/Slack ingestion
 --
 -- lead_scores:         AI-computed lead scores with factor breakdown
 -- marketplace_apps:    partner integration app definitions
