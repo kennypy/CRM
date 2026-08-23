@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityGate } from "@/components/layout/capability-gate";
+
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
@@ -111,7 +113,7 @@ const DEMO_SCORES: LeadScore[] = [
 
 const PAGE_SIZE = 50;
 
-export default function LeadScoringPage() {
+function LeadScoringPage() {
   const t = useTranslations("leadScoring");
   const tc = useTranslations("common");
   const [scores, setScores] = useState<LeadScore[]>([]);
@@ -310,5 +312,13 @@ export default function LeadScoringPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function LeadScoringPageGated() {
+  return (
+    <CapabilityGate capability="ai_scoring" title="Lead scoring">
+      <LeadScoringPage />
+    </CapabilityGate>
   );
 }

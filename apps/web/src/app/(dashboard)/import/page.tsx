@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTenant } from "@/lib/tenant-context";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Upload, FileSpreadsheet, ArrowRight, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Upload, FileSpreadsheet, ArrowRight, CheckCircle2, XCircle, Loader2 , ShieldAlert } from "lucide-react";
 
 type Step = "upload" | "mapping" | "preview" | "processing" | "done";
 
@@ -23,6 +24,7 @@ interface ImportJob {
 }
 
 export default function ImportPage() {
+  const { tenant } = useTenant();
   const t = useTranslations("import");
   const tc = useTranslations("common");
   const [step, setStep] = useState<Step>("upload");
@@ -130,6 +132,25 @@ export default function ImportPage() {
       } catch {}
     }, 2000);
   };
+
+  // Sandbox tenants cannot import real data — the gateway rejects these
+  // routes server-side (SANDBOX_IMPORT_BLOCKED); this screen explains why
+  // instead of letting the wizard fail at the last step.
+  if (tenant.isSandbox) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center px-6 text-center">
+        <div className="rounded-full bg-muted p-4">
+          <ShieldAlert className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h1 className="mt-4 text-xl font-semibold">Imports are disabled in sandbox workspaces</h1>
+        <p className="mt-2 max-w-md text-sm text-muted-foreground">
+          This sandbox holds sample data for evaluation and is wiped on a schedule,
+          so importing real client data here is blocked. Contact the operator for a
+          full workspace when you&apos;re ready to bring your own data.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

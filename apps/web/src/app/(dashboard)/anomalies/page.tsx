@@ -1,5 +1,7 @@
 "use client";
 
+import { CapabilityGate } from "@/components/layout/capability-gate";
+
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { formatRelativeTime, cn } from "@/lib/utils";
@@ -74,7 +76,7 @@ const DEMO_ALERTS: AnomalyAlert[] = [
     status: "open", acknowledgedBy: null, acknowledgedAt: null, resolvedAt: null, createdAt: new Date(Date.now() - 259200000).toISOString(), updatedAt: new Date(Date.now() - 259200000).toISOString() },
 ];
 
-export default function AnomaliesPage() {
+function AnomaliesPage() {
   const t = useTranslations("anomalies");
   const tc = useTranslations("common");
   const [alerts, setAlerts] = useState<AnomalyAlert[]>([]);
@@ -248,5 +250,13 @@ export default function AnomaliesPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function AnomaliesPageGated() {
+  return (
+    <CapabilityGate capability="ai_scoring" title="Anomaly detection">
+      <AnomaliesPage />
+    </CapabilityGate>
   );
 }

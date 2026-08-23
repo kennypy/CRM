@@ -7,8 +7,9 @@ import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { setAuth } from "@/lib/auth";
 import { useTenant } from "@/lib/tenant-context";
-import { Zap, AlertCircle } from "lucide-react";
+import { Zap, AlertCircle, MailCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TurnstileWidget, turnstileEnabled } from "@/components/turnstile";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -19,6 +20,8 @@ export default function RegisterPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [awaitingVerification, setAwaitingVerification] = useState(false);
 
   // Auto-generate slug from org name
   const handleOrgChange = (v: string) => {
@@ -38,6 +41,7 @@ export default function RegisterPage() {
         lastName:   form.lastName,
         email:      form.email,
         password:   form.password,
+        ...(turnstileToken ? { turnstileToken } : {}),
       });
 
       if (!res.ok) {
@@ -47,6 +51,11 @@ export default function RegisterPage() {
       }
 
       const data = await res.json();
+      // Sandbox signup: no session yet — the email must be verified first.
+      if (data?.data?.verificationRequired) {
+        setAwaitingVerification(true);
+        return;
+      }
       const { user, tenant } = data.data ?? data;
       setAuth("", "", {
         id: user.id, email: user.email,
@@ -80,6 +89,25 @@ export default function RegisterPage() {
       />
     </div>
   );
+
+  if (awaitingVerification) {
+    return (
+      <div className="w-full max-w-md">
+        <div className="rounded-2xl border bg-card p-8 shadow-xl">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
+              <MailCheck className="h-7 w-7 text-green-600 dark:text-green-400" />
+            </div>
+            <h1 className="text-2xl font-bold">Check your email</h1>
+            <p className="text-sm text-muted-foreground">
+              We&apos;ve sent a verification link to <strong>{form.email}</strong>.
+              Your sandbox activates as soon as you click it — the link expires in 24 hours.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md">
@@ -124,6 +152,8 @@ export default function RegisterPage() {
           {field(t("workEmail"), "email",    "email",    t("emailPlaceholder"))}
           {field(t("password"),  "password", "password", "••••••••")}
 
+          <TurnstileWidget onToken={setTurnstileToken} />
+
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -133,7 +163,7 @@ export default function RegisterPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (turnstileEnabled && !turnstileToken)}
             className={cn(
               "w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity",
               loading ? "opacity-60 cursor-not-allowed" : "hover:opacity-90"

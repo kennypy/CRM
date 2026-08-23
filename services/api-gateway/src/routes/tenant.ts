@@ -38,7 +38,8 @@ export async function tenantRoutes(server: FastifyInstance) {
 
     const { rows } = await pool.query(
       `SELECT id, name, slug, plan, default_currency, locale, timezone,
-              discount_approval_threshold, discount_config
+              discount_approval_threshold, discount_config,
+              is_sandbox, sandbox_expires_at
          FROM tenants
         WHERE id = $1 AND deleted_at IS NULL`,
       [tenantId]
@@ -57,6 +58,8 @@ export async function tenantRoutes(server: FastifyInstance) {
         name:            t.name,
         slug:            t.slug,
         plan:            t.plan,
+        isSandbox:       t.is_sandbox === true,
+        sandboxExpiresAt: t.sandbox_expires_at ?? undefined,
         defaultCurrency: t.default_currency,
         locale:          t.locale,
         timezone:        t.timezone,

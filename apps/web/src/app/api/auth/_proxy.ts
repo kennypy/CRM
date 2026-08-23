@@ -26,7 +26,15 @@ export async function authSessionProxy(
   try {
     upstream = await fetch(`${AUTH_SERVICE_URL}${upstreamPath}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // Preserve the real client IP (nginx sets it) for the auth service's
+        // signup rate limiting and captcha verification.
+        "x-forwarded-for":
+          request.headers.get("x-forwarded-for") ??
+          request.headers.get("x-real-ip") ??
+          "",
+      },
       body: JSON.stringify(body),
     });
   } catch {
@@ -43,11 +51,26 @@ export async function authSessionProxy(
   }
 
   const payload = (data.data ?? data) as {
-    accessToken: string;
-    refreshToken: string;
-    user: Record<string, unknown>;
+    accessToken?: string;
+    refreshToken?: string;
+    verificationRequired?: boolean;
+    message?: string;
+    user?: Record<string, unknown>;
     tenant?: Record<string, unknown>;
   };
+
+  // Sandbox registration returns no tokens — verification is a hard gate.
+  // Pass the response through without setting session cookies.
+  if (!payload.accessToken || !payload.refreshToken) {
+    return NextResponse.json({
+      success: true,
+      data: {
+        verificationRequired: payload.verificationRequired ?? false,
+        message: payload.message,
+        tenant: payload.tenant,
+      },
+    }, { status: upstream.status });
+  }
 
   // Return only user/tenant data — tokens are set as HttpOnly cookies
   const response = NextResponse.json({

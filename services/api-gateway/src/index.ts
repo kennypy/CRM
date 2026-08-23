@@ -22,6 +22,7 @@ import { graphRoutes } from "./routes/graph";
 import { webhookRoutes } from "./routes/webhooks";
 import { integrationsRoutes } from "./routes/integrations";
 import { tenantRoutes } from "./routes/tenant";
+import { capabilitiesRoutes } from "./routes/capabilities";
 import { tasksRoutes }     from "./routes/tasks";
 import { outreachRoutes }  from "./routes/outreach";
 import { workflowsRoutes } from "./routes/workflows";
@@ -234,6 +235,7 @@ async function bootstrap() {
   await server.register(graphRoutes, { prefix: "/api/v1/graph" });
   await server.register(integrationsRoutes, { prefix: "/api/v1/integrations" });
   await server.register(tenantRoutes,       { prefix: "/api/v1/tenant" });
+  await server.register(capabilitiesRoutes, { prefix: "/api/v1/capabilities" });
   await server.register(tasksRoutes,        { prefix: "/api/v1/tasks" });
   await server.register(outreachRoutes,     { prefix: "/api/v1/outreach" });
   await server.register(workflowsRoutes,    { prefix: "/api/v1/workflows" });

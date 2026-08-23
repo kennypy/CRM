@@ -18,6 +18,7 @@ import { clearAuth, getStoredUser } from "@/lib/auth";
 import { ApprovalsBell } from "@/components/layout/approvals-bell";
 import { useCommandBarStore } from "@/stores/command-bar-store";
 import { usePermissions } from "@/lib/permissions";
+import { useInstanceCapabilities } from "@/lib/capabilities-context";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { isRouteEnabled } from "@/lib/feature-flags";
 import { useNavTabs } from "@/lib/use-nav-tabs";
@@ -48,8 +49,8 @@ const MORE_NAV = [
   { href: "/knowledge",    icon: BookOpen,     labelKey: "knowledge"      },
   { href: "/workflows",    icon: Layers,       labelKey: "workflows"      },
   { href: "/compliance",   icon: ShieldCheck,   labelKey: "compliance"    },
-  { href: "/lead-scoring", icon: Target,        labelKey: "leadScoring"   },
-  { href: "/anomalies",    icon: ShieldAlert,   labelKey: "anomalies"     },
+  { href: "/lead-scoring", icon: Target,        labelKey: "leadScoring", instCap: "ai_scoring" },
+  { href: "/anomalies",    icon: ShieldAlert,   labelKey: "anomalies",   instCap: "ai_scoring" },
   { href: "/marketplace",  icon: Store,         labelKey: "marketplace"   },
   { href: "/audit-log",    icon: ScrollText,    labelKey: "auditLog", adminOnly: true },
   { href: "/admin",        icon: Cog,           labelKey: "admin", superAdminOnly: true },
@@ -243,14 +244,20 @@ export function TopNav() {
   const t        = useTranslations("nav");
   const { isAdmin, isSuperAdmin, can } = usePermissions();
   const { tabs: configuredTabs } = useNavTabs();
+  const { capabilities } = useInstanceCapabilities();
 
   // Hide entries the user can't reach: admin-only (audit log), super-admin-only
-  // (the provider console /admin), and capability-gated modules (marketing needs
-  // can_campaigns). The backend also enforces this — this just avoids dead links.
+  // (the provider console /admin), capability-gated modules (marketing needs
+  // can_campaigns), and features whose backing service is absent from this
+  // deployment (instCap → instance capability manifest). The backend also
+  // enforces this — this just avoids dead links.
   const gate = (n: NavItem) => {
     if ("superAdminOnly" in n && n.superAdminOnly) return isSuperAdmin;
     if ("adminOnly" in n && n.adminOnly) return isAdmin;
-    if ("cap" in n && n.cap) return can(n.cap as string);
+    if ("cap" in n && n.cap && !can(n.cap as string)) return false;
+    if ("instCap" in n && n.instCap) {
+      return capabilities[n.instCap as keyof typeof capabilities] !== false;
+    }
     return true;
   };
 

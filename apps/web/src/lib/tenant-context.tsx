@@ -29,6 +29,10 @@ export interface TenantPreferences {
   name:            string;
   slug:            string;
   plan:            string;
+  /** Sandbox tenants hold sample data only and are wiped on a schedule. */
+  isSandbox:       boolean;
+  /** ISO timestamp of the scheduled sandbox wipe (sandbox tenants only). */
+  sandboxExpiresAt?: string;
   /** ISO 4217 — e.g. "EUR", "USD", "GBP" */
   defaultCurrency: string;
   /** BCP-47 — e.g. "de-DE", "en-US" */
@@ -42,6 +46,7 @@ const DEFAULT_TENANT: TenantPreferences = {
   name:            "",
   slug:            "",
   plan:            "starter",
+  isSandbox:       false,
   defaultCurrency: "USD",
   locale:          "en-US",
   timezone:        "UTC",

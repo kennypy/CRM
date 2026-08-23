@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useEffect, useState } from "react";
 import { TenantProvider } from "@/lib/tenant-context";
+import { CapabilityProvider } from "@/lib/capabilities-context";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { FontProvider } from "@/components/theme/font-provider";
 import { initPostHog, posthog } from "@/lib/posthog";
@@ -45,8 +46,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <FontProvider>
       <QueryClientProvider client={queryClient}>
         <TenantProvider>
-          <PostHogPageView />
-          {children}
+          <CapabilityProvider>
+            <PostHogPageView />
+            {children}
+          </CapabilityProvider>
         </TenantProvider>
         {process.env.NODE_ENV === "development" && (
           <ReactQueryDevtools initialIsOpen={false} />

@@ -15,6 +15,7 @@ import { pool } from "../db";
 import { requireRep } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { requireCapability } from "../middleware/capabilities";
+import { blockSandboxDataImport } from "../middleware/sandbox";
 import { importProcessorQueue } from "../workers/import-processor";
 
 const MappingSchema = z.object({
@@ -23,6 +24,10 @@ const MappingSchema = z.object({
 });
 
 export async function importRoutes(server: FastifyInstance) {
+  // Sandbox tenants may never import real data — enforced server-side on the
+  // whole import surface, not just hidden in the UI.
+  server.addHook("preHandler", blockSandboxDataImport);
+
   // POST /upload — multipart file upload
   server.post("/upload", { preHandler: [requireRep, requireCrmWrite, requireCapability("can_import")] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;

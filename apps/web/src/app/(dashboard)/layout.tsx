@@ -1,6 +1,7 @@
 import { TopNav } from "@/components/layout/top-nav";
 import { CommandBar } from "@/components/command-bar/command-bar";
 import { ActionBar } from "@/components/action-bar/action-bar";
+import { SandboxBanner } from "@/components/sandbox-banner";
 
 export default function DashboardLayout({
   children,
@@ -9,6 +10,8 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
+      {/* Non-dismissible sandbox notice — renders only in sandbox tenants. */}
+      <SandboxBanner />
       <TopNav />
       {/* Global AI action bar — "create a quote for X…", log activity, etc.
           Available on every page (context-free; resolves company by name). */}
