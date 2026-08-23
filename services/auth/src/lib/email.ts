@@ -12,6 +12,11 @@ const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
+/** True when outbound email can actually be delivered (Resend configured). */
+export function isEmailConfigured(): boolean {
+  return resend !== null;
+}
+
 const FROM = process.env.EMAIL_FROM ?? "NexCRM <noreply@nexcrm.io>";
 const APP_URL = () => process.env.APP_URL ?? "http://localhost:3000";
 
@@ -27,6 +32,14 @@ function devLog(to: string, subject: string, body: string) {
 
 async function send(to: string, subject: string, html: string, text: string) {
   if (!resend) {
+    if (process.env.NODE_ENV === "production") {
+      // Never dev-log in production: bodies contain reset/invite tokens, and a
+      // silent no-op would let flows "succeed" with no email ever arriving.
+      console.error(
+        `[email] DROPPED "${subject}" to ${to} — RESEND_API_KEY is not configured`,
+      );
+      return;
+    }
     devLog(to, subject, text);
     return;
   }

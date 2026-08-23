@@ -25,6 +25,7 @@ import { denyUserTokens } from "../lib/deny-list";
 import {
   sendWelcomeEmail,
   sendPasswordResetEmail,
+  isEmailConfigured,
 } from "../lib/email";
 import { pool } from "../db";
 import { redis } from "@nexcrm/service-common/redis";
@@ -76,6 +77,19 @@ export async function authRoutes(server: FastifyInstance) {
    * Create a new tenant + admin user. Returns tokens immediately.
    */
   server.post("/register", async (request, reply) => {
+    // Instances like the public demo (which omit ingestion/AI services and
+    // have no data-protection posture for third-party data) disable public
+    // self-signup entirely; tenants are provisioned manually instead.
+    if (process.env.DISABLE_PUBLIC_REGISTRATION === "true") {
+      return reply.status(403).send({
+        success: false,
+        error: {
+          code: "REGISTRATION_DISABLED",
+          message: "Self-service registration is disabled on this instance. Contact the operator for access.",
+        },
+      });
+    }
+
     const body = RegisterSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({
@@ -263,6 +277,19 @@ export async function authRoutes(server: FastifyInstance) {
    * Send a password reset email. Always returns 200 to prevent user enumeration.
    */
   server.post("/forgot-password", async (request, reply) => {
+    // Without a mail provider the reset email can never arrive — fail loudly
+    // instead of accepting the request and silently dropping it. This leaks
+    // nothing about accounts (it is instance configuration, not user state).
+    if (process.env.NODE_ENV === "production" && !isEmailConfigured()) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: "EMAIL_NOT_CONFIGURED",
+          message: "Password reset is unavailable on this instance because outbound email is not configured. Contact the operator.",
+        },
+      });
+    }
+
     const body = z.object({
       email:      z.string().email(),
       tenantSlug: z.string().min(1),
