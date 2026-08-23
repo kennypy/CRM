@@ -19,11 +19,20 @@ export async function adminProxy(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Route params are decoded, so an id containing "/" or a dot segment could
+  // re-split or normalize the upstream URL out of the /admin namespace
+  // (CWE-22/CWE-441). Re-encode every segment and refuse dot segments.
+  const segments = path.split("/").filter(Boolean);
+  if (segments.some((s) => s === "." || s === "..")) {
+    return NextResponse.json({ error: "Bad path" }, { status: 400 });
+  }
+  const safePath = "/" + segments.map(encodeURIComponent).join("/");
+
   const body = ["POST", "PUT", "PATCH"].includes(method ?? request.method)
     ? await request.text()
     : undefined;
 
-  const upstream = await fetch(`${AUTH_SERVICE_URL}/admin${path}`, {
+  const upstream = await fetch(`${AUTH_SERVICE_URL}/admin${safePath}`, {
     method: method ?? request.method,
     headers: {
       "Content-Type": "application/json",

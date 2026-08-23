@@ -11,6 +11,15 @@ import { AUTH_SERVICE_URL } from "../../../api/_env";
  */
 async function proxy(request: NextRequest, params: Promise<{ path: string[] }>) {
   const { path } = await params;
+  // Segments are re-encoded to stay opaque; dot segments are refused outright
+  // (encoding does not neutralize them, and they would normalize the upstream
+  // URL out of the /scim/v2 namespace).
+  if (path.some((s) => s === "." || s === "..")) {
+    return NextResponse.json(
+      { schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"], status: "400", detail: "Bad path" },
+      { status: 400 },
+    );
+  }
   const url = new URL(`${AUTH_SERVICE_URL}/scim/v2/${path.map(encodeURIComponent).join("/")}`);
   request.nextUrl.searchParams.forEach((v, k) => url.searchParams.append(k, v));
 
