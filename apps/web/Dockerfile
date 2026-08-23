@@ -17,6 +17,11 @@ ENV NEXT_OUTPUT=standalone
 # LAN/self-hosted deploys work; set to "true" for HTTPS builds.
 ARG COOKIE_SECURE=false
 ENV COOKIE_SECURE=$COOKIE_SECURE
+# NEXT_PUBLIC_* vars are inlined into the client bundle at BUILD time — the
+# Turnstile site key must be supplied as a build arg (compose passes it
+# through); changing it requires a rebuild, not just a restart.
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
 RUN npm run build
 
 FROM base AS runner

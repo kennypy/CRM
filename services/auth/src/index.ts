@@ -25,6 +25,9 @@ const server = Fastify({
         : undefined,
   },
   genReqId: () => crypto.randomUUID(),
+  // Honour x-forwarded-for from the gateway / web proxy so request.ip is the
+  // real client — the signup rate limiter and Turnstile depend on it.
+  trustProxy: process.env.TRUST_PROXY === "true",
 });
 
 async function bootstrap() {
@@ -62,6 +65,35 @@ async function bootstrap() {
       "WARNING: RESEND_API_KEY is not set — outbound email is disabled. " +
       "/auth/forgot-password will return 503; welcome and invite emails will be dropped.",
     );
+  }
+
+  // Sandbox signup depends on email verification (the primary anti-bot gate)
+  // and Turnstile. Enabling it without either would silently admit unverified
+  // strangers — that must be FATAL, not a warning.
+  if (process.env.SANDBOX_SIGNUP_ENABLED === "true") {
+    if (process.env.NODE_ENV === "production") {
+      if (!process.env.RESEND_API_KEY) {
+        console.error(
+          "FATAL: SANDBOX_SIGNUP_ENABLED=true requires RESEND_API_KEY — email verification " +
+          "is the primary anti-bot gate and cannot be skipped. Refusing to start.",
+        );
+        process.exit(1);
+      }
+      if (!process.env.TURNSTILE_SECRET_KEY) {
+        console.error(
+          "FATAL: SANDBOX_SIGNUP_ENABLED=true requires TURNSTILE_SECRET_KEY — public signup " +
+          "must be behind a captcha. Refusing to start.",
+        );
+        process.exit(1);
+      }
+    } else {
+      if (!process.env.RESEND_API_KEY || !process.env.TURNSTILE_SECRET_KEY) {
+        console.warn(
+          "WARNING: SANDBOX_SIGNUP_ENABLED=true without RESEND_API_KEY / TURNSTILE_SECRET_KEY — " +
+          "allowed in development only; production refuses to start like this.",
+        );
+      }
+    }
   }
 
   await server.register(helmet, { contentSecurityPolicy: false });

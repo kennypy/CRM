@@ -4,6 +4,7 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { enforceSandboxRecordCeiling } from "../lib/sandbox-limits";
 import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
 import { pool } from "../db/pool";
@@ -70,7 +71,7 @@ export async function tasksRoutes(server: FastifyInstance) {
   });
 
   /** POST /tasks */
-  server.post("/", async (request, reply) => {
+  server.post("/", { preHandler: [enforceSandboxRecordCeiling] }, async (request, reply) => {
     const body = CreateTaskSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({

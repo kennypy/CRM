@@ -41,6 +41,15 @@ export async function internalRoutes(server: FastifyInstance) {
   // All internal routes require a valid service token
   server.addHook("preHandler", validateServiceToken);
 
+  // GET /internal/signup-metrics — signup attempts / verifications /
+  // rejections by reason, so abuse is visible without reading raw logs.
+  //   docker exec nexcrm-demo-auth node -e '...' — or via curl with the
+  //   x-service-token header; see infra/demo/README.md.
+  server.get("/signup-metrics", async (_request, reply) => {
+    const { readSignupMetrics } = await import("../lib/signup-guard");
+    return reply.send({ success: true, data: await readSignupMetrics() });
+  });
+
   // POST /internal/sso-provision — JIT-provision + mint tokens for an SSO login.
   //
   // Called by the web app after it has completed the Okta OIDC exchange and

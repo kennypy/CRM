@@ -17,7 +17,7 @@ import { AUTH_SERVICE_URL } from "../_env";
  * No login is performed — user must check email and log in.
  */
 export async function POST(request: NextRequest) {
-  let body: { email?: string };
+  let body: { email?: string; turnstileToken?: string };
   try {
     body = await request.json();
   } catch {
@@ -60,7 +60,13 @@ export async function POST(request: NextRequest) {
   try {
     upstream = await fetch(`${AUTH_SERVICE_URL}/auth/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for":
+          request.headers.get("x-forwarded-for") ??
+          request.headers.get("x-real-ip") ??
+          "",
+      },
       body: JSON.stringify({
         tenantName,
         tenantSlug,
@@ -68,6 +74,7 @@ export async function POST(request: NextRequest) {
         lastName,
         email,
         password,
+        ...(body.turnstileToken ? { turnstileToken: body.turnstileToken } : {}),
       }),
     });
   } catch {
@@ -94,7 +101,9 @@ export async function POST(request: NextRequest) {
         firstName,
         lastName,
         email,
-        password
+        password,
+        body.turnstileToken,
+        request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? ""
       );
     }
     return NextResponse.json(
@@ -108,9 +117,17 @@ export async function POST(request: NextRequest) {
   // We'll call a separate endpoint or handle it here
   await sendCredentialsEmail(email, firstName, tenantSlug, password);
 
+  // Sandbox mode: the auth service requires email verification before the
+  // workspace is usable — tell the user to expect the verification link too.
+  const verificationRequired = Boolean((data?.data as any)?.verificationRequired);
   return NextResponse.json({
     success: true,
-    data: { message: "Workspace created. Check your email for login credentials." },
+    data: {
+      verificationRequired,
+      message: verificationRequired
+        ? "Workspace created. Check your email for the verification link and your login credentials."
+        : "Workspace created. Check your email for login credentials.",
+    },
   });
 }
 
@@ -121,7 +138,9 @@ async function retryWithRandomSlug(
   firstName: string,
   lastName: string,
   email: string,
-  password: string
+  password: string,
+  turnstileToken?: string,
+  forwardedFor?: string
 ): Promise<NextResponse> {
   const randomSuffix = Math.random().toString(36).slice(2, 8);
   const tenantSlug = `${slugBase}-${randomSuffix}`;
@@ -129,7 +148,10 @@ async function retryWithRandomSlug(
   try {
     const upstream = await fetch(`${authUrl}/auth/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": forwardedFor ?? "",
+      },
       body: JSON.stringify({
         tenantName,
         tenantSlug,
@@ -137,6 +159,7 @@ async function retryWithRandomSlug(
         lastName,
         email,
         password,
+        ...(turnstileToken ? { turnstileToken } : {}),
       }),
     });
 
@@ -150,9 +173,16 @@ async function retryWithRandomSlug(
 
     await sendCredentialsEmail(email, firstName, tenantSlug, password);
 
+    const retryData = (await upstream.clone().json().catch(() => ({}))) as Record<string, unknown>;
+    const verificationRequired = Boolean((retryData?.data as any)?.verificationRequired);
     return NextResponse.json({
       success: true,
-      data: { message: "Workspace created. Check your email for login credentials." },
+      data: {
+        verificationRequired,
+        message: verificationRequired
+          ? "Workspace created. Check your email for the verification link and your login credentials."
+          : "Workspace created. Check your email for login credentials.",
+      },
     });
   } catch {
     return NextResponse.json(

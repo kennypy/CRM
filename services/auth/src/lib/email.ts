@@ -80,6 +80,35 @@ export async function sendWelcomeEmail(opts: {
   await send(opts.to, subject, html, text);
 }
 
+export async function sendVerificationEmail(opts: {
+  to: string;
+  firstName: string;
+  verifyToken: string;
+}) {
+  const verifyUrl = `${APP_URL()}/verify-email?token=${opts.verifyToken}`;
+  const subject   = "Verify your email to activate your NexCRM sandbox";
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <h1 style="color:#0f172a">Verify your email</h1>
+      <p>Hi ${opts.firstName}, confirm your address to activate your NexCRM sandbox workspace.</p>
+      <p style="margin:32px 0">
+        <a href="${verifyUrl}"
+           style="background:#6366f1;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
+          Verify email
+        </a>
+      </p>
+      <p style="color:#64748b;font-size:13px">
+        This link expires in 24 hours. If you didn't sign up for NexCRM, ignore this email
+        and the registration will be removed automatically.
+      </p>
+    </div>`;
+
+  const text = `Verify your email to activate your NexCRM sandbox\n\nClick the link below (expires in 24 hours):\n${verifyUrl}\n\nIf you didn't sign up, ignore this email.`;
+
+  await send(opts.to, subject, html, text);
+}
+
 export async function sendPasswordResetEmail(opts: {
   to: string;
   firstName: string;

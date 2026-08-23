@@ -11,12 +11,15 @@
     "db:seed-demo": "node -r tsx/cjs src/db/seed-demo.ts",
     "db:migrate:prod": "node dist/services/graph-core/src/db/migrate.js",
     "db:seed-demo:prod": "node dist/services/graph-core/src/db/seed-demo.js",
+    "db:sandbox-maintenance": "node -r tsx/cjs src/db/sandbox-maintenance.ts",
+    "db:sandbox-maintenance:prod": "node dist/services/graph-core/src/db/sandbox-maintenance.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
     "@fastify/helmet": "^13.0.0",
     "@fastify/jwt": "^9.0.1",
+    "@fastify/rate-limit": "^10.1.0",
     "@nexcrm/service-common": "*",
     "@nexcrm/shared-types": "*",
     "@opentelemetry/auto-instrumentations-node": "^0.52.0",

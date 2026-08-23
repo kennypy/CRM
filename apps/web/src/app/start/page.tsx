@@ -3,12 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Zap, ArrowRight, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { TurnstileWidget, turnstileEnabled } from "@/components/turnstile";
 
 export default function StartPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +22,10 @@ export default function StartPage() {
       const res = await fetch("/api/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({
+          email,
+          ...(turnstileToken ? { turnstileToken } : {}),
+        }),
       });
 
       const data = await res.json();
@@ -29,6 +35,7 @@ export default function StartPage() {
         return;
       }
 
+      setNeedsVerification(Boolean(data?.data?.verificationRequired));
       setSuccess(true);
     } catch {
       setError("Network error. Please try again.");
@@ -48,8 +55,18 @@ export default function StartPage() {
               </div>
               <h1 className="text-2xl font-bold text-gray-900">Check your email!</h1>
               <p className="text-gray-600">
-                We&apos;ve sent your login credentials to <strong>{email}</strong>.
-                You&apos;ll be up and running in under a minute.
+                {needsVerification ? (
+                  <>
+                    We&apos;ve sent a verification link and your login credentials to{" "}
+                    <strong>{email}</strong>. Click the verification link first — your
+                    sandbox activates the moment you do.
+                  </>
+                ) : (
+                  <>
+                    We&apos;ve sent your login credentials to <strong>{email}</strong>.
+                    You&apos;ll be up and running in under a minute.
+                  </>
+                )}
               </p>
               <Link
                 href="/login"
@@ -97,6 +114,8 @@ export default function StartPage() {
               />
             </div>
 
+            <TurnstileWidget onToken={setTurnstileToken} />
+
             {error && (
               <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 <AlertCircle className="h-4 w-4 shrink-0" />
@@ -106,7 +125,7 @@ export default function StartPage() {
 
             <button
               type="submit"
-              disabled={loading || !email}
+              disabled={loading || !email || (turnstileEnabled && !turnstileToken)}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? (

@@ -21,7 +21,12 @@ function createPublicAuthProxy() {
     try {
       const resp = await fetch(downstream, {
         method: request.method,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // Preserve the real client IP for auth-side rate limiting and
+          // captcha verification (request.ip already honours TRUST_PROXY).
+          "x-forwarded-for": request.ip,
+        },
         body: hasBody ? JSON.stringify(request.body) : undefined,
       });
 
@@ -47,6 +52,8 @@ export async function authRoutes(server: FastifyInstance) {
   server.post("/logout",   publicProxy);
   server.post("/forgot-password",  publicProxy);
   server.post("/reset-password",   publicProxy);
+  server.post("/verify-email",         publicProxy);
+  server.post("/resend-verification",  publicProxy);
 
   // /me requires a valid JWT — use the tenant-aware proxy
   const authedProxy = createProxy({ baseUrl: AUTH_SERVICE_URL });

@@ -18,6 +18,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/rbac";
+import { blockSandboxDataImport } from "../middleware/sandbox";
 
 const MAX_ROWS = 5000;
 
@@ -122,6 +123,9 @@ async function existingProductFieldKeys(tenantId: string): Promise<Set<string>> 
 }
 
 export async function productsImportRoutes(server: FastifyInstance) {
+  // Sandbox tenants may never import real data — enforced server-side.
+  server.addHook("preHandler", blockSandboxDataImport);
+
   // ── Analyze ──────────────────────────────────────────────────────────────
   server.post("/analyze", { preHandler: [requireAdmin] }, async (request, reply) => {
     const parsed = AnalyzeSchema.safeParse(request.body);

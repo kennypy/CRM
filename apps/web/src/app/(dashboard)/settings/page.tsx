@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { getStoredUser } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { useInstanceCapabilities } from "@/lib/capabilities-context";
 import { useTenant } from "@/lib/tenant-context";
 import {
   Settings, Users, Plug, CreditCard, Shield, User,
@@ -1546,6 +1547,8 @@ function ProductsTab() {
 // ── Tab: Integrations ──────────────────────────────────────────────────────────
 
 function IntegrationsTab() {
+  const { capabilities } = useInstanceCapabilities();
+  const ingestionAvailable = capabilities.activity_ingestion !== false;
   const [integrations,   setIntegrations]   = useState(INTEGRATIONS);
   const [disconnecting,  setDisconnecting]  = useState<string | null>(null);
   const [connectingId,   setConnectingId]   = useState<string | null>(null);
@@ -1581,6 +1584,13 @@ function IntegrationsTab() {
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
+      {!ingestionAvailable && (
+        <div className="sm:col-span-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+          Email &amp; calendar ingestion isn&apos;t available on this instance — the
+          ingestion service isn&apos;t deployed here. Integrations below are shown for
+          reference but can&apos;t be connected.
+        </div>
+      )}
       {integrations.map((intg) => (
         <div key={intg.id} className="rounded-xl border bg-card p-4">
           <div className="flex items-start justify-between gap-3">
@@ -1606,9 +1616,10 @@ function IntegrationsTab() {
               </div>
             ) : (
               <div className="flex flex-col items-end gap-1.5 shrink-0">
-                <button onClick={() => connect(intg.id)} disabled={connectingId === intg.id}
-                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
-                  {connectingId === intg.id ? "Connecting…" : "Connect"}
+                <button onClick={() => connect(intg.id)} disabled={connectingId === intg.id || !ingestionAvailable}
+                  title={!ingestionAvailable ? "The ingestion service isn't deployed on this instance" : undefined}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed">
+                  {connectingId === intg.id ? "Connecting…" : ingestionAvailable ? "Connect" : "Unavailable"}
                 </button>
                 {connectResult?.id === intg.id && connectResult.success && (
                   <span className="text-xs text-green-600 font-medium">Connected successfully!</span>

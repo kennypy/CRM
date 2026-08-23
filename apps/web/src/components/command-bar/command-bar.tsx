@@ -8,6 +8,7 @@ import { Loader2, Sparkles, Users, Building2, Briefcase, TrendingUp, CornerDownL
 import { useCommandBarStore } from "@/stores/command-bar-store";
 import { CommandResult } from "./command-result";
 import { api } from "@/lib/api";
+import { useInstanceCapabilities } from "@/lib/capabilities-context";
 
 interface StreamChunk {
   type: "thinking" | "result" | "action" | "error";
@@ -53,6 +54,8 @@ export function CommandBar() {
   const [chunks, setChunks] = useState<StreamChunk[]>([]);
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const { capabilities } = useInstanceCapabilities();
+  const searchAvailable = capabilities.semantic_search !== false;
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Global keyboard shortcut
@@ -80,8 +83,12 @@ export function CommandBar() {
 
   // Instant cross-object record search — debounced, runs alongside the AI bar.
   // Records surface immediately as you type; pressing Enter still asks the AI.
+  // Skipped entirely when this deployment has no populated search index
+  // (instance capability manifest) — an always-empty result list reads as
+  // broken, so we don't pretend to search.
   useEffect(() => {
     const q = query.trim();
+    if (!searchAvailable) { setHits([]); setSearching(false); return; }
     if (q.length < 2) { setHits([]); setSearching(false); return; }
     setSearching(true);
     const ctrl = new AbortController();
@@ -97,7 +104,7 @@ export function CommandBar() {
       }
     }, 200);
     return () => { ctrl.abort(); clearTimeout(timer); };
-  }, [query]);
+  }, [query, searchAvailable]);
 
   const goTo = useCallback((href: string) => {
     close();
@@ -191,7 +198,12 @@ export function CommandBar() {
                   <p className="text-xs font-medium text-muted-foreground">Jump to</p>
                   {searching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </div>
-                {hits.length === 0 && !searching ? (
+                {!searchAvailable ? (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    Record search isn&apos;t available on this instance — the search index
+                    isn&apos;t populated here.
+                  </p>
+                ) : hits.length === 0 && !searching ? (
                   <p className="px-3 py-2 text-xs text-muted-foreground">No matching records.</p>
                 ) : (
                   hits.map((hit) => {
