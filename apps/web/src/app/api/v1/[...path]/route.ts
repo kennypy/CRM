@@ -27,7 +27,15 @@ async function handler(request: NextRequest, ctx: RouteCtx): Promise<NextRespons
   }
 
   const { path } = await ctx.params;
-  const suffix    = path.join("/");
+  // Catch-all params arrive DECODED: a %2F or dot segment in the request would
+  // otherwise re-split or normalize out of the /api/v1/ namespace upstream
+  // while carrying the user's bearer token (CWE-22/CWE-441). Re-encode each
+  // segment so every caller-controlled value stays one opaque path segment,
+  // and refuse dot segments outright (encoding does not neutralize them).
+  if (path.some((s) => s === "." || s === "..")) {
+    return NextResponse.json({ success: false, error: { code: "BAD_PATH" } }, { status: 400 });
+  }
+  const suffix    = path.map(encodeURIComponent).join("/");
   const search    = request.nextUrl.search ?? "";
   const upstreamUrl = `${API_GATEWAY_URL}/api/v1/${suffix}${search}`;
 
