@@ -176,6 +176,11 @@ export async function adminRoutes(server: FastifyInstance) {
       aiMonthlyBudgetEvents: z.number().int().min(0).optional(),
       confidenceThreshold: z.number().min(0).max(1).optional(),
       autoApproveThreshold: z.number().min(0).max(1).optional(),
+      // SAML SSO (per-workspace IdP)
+      samlEnabled: z.boolean().optional(),
+      samlEntryPoint: z.string().url().max(2000).or(z.literal("")).optional(),
+      samlIdpIssuer: z.string().max(2000).optional(),
+      samlCert: z.string().max(20000).optional(),
     });
 
     const body = schema.safeParse(request.body);

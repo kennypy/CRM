@@ -28,6 +28,10 @@ interface TenantDetail {
     confidenceThreshold?: number;
     autoApproveThreshold?: number;
     features?: Record<string, boolean>;
+    samlEnabled?: boolean;
+    samlEntryPoint?: string;
+    samlIdpIssuer?: string;
+    samlCert?: string;
   };
   parentTenantId?: string | null;
   parentName?: string | null;
@@ -82,6 +86,14 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
   const [editRegion, setEditRegion] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
+  // SAML SSO config
+  const [samlEnabled, setSamlEnabled] = useState(false);
+  const [samlEntryPoint, setSamlEntryPoint] = useState("");
+  const [samlIdpIssuer, setSamlIdpIssuer] = useState("");
+  const [samlCert, setSamlCert] = useState("");
+  const [savingSaml, setSavingSaml] = useState(false);
+  const [samlMessage, setSamlMessage] = useState<string | null>(null);
+
   // Merge dialog state
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [allTenants, setAllTenants] = useState<AllTenant[]>([]);
@@ -96,6 +108,10 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
         setEditName(t.name);
         setEditPlan(t.plan);
         setEditRegion(t.dataRegion ?? "us");
+        setSamlEnabled(Boolean(t.settings?.samlEnabled));
+        setSamlEntryPoint(t.settings?.samlEntryPoint ?? "");
+        setSamlIdpIssuer(t.settings?.samlIdpIssuer ?? "");
+        setSamlCert(t.settings?.samlCert ?? "");
       }
     }).catch(() => {});
 
@@ -121,6 +137,30 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
       setTimeout(() => setMessage(null), 2000);
     }
     setSaving(false);
+  };
+
+  const saveSaml = async () => {
+    setSavingSaml(true);
+    setSamlMessage(null);
+    if (samlEnabled && (!samlEntryPoint.trim() || !samlCert.trim())) {
+      setSamlMessage("Sign-in URL and certificate are required to enable SAML");
+      setSavingSaml(false);
+      return;
+    }
+    const res = await api.patch(`/api/admin/tenants/${id}/settings`, {
+      samlEnabled,
+      samlEntryPoint: samlEntryPoint.trim(),
+      samlIdpIssuer: samlIdpIssuer.trim(),
+      samlCert: samlCert.trim(),
+    }).catch(() => null);
+    if (res?.ok) {
+      setSamlMessage("Saved");
+      setTimeout(() => setSamlMessage(null), 2000);
+    } else {
+      const data = await res?.json().catch(() => null);
+      setSamlMessage(data?.error?.message ?? "Failed to save SAML settings");
+    }
+    setSavingSaml(false);
   };
 
   const toggleFeature = async (key: string, enabled: boolean) => {
@@ -268,6 +308,81 @@ export default function WorkspaceDetailPage({ params }: { params: Promise<{ id: 
             {saving ? "Saving..." : "Save Changes"}
           </button>
           {message && <span className="text-sm text-green-600">{message}</span>}
+        </div>
+      </div>
+
+      {/* SAML SSO */}
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold">SAML Single Sign-On</h2>
+            <p className="text-xs text-muted-foreground">
+              Let this workspace sign in through its own identity provider (Okta, Azure AD, OneLogin…).
+            </p>
+          </div>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={samlEnabled}
+              onChange={(e) => setSamlEnabled(e.target.checked)}
+              className="h-4 w-4 rounded border"
+            />
+            Enabled
+          </label>
+        </div>
+
+        <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+          <p>Configure the IdP with these service-provider values:</p>
+          <p><span className="font-medium text-foreground">ACS URL:</span> {typeof window !== "undefined" ? `${window.location.origin}/api/auth/sso/saml/callback` : "…/api/auth/sso/saml/callback"}</p>
+          <p><span className="font-medium text-foreground">Entity ID / Audience:</span> {typeof window !== "undefined" ? `${window.location.origin}/api/auth/sso/saml/metadata` : "…/api/auth/sso/saml/metadata"}</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">IdP sign-in URL (HTTP-Redirect)</label>
+            <input
+              type="url"
+              value={samlEntryPoint}
+              onChange={(e) => setSamlEntryPoint(e.target.value)}
+              placeholder="https://idp.example.com/app/sso/saml"
+              className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">IdP issuer / entity ID (optional)</label>
+            <input
+              type="text"
+              value={samlIdpIssuer}
+              onChange={(e) => setSamlIdpIssuer(e.target.value)}
+              placeholder="http://www.okta.com/exk..."
+              className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">IdP X.509 signing certificate (PEM)</label>
+          <textarea
+            value={samlCert}
+            onChange={(e) => setSamlCert(e.target.value)}
+            rows={4}
+            placeholder={"-----BEGIN CERTIFICATE-----\nMIIC…\n-----END CERTIFICATE-----"}
+            className="mt-1 w-full rounded-lg border bg-background px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={saveSaml}
+            disabled={savingSaml}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {savingSaml ? "Saving..." : "Save SAML Settings"}
+          </button>
+          {samlMessage && (
+            <span className={samlMessage === "Saved" ? "text-sm text-green-600" : "text-sm text-red-600"}>
+              {samlMessage}
+            </span>
+          )}
         </div>
       </div>
 

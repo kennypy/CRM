@@ -33,8 +33,9 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [ssoOkta, setSsoOkta] = useState(false);
+  const [ssoSaml, setSsoSaml] = useState(false);
 
-  // Surface an SSO error passed back via ?error= after a failed Okta round-trip.
+  // Surface an SSO error passed back via ?error= after a failed SSO round-trip.
   const ssoError = searchParams.get("error");
 
   // Only show the Okta button when the deployment has it configured.
@@ -45,11 +46,31 @@ function LoginForm() {
       .catch(() => setSsoOkta(false));
   }, []);
 
+  // SAML is per-workspace: check it (debounced) as the workspace field changes.
+  useEffect(() => {
+    const slug = form.tenantSlug.trim();
+    if (!slug) { setSsoSaml(false); return; }
+    const timer = setTimeout(() => {
+      fetch(`/api/auth/sso-config?tenant=${encodeURIComponent(slug)}`)
+        .then((r) => r.json())
+        .then((d) => setSsoSaml(Boolean(d?.saml)))
+        .catch(() => setSsoSaml(false));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [form.tenantSlug]);
+
   const startOkta = () => {
     const params = new URLSearchParams();
     if (form.tenantSlug) params.set("tenant", form.tenantSlug);
     params.set("next", next);
     window.location.href = `/api/auth/sso/okta/start?${params.toString()}`;
+  };
+
+  const startSaml = () => {
+    const params = new URLSearchParams();
+    params.set("tenant", form.tenantSlug.trim());
+    params.set("next", next);
+    window.location.href = `/api/auth/sso/saml/start?${params.toString()}`;
   };
 
   const SSO_ERRORS: Record<string, string> = {
@@ -199,21 +220,33 @@ function LoginForm() {
         {loading ? t("signingIn") : t("signIn")}
       </button>
 
-      {ssoOkta && (
+      {(ssoOkta || ssoSaml) && (
         <>
           <div className="flex items-center gap-3 py-1">
             <div className="h-px flex-1 bg-border" />
             <span className="text-xs text-muted-foreground">or</span>
             <div className="h-px flex-1 bg-border" />
           </div>
-          <button
-            type="button"
-            onClick={startOkta}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-muted"
-          >
-            <ShieldCheck className="h-4 w-4 text-primary" />
-            Sign in with Okta (SSO)
-          </button>
+          {ssoSaml && (
+            <button
+              type="button"
+              onClick={startSaml}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-muted"
+            >
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              Sign in with SSO (SAML)
+            </button>
+          )}
+          {ssoOkta && (
+            <button
+              type="button"
+              onClick={startOkta}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-muted"
+            >
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              Sign in with Okta (SSO)
+            </button>
+          )}
         </>
       )}
     </form>

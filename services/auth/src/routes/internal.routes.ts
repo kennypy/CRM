@@ -10,9 +10,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { sendTeamInviteEmail } from "../lib/email";
 import { validateServiceToken } from "../middleware/service-token";
-import { pool } from "../db";
-import { buildJWTPayload, createRefreshToken } from "../tokens";
-import { findTenantBySlug, scopesForRole, toPublicUser, toPublicTenant, touchLastLogin, type DBUser } from "../users";
+import { findTenantBySlug } from "../users";
+import { provisionSsoUser, tenantSamlConfig, buildSamlInstance, extractSamlIdentity } from "../sso";
 
 const SsoProvisionSchema = z.object({
   email:      z.string().email(),
@@ -59,72 +58,122 @@ export async function internalRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
       });
     }
-    const { email, tenantSlug, firstName, lastName, avatarUrl } = parsed.data;
-    const emailLc = email.toLowerCase();
+    const result = await provisionSsoUser(server, parsed.data);
+    if (!result.ok) {
+      return reply.status(result.status).send({
+        success: false,
+        error: { code: result.code, message: result.message },
+      });
+    }
+    return reply.send({ success: true, data: result.data });
+  });
 
-    // Resolve the tenant: slug first, then email-domain mapping.
-    let tenant: { id: string; name: string; slug: string; plan?: string } | null = null;
-    if (tenantSlug) {
-      tenant = await findTenantBySlug(tenantSlug);
+  // ── SAML (per-tenant IdP config in tenants.settings) ──────────────────────
+  //
+  // The web app hosts the browser-facing routes and proxies here: /saml/start
+  // builds the IdP redirect URL, /saml/callback validates the signed response
+  // and mints tokens via the same JIT provisioning as OIDC.
+
+  // GET /internal/saml/enabled?tenantSlug= — does this workspace have SAML on?
+  // Drives the login page's "Sign in with SSO" button visibility.
+  server.get<{ Querystring: { tenantSlug?: string } }>("/saml/enabled", async (request, reply) => {
+    const slug = request.query.tenantSlug ?? "";
+    if (!slug) return reply.send({ success: true, data: { enabled: false } });
+    const tenant = await findTenantBySlug(slug);
+    const enabled = Boolean(tenant && tenantSamlConfig(tenant.settings));
+    return reply.send({ success: true, data: { enabled } });
+  });
+
+  const SamlStartSchema = z.object({
+    tenantSlug: z.string().min(1),
+    relayState: z.string().max(2000).optional(),
+  });
+
+  server.post("/saml/start", async (request, reply) => {
+    const parsed = SamlStartSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
+      });
     }
-    if (!tenant) {
-      const domain = emailLc.split("@")[1] ?? "";
-      if (domain) {
-        const { rows } = await pool.query(
-          `SELECT * FROM tenants WHERE lower(domain) = $1 AND deleted_at IS NULL LIMIT 1`,
-          [domain]
-        );
-        tenant = rows[0] ?? null;
-      }
-    }
-    if (!tenant) {
+    const tenant = await findTenantBySlug(parsed.data.tenantSlug);
+    const config = tenant ? tenantSamlConfig(tenant.settings) : null;
+    if (!config) {
       return reply.status(404).send({
         success: false,
-        error: { code: "TENANT_NOT_FOUND", message: "No workspace matches this account. Check the workspace name or ask an admin to map your email domain." },
+        error: { code: "SAML_NOT_CONFIGURED", message: "SAML SSO is not enabled for this workspace." },
       });
     }
-
-    // JIT provision — create the user on first SSO login, else refresh their
-    // profile fields. Password stays NULL (SSO-only).
-    const fn = (firstName && firstName.trim()) || emailLc.split("@")[0];
-    const ln = (lastName && lastName.trim()) || "";
-    const { rows } = await pool.query<DBUser & { deleted_at: string | null }>(
-      `INSERT INTO users (tenant_id, email, first_name, last_name, avatar_url, role)
-       VALUES ($1, $2, $3, $4, $5, 'rep')
-       ON CONFLICT (tenant_id, email) DO UPDATE SET
-         first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), users.first_name),
-         last_name  = COALESCE(NULLIF(EXCLUDED.last_name, ''),  users.last_name),
-         avatar_url = COALESCE(EXCLUDED.avatar_url, users.avatar_url),
-         updated_at = NOW()
-       RETURNING *`,
-      [tenant.id, emailLc, fn, ln, avatarUrl ?? null]
-    );
-    const dbUser = rows[0];
-
-    // A previously deactivated account must not be silently reactivated by SSO.
-    if (dbUser.deleted_at) {
-      return reply.status(403).send({
+    try {
+      const saml = buildSamlInstance(config);
+      const url = await saml.getAuthorizeUrlAsync(parsed.data.relayState ?? "", undefined, {});
+      return reply.send({ success: true, data: { url } });
+    } catch (err) {
+      request.log.error({ err, tenantSlug: parsed.data.tenantSlug }, "saml.start_failed");
+      return reply.status(500).send({
         success: false,
-        error: { code: "ACCOUNT_DISABLED", message: "This account has been disabled. Contact your administrator." },
+        error: { code: "SAML_START_FAILED", message: "Could not build the SAML request. Check the workspace's SAML configuration." },
+      });
+    }
+  });
+
+  const SamlCallbackSchema = z.object({
+    tenantSlug:   z.string().min(1),
+    samlResponse: z.string().min(1).max(1_000_000),
+  });
+
+  server.post("/saml/callback", async (request, reply) => {
+    const parsed = SamlCallbackSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
+      });
+    }
+    const { tenantSlug, samlResponse } = parsed.data;
+
+    const tenant = await findTenantBySlug(tenantSlug);
+    const config = tenant ? tenantSamlConfig(tenant.settings) : null;
+    if (!config) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: "SAML_NOT_CONFIGURED", message: "SAML SSO is not enabled for this workspace." },
       });
     }
 
-    const scopes = scopesForRole(dbUser.role);
-    const accessToken = server.jwt.sign(
-      buildJWTPayload({ id: dbUser.id, tenantId: dbUser.tenant_id, email: dbUser.email, role: dbUser.role, scopes })
-    );
-    const refreshToken = await createRefreshToken(dbUser.id);
-    await touchLastLogin(dbUser.id);
+    let profile: Record<string, unknown> | null = null;
+    try {
+      const saml = buildSamlInstance(config);
+      const result = await saml.validatePostResponseAsync({ SAMLResponse: samlResponse });
+      profile = (result.profile ?? null) as Record<string, unknown> | null;
+      if (result.loggedOut || !profile) throw new Error("no profile in SAML response");
+    } catch (err) {
+      request.log.warn({ err, tenantSlug }, "saml.response_invalid");
+      return reply.status(401).send({
+        success: false,
+        error: { code: "SAML_INVALID_RESPONSE", message: "The SAML response could not be validated." },
+      });
+    }
 
-    return reply.send({
-      success: true,
-      data: {
-        accessToken,
-        refreshToken,
-        user: toPublicUser(dbUser),
-        tenant: toPublicTenant(tenant),
-      },
-    });
+    const identity = extractSamlIdentity(profile);
+    if (!identity) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: "SAML_NO_EMAIL", message: "The SAML assertion did not contain an email address." },
+      });
+    }
+
+    // Pin provisioning to the workspace whose IdP validated the login — never
+    // fall through to email-domain tenant resolution here.
+    const result = await provisionSsoUser(server, { ...identity, tenantSlug });
+    if (!result.ok) {
+      return reply.status(result.status).send({
+        success: false,
+        error: { code: result.code, message: result.message },
+      });
+    }
+    return reply.send({ success: true, data: result.data });
   });
 
   // POST /internal/send-invite — send a team invite email
