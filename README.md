@@ -58,14 +58,15 @@ nexcrm/
 │   ├── graph-core/             # Node.js — graph operations + Postgres
 │   ├── ingestion/              # Python — zero-entry ingestion pipeline
 │   ├── ai-engine/              # Python — LLM extraction, scoring, RAG
-│   ├── auth/                   # Node.js — JWT, OAuth, RBAC, SCIM
-│   └── outreach/               # Node.js — sequences, email cadences
+│   ├── auth/                   # Node.js — JWT, OAuth, RBAC, SAML SSO, SCIM 2.0
+│   ├── outreach/               # Node.js — sequences, email cadences
+│   └── _shared/                # Python shared package (crypto, event bus, telemetry)
 ├── packages/
 │   ├── shared-types/           # TypeScript types shared across services
-│   ├── graph-client/           # Graph query client library
+│   ├── service-common/         # Shared Node service infra (RLS pools, Redis, tenant crypto)
 │   └── ui-components/          # Shared React components (Tailwind + CVA)
 ├── infra/
-│   ├── db/                     # DB init scripts + migrations (36 migrations)
+│   ├── db/                     # DB init scripts + migrations (54 migrations)
 │   ├── otel/                   # OpenTelemetry collector config
 │   ├── grafana/                # Grafana dashboards + provisioning
 │   ├── prometheus/             # Prometheus scrape config
@@ -75,7 +76,9 @@ nexcrm/
 │   ├── BLUEPRINT.md            # Full architecture blueprint
 │   ├── DATA_MODEL.md           # Graph schema, nodes, edges, queries
 │   ├── API.md                  # REST + GraphQL + Webhook specs
-│   └── SECURITY.md             # Security architecture + compliance
+│   ├── SECURITY.md             # Security architecture + compliance
+│   └── CURRENCY.md             # Multi-currency model + exchange rates
+├── tests/                      # E2E, integration, and load tests
 ├── docker-compose.yml          # Local infra (Postgres, Redis, MinIO, etc.)
 └── turbo.json                  # Turborepo pipeline config
 ```
@@ -130,7 +133,8 @@ Services will be available at:
 | [BLUEPRINT.md](docs/BLUEPRINT.md) | Full system design: differentiators, tech stack, pricing, roadmap |
 | [DATA_MODEL.md](docs/DATA_MODEL.md) | Graph schema: nodes, edges, event types, example queries |
 | [API.md](docs/API.md) | REST endpoints, GraphQL schema, webhook specs |
-| [SECURITY.md](docs/SECURITY.md) | Security architecture, RBAC, compliance roadmap |
+| [SECURITY.md](docs/SECURITY.md) | Security architecture, RBAC, RLS, compliance roadmap |
+| [CURRENCY.md](docs/CURRENCY.md) | Multi-currency model, exchange rates, base-currency rollups |
 
 ---
 
@@ -148,7 +152,7 @@ Services will be available at:
 | Search | Typesense | Fast, typo-tolerant, self-hostable |
 | AI/LLM | Claude (claude-sonnet-4-6) | Best-in-class reasoning, long context |
 | Observability | OpenTelemetry + Grafana + Prometheus + Loki + Tempo | Full observability stack: metrics, logs, traces |
-| Auth | Custom JWT + OAuth2 | RBAC, SCIM, SSO/SAML ready |
+| Auth | Custom JWT + OAuth2 | RBAC + custom role grids, Okta OIDC, per-workspace SAML SSO, SCIM 2.0 provisioning |
 
 ---
 
@@ -201,6 +205,33 @@ Services will be available at:
 - [x] Anomaly detection — at-risk accounts, stalled deals, champion departure, competitor mentions (`/anomalies`)
 - [x] Marketplace foundation — 5 partner integrations (Zoom, Slack, Clearbit, HubSpot Import, Mailchimp) (`/marketplace`)
 - [x] Native mobile app — Flutter app with full CRM feature parity (cross web + mobile)
+
+---
+
+## Phase 3 — Enterprise Hardening (Complete)
+
+> **Status: Complete as of 2026-08-23.**
+
+### Identity & Access
+- [x] SAML SSO — per-workspace IdP config (Okta, Azure AD, OneLogin) with signed-response validation and JIT provisioning; configured from the platform admin console
+- [x] SCIM 2.0 provisioning — IdP-driven user create/update/deactivate at `/scim/v2` with per-tenant bearer tokens (Settings → Security)
+- [x] Custom roles & permissions — per-profile module access grids (none/read/write) enforced at the gateway
+- [x] Record-level ACLs — per-record read/write/delete checks on core entities
+- [x] Tab groups — role- and profile-based navigation sets with per-user tab overrides (Settings → Navigation)
+
+### Data Protection & Compliance
+- [x] Postgres row-level security — tenant-scoped DB roles + `app.current_tenant` context across gateway, graph-core, and outreach
+- [x] Per-tenant encryption keys — envelope encryption (tenant DEK wrapped by platform KEK) for OAuth tokens, webhook secrets, and provider credentials, in Node and Python services
+- [x] Multi-region data residency — tenants pinned to us/eu/apac; region-pinned stacks refuse out-of-region requests
+- [x] Legal holds — active holds block record deletion and deny GDPR/CCPA erasure for in-scope custodians (Compliance → Legal Holds)
+- [x] CodeQL code scanning — JS/TS + Python with the security-extended suite on PRs and a weekly schedule
+
+### Revenue & Analytics
+- [x] Multi-currency — per-tenant exchange-rate table with base-currency conversion in forecasting rollups
+- [x] Enterprise forecasting — commit / best case / pipeline categories with manager overrides and AI-predicted revenue comparison
+- [x] Embedded analytics — signed, expiring embed tokens serving white-label, iframe-able report pages
+- [x] Usage metering — API calls, AI events, emails, and calls recorded per workspace and surfaced in admin dashboards
+- [x] Outbound webhooks + export pipeline — event dispatch with signed deliveries and a background export worker
 
 ---
 
