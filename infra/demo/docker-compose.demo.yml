@@ -86,6 +86,8 @@ services:
       AI_ENGINE_URL: http://ai-engine:5001
       DATABASE_URL: postgresql://nexcrm:${POSTGRES_PASSWORD}@postgres:5432/nexcrm
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      # Instance capability manifest — services absent from this stack.
+      DISABLED_SERVICES: ${DISABLED_SERVICES:-}
     ports:
       - "127.0.0.1:4000:4000"
     depends_on:
@@ -108,6 +110,15 @@ services:
       AUTH_PORT: "4001"
       DATABASE_URL: postgresql://nexcrm:${POSTGRES_PASSWORD}@postgres:5432/nexcrm
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      # Registration flags + sandbox signup (see .env.demo for precedence).
+      DISABLE_PUBLIC_REGISTRATION: ${DISABLE_PUBLIC_REGISTRATION:-true}
+      SANDBOX_SIGNUP_ENABLED: ${SANDBOX_SIGNUP_ENABLED:-false}
+      SANDBOX_TTL_DAYS: ${SANDBOX_TTL_DAYS:-14}
+      SANDBOX_MAX_TENANTS: ${SANDBOX_MAX_TENANTS:-200}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # Sandbox sample-data seeding (auth → graph-core internal call).
+      GRAPH_CORE_URL: http://graph-core:4002
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,6 +142,9 @@ services:
       # graph-core refuses to start in production without these two.
       API_GATEWAY_URL: ${API_GATEWAY_URL}
       INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      # Per-tenant resource ceilings for sandbox tenants.
+      SANDBOX_MAX_GRAPH_NODES: ${SANDBOX_MAX_GRAPH_NODES:-500}
+      SANDBOX_MAX_RECORDS: ${SANDBOX_MAX_RECORDS:-1000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -163,6 +177,9 @@ services:
     build:
       context: ../..
       dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the client bundle at build time — rebuild web to change it.
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     container_name: nexcrm-demo-web
     restart: unless-stopped
     env_file: .env
