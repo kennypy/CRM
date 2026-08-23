@@ -19,6 +19,7 @@ export interface DBUser {
   role: UserRole;
   avatar_url: string | null;
   last_login_at: string | null;
+  email_verified_at: string | null;
   created_at: string;
 }
 
@@ -74,7 +75,14 @@ export async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, BCRYPT_ROUNDS);
 }
 
-/** Create a new tenant + initial admin user (registration flow). */
+/** Create a new tenant + initial admin user (registration flow).
+ *
+ * With `sandbox` set, the tenant is created as a sandbox (is_sandbox = true,
+ * sandbox_expires_at stamped from ttlDays) and the admin user starts
+ * UNVERIFIED — login is blocked until the email verification flow sets
+ * email_verified_at. The admin role is tenant-scoped either way; nothing here
+ * grants cross-tenant access.
+ */
 export async function createTenantWithAdmin(input: {
   tenantName: string;
   tenantSlug: string;
@@ -82,6 +90,7 @@ export async function createTenantWithAdmin(input: {
   lastName: string;
   email: string;
   password: string;
+  sandbox?: { ttlDays: number };
 }): Promise<{ tenantId: string; userId: string }> {
   const client = await pool.connect();
   try {
@@ -89,8 +98,9 @@ export async function createTenantWithAdmin(input: {
 
     // Create tenant — default_currency / locale / timezone use column defaults (USD / en-US / UTC)
     const { rows: [tenant] } = await client.query(
-      `INSERT INTO tenants (name, slug, plan, data_region, settings)
-       VALUES ($1, $2, 'starter', 'us', $3)
+      `INSERT INTO tenants (name, slug, plan, data_region, settings, is_sandbox, sandbox_expires_at)
+       VALUES ($1, $2, 'starter', 'us', $3, $4,
+               CASE WHEN $4 THEN NOW() + make_interval(days => $5::int) ELSE NULL END)
        RETURNING id`,
       [
         input.tenantName,
@@ -103,17 +113,19 @@ export async function createTenantWithAdmin(input: {
           autoApproveThreshold: 0.90,
           features: { commandBar: true, realityScore: true, reviewQueue: true },
         }),
+        Boolean(input.sandbox),
+        input.sandbox?.ttlDays ?? 0,
       ]
     );
 
     const pwHash = await hashPassword(input.password);
 
-    // Create admin user
+    // Create admin user — sandbox admins start unverified (login-gated).
     const { rows: [user] } = await client.query(
-      `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role)
-       VALUES ($1, $2, $3, $4, $5, 'admin')
+      `INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role, email_verified_at)
+       VALUES ($1, $2, $3, $4, $5, 'admin', CASE WHEN $6 THEN NULL ELSE NOW() END)
        RETURNING id`,
-      [tenant.id, input.email.toLowerCase(), pwHash, input.firstName, input.lastName]
+      [tenant.id, input.email.toLowerCase(), pwHash, input.firstName, input.lastName, Boolean(input.sandbox)]
     );
 
     await client.query("COMMIT");
@@ -153,8 +165,18 @@ export function toPublicUser(u: DBUser): User {
 }
 
 /** Map a DB tenant row to the public shape the frontend expects. */
-export function toPublicTenant(t: { id: string; name: string; slug: string; plan?: string }) {
-  return { id: t.id, name: t.name, slug: t.slug, plan: t.plan };
+export function toPublicTenant(t: {
+  id: string; name: string; slug: string; plan?: string;
+  is_sandbox?: boolean | null; sandbox_expires_at?: string | null;
+}) {
+  return {
+    id: t.id,
+    name: t.name,
+    slug: t.slug,
+    plan: t.plan,
+    isSandbox: t.is_sandbox === true,
+    sandboxExpiresAt: t.sandbox_expires_at ?? undefined,
+  };
 }
 
 export function scopesForRole(role: UserRole): string[] {
