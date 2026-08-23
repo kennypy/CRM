@@ -38,6 +38,7 @@ import { outboundWebhooksRoutes } from "./routes/outbound-webhooks";
 import { billingRoutes }          from "./routes/billing";
 import { exportRoutes }           from "./routes/export";
 import { apiKeysRoutes }          from "./routes/api-keys";
+import { embedRoutes }            from "./routes/embed";
 import { scimTokensRoutes }       from "./routes/scim-tokens";
 import { complianceRoutes }       from "./routes/compliance";
 import { forecastingRoutes }      from "./routes/forecasting";
@@ -181,6 +182,10 @@ async function bootstrap() {
   // Meetings scheduler — PUBLIC booking flow (slot listing + booking). Also
   // before the auth hook; the booking link is resolved by its unique slug.
   await server.register(bookingRoutes, { prefix: "/book" });
+
+  // Embedded analytics — PUBLIC report serving; the signed token in the URL is
+  // the credential (minted by managers via POST /api/v1/reports/:id/embed).
+  await server.register(embedRoutes, { prefix: "/api/v1/embed" });
 
   // ── Protected routes ──────────────────────────────────────────────────────
   server.addHook("preHandler", authMiddleware);
