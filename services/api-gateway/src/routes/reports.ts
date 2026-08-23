@@ -38,7 +38,7 @@ const REPORT_SOURCE_ENTITY: Record<string, string> = {
  * honour field_permissions instead of letting a rep read hidden columns (or the
  * whole user directory) via an arbitrary projection.
  */
-async function sanitizeSpecForRole(
+export async function sanitizeSpecForRole(
   spec: QuerySpec, tenantId: string, role: string,
 ): Promise<{ spec?: QuerySpec; error?: string }> {
   if (role === "admin" || role === "super_admin") return { spec };
@@ -88,6 +88,7 @@ const GRAPH_SOURCES: SourceId[] = ["deals", "companies", "contacts"];
 const SQL_SOURCES:   SourceId[] = ["activities", "quotes", "users"];
 
 import { GRAPH_CORE_URL as GRAPH_CORE } from "../lib/service-urls";
+import { signEmbedToken } from "../lib/embed-tokens";
 import { moduleAccessGate } from "../middleware/module-access";
 
 // Field definitions per source (used for validation + UI metadata)
@@ -211,7 +212,7 @@ const FilterConditionSchema: z.ZodType<unknown> = z.lazy(() =>
   ])
 );
 
-const QuerySpecSchema = z.object({
+export const QuerySpecSchema = z.object({
   sources:      z.array(z.enum(["activities","deals","companies","contacts","quotes","users"])).min(1),
   joins:        z.array(z.object({
     type:     z.enum(["INNER","LEFT","RIGHT","FULL"]).default("LEFT"),
@@ -622,6 +623,33 @@ export async function reportsRoutes(server: FastifyInstance) {
     const { tenantId } = request.user;
     await pool.query(`DELETE FROM reports WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
     return reply.status(204).send();
+  });
+
+  // ── POST /api/v1/reports/:id/embed ──────────────────────────────────────
+  // Mint a signed embed token: a public capability URL serving this report
+  // (white-label, iframe-able) until it expires. Managers and admins only —
+  // the link works without login, so creating one is a deliberate act of
+  // publishing the report's data.
+  server.post("/reports/:id/embed", { preHandler: [requireManager, requireCrmRead] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { tenantId, role } = request.user;
+
+    const parsed = z.object({ expiresInDays: z.number().int().min(1).max(365).default(90) })
+      .safeParse(request.body ?? {});
+    if (!parsed.success)
+      return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } });
+
+    const { rows: [report] } = await readPool.query(
+      `SELECT id FROM reports WHERE id=$1 AND tenant_id=$2`, [id, tenantId],
+    );
+    if (!report) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+
+    const expiresAt = Math.floor(Date.now() / 1000) + parsed.data.expiresInDays * 86400;
+    const token = signEmbedToken({ r: id, t: tenantId, o: role, e: expiresAt });
+    return reply.status(201).send({
+      success: true,
+      data: { token, expiresAt: new Date(expiresAt * 1000).toISOString() },
+    });
   });
 
   // ── POST /api/v1/reports/:id/snapshot ───────────────────────────────────

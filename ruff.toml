@@ -1,0 +1,8 @@
+# CI installs the latest ruff release, and ruff expands its default rule set
+# over time — which turned the lint job red without any code change. Pin the
+# lint surface to the classic pycodestyle/pyflakes set this codebase is held
+# to, so lint results don't drift with the linter version.
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

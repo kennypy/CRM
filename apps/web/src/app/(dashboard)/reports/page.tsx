@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   BarChart3, Plus, Play, Trash2, Download, Bell,
   ChevronDown, ChevronUp, Loader2, RefreshCw, Camera, X,
-  Check, Search, Clock, Rows3,
+  Check, Search, Clock, Rows3, Code2,
 } from "lucide-react";
 import { cn, formatDate as fmtDate, formatRelativeTime as fmtRelative } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -547,6 +547,21 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
   const [result,   setResult]   = useState<QueryResult | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [snapping, setSnapping] = useState(false);
+  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
+  const [embedding, setEmbedding] = useState(false);
+
+  async function handleEmbed() {
+    if (embedUrl) { setEmbedUrl(null); return; }
+    setEmbedding(true);
+    try {
+      const res = await api.post(`/api/v1/reports/${report.id}/embed`, { expiresInDays: 90 });
+      if (res.status === 403) { alert("Only managers and admins can create embed links."); return; }
+      const j = res.ok ? await res.json() : null;
+      if (j?.data?.token) setEmbedUrl(`${window.location.origin}/embed/report/${j.data.token}`);
+      else alert("Could not create the embed link.");
+    } catch { alert("Could not create the embed link."); }
+    finally { setEmbedding(false); }
+  }
 
   async function handleRun() {
     setRunning(true);
@@ -599,6 +614,10 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
             className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground">
             <Bell className="h-3.5 w-3.5" />
           </button>
+          <button onClick={handleEmbed} disabled={embedding} title="Embed (public link)"
+            className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40">
+            {embedding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Code2 className="h-3.5 w-3.5" />}
+          </button>
           <Link href={`/reports/builder?id=${report.id}`} title="Edit in builder"
             className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground text-sm">
             ✎
@@ -609,6 +628,22 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
           </button>
         </div>
       </div>
+
+      {embedUrl && (
+        <div className="mt-3 rounded-lg border border-amber-300/50 bg-amber-500/10 p-3 text-xs">
+          <p className="font-medium">Public embed link (expires in 90 days) — anyone with it can view this report&apos;s data:</p>
+          <div className="mt-1 flex items-center gap-2">
+            <code className="flex-1 break-all rounded bg-background px-2 py-1 font-mono">{embedUrl}</code>
+            <button onClick={() => { navigator.clipboard?.writeText(embedUrl); }} className="text-primary hover:underline shrink-0">Copy URL</button>
+            <button
+              onClick={() => { navigator.clipboard?.writeText(`<iframe src="${embedUrl}" width="100%" height="600" frameborder="0"></iframe>`); }}
+              className="text-primary hover:underline shrink-0"
+            >
+              Copy iframe
+            </button>
+          </div>
+        </div>
+      )}
 
       {expanded && result && (
         <div>

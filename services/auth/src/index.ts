@@ -10,6 +10,7 @@ import rateLimit from "@fastify/rate-limit";
 import jwt from "@fastify/jwt";
 import { authRoutes } from "./routes/auth.routes";
 import { oauthRoutes } from "./routes/oauth.routes";
+import { scimRoutes } from "./routes/scim.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { internalRoutes } from "./routes/internal.routes";
 import { redis } from "@nexcrm/service-common/redis";
@@ -125,6 +126,7 @@ async function bootstrap() {
   await server.register(oauthRoutes, { prefix: "/auth" });
   await server.register(adminRoutes, { prefix: "/admin" });
   await server.register(internalRoutes, { prefix: "/internal" });
+  await server.register(scimRoutes, { prefix: "/scim/v2" });
 
   const port = parseInt(process.env.AUTH_PORT ?? "4001", 10);
   const host = process.env.HOST ?? "0.0.0.0";

@@ -1798,7 +1798,101 @@ function SecurityTab() {
           {!keysLoading && !keysError && apiKeys.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No API keys. Create one above.</p>}
         </div>
       </section>
+
+      <ScimTokensSection />
     </div>
+  );
+}
+
+interface ScimToken {
+  id: string;
+  name: string;
+  token_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/** SCIM 2.0 provisioning tokens — lets an IdP manage users automatically. */
+function ScimTokensSection() {
+  const [tokens, setTokens] = useState<ScimToken[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newToken, setNewToken] = useState<string | null>(null);
+
+  const scimBaseUrl = typeof window !== "undefined" ? `${window.location.origin}/scim/v2` : "/scim/v2";
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get("/api/v1/scim-tokens");
+      if (r.status === 403) { setError("Only workspace admins can manage SCIM tokens."); setTokens([]); }
+      else if (r.ok) { const j = await r.json(); setTokens(j.data ?? []); setError(null); }
+      else setError("Could not load SCIM tokens.");
+    } catch { setError("Could not load SCIM tokens."); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const createToken = async () => {
+    const name = window.prompt("Name this SCIM token (e.g. Okta provisioning):");
+    if (!name?.trim()) return;
+    try {
+      const r = await api.post("/api/v1/scim-tokens", { name: name.trim() });
+      const j = r.ok ? await r.json() : null;
+      if (j?.data?.token) { setNewToken(j.data.token); load(); }
+      else alert("Could not create the SCIM token.");
+    } catch { alert("Could not create the SCIM token."); }
+  };
+
+  const revokeToken = async (id: string) => {
+    if (!window.confirm("Revoke this SCIM token? Your identity provider will stop being able to provision users.")) return;
+    try {
+      const r = await api.delete(`/api/v1/scim-tokens/${id}`);
+      if (r.ok || r.status === 204) load();
+      else alert("Could not revoke the SCIM token.");
+    } catch { alert("Could not revoke the SCIM token."); }
+  };
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-base font-semibold flex items-center gap-2"><Users className="h-4 w-4" /> SCIM Provisioning</h3>
+        <button onClick={createToken} className="text-xs text-primary hover:underline">+ New token</button>
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Let your identity provider (Okta, Azure AD…) create and deactivate users automatically.
+        Base URL: <code className="rounded bg-muted px-1 py-0.5 font-mono">{scimBaseUrl}</code>
+      </p>
+
+      {newToken && (
+        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:bg-amber-950/30">
+          <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Copy this token now — it is shown only once. Paste it as the Bearer token in your IdP&apos;s SCIM settings:</p>
+          <div className="mt-1 flex items-center gap-2">
+            <code className="flex-1 break-all rounded bg-background px-2 py-1 font-mono text-xs">{newToken}</code>
+            <button onClick={() => { navigator.clipboard?.writeText(newToken); }} className="text-xs text-primary hover:underline">Copy</button>
+            <button onClick={() => setNewToken(null)} className="text-xs text-muted-foreground hover:underline">Dismiss</button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {loading && <p className="text-sm text-muted-foreground text-center py-6">Loading…</p>}
+        {!loading && error && <p className="text-sm text-muted-foreground text-center py-6">{error}</p>}
+        {!loading && !error && tokens.map((t) => (
+          <div key={t.id} className="flex items-center justify-between rounded-lg border bg-card p-3">
+            <div>
+              <p className="text-sm font-medium">{t.name}</p>
+              <p className="text-xs text-muted-foreground font-mono">{t.token_prefix}••••</p>
+              <p className="text-xs text-muted-foreground">
+                Created {new Date(t.created_at).toLocaleDateString()} · {t.last_used_at ? `Last used ${new Date(t.last_used_at).toLocaleDateString()}` : "Never used"}
+              </p>
+            </div>
+            <button onClick={() => revokeToken(t.id)} className="text-muted-foreground hover:text-red-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
+          </div>
+        ))}
+        {!loading && !error && tokens.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No SCIM tokens. Create one to connect your identity provider.</p>}
+      </div>
+    </section>
   );
 }
 

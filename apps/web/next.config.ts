@@ -32,8 +32,30 @@ const nextConfig: NextConfig = {
           ? true
           : isProd;
     return [
+      // Embedded analytics pages exist to be iframed on third-party sites, so
+      // they get the same hardening minus the anti-framing directives.
       {
-        source: "/(.*)",
+        source: "/embed/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline'" + (isProd ? "" : " 'unsafe-eval'"),
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https:",
+              "connect-src 'self'",
+              "object-src 'none'",
+              "frame-ancestors *",
+              "base-uri 'self'",
+            ].join("; "),
+          },
+        ],
+      },
+      {
+        source: "/((?!embed).*)",
         headers: [
           // Prevent this app being embedded in iframes (clickjacking)
           { key: "X-Frame-Options", value: "DENY" },

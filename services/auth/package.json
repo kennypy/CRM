@@ -15,6 +15,7 @@
     "@fastify/rate-limit": "^10.1.0",
     "@nexcrm/service-common": "*",
     "@nexcrm/shared-types": "*",
+    "@node-saml/node-saml": "^5.1.0",
     "@opentelemetry/auto-instrumentations-node": "^0.52.0",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.56.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.56.0",
