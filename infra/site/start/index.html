@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#f6f4ef" />
+<title>Get early access | NexCRM</title>
+<meta name="description" content="Request early access to NexCRM, the operator-grade CRM built for pipeline hygiene, activity you can audit, and forecasting tied to signals." />
+<link rel="canonical" href="https://nexcrm.io/start/" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<meta property="og:title" content="Get early access | NexCRM" />
+<meta property="og:description" content="Request early access to NexCRM. Tell us how your pipeline breaks and we will show you how this would run it." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://nexcrm.io/start/" />
+<meta property="og:image" content="https://nexcrm.io/og.png" />
+<meta property="og:site_name" content="NexCRM" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="preload" href="/fonts/serif-600-lat.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/fonts/plexsans-400-lat.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<style>
+@font-face{font-family:'Plex Sans';font-style:normal;font-weight:100 700;font-display:swap;src:url(/fonts/plexsans-400-lat.woff2) format('woff2');}
+@font-face{font-family:'Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/plexmono-400-lat.woff2) format('woff2');}
+@font-face{font-family:'Source Serif';font-style:normal;font-weight:400 700;font-display:swap;src:url(/fonts/serif-600-lat.woff2) format('woff2');}
+:root{
+  --bg0:#f6f4ef;--card:#fff;--card2:#fbfaf7;--stroke:#ddd8cc;--stroke2:#c8c2b2;
+  --text:#14213d;--muted:rgba(20,33,61,.72);--muted2:rgba(20,33,61,.52);
+  --good:#2f7d55;--bad:#b03a2e;--signal:#c2571c;
+  --mono:'Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  --sans:'Plex Sans',ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  --display:'Source Serif',Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg0);color:var(--text);font-family:var(--sans);line-height:1.55}
+a{color:inherit}
+.wrap{max-width:1020px;margin:0 auto;padding:0 20px}
+h1,h2{font-family:var(--display);font-weight:600;letter-spacing:-.01em;margin:0}
+
+header{border-bottom:1px solid var(--stroke);background:rgba(246,244,239,.94)}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:12px 0}
+.brand{display:flex;gap:10px;align-items:center;font-weight:600;text-decoration:none}
+.brand svg{width:28px;height:28px;display:block}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border-radius:6px;
+  border:1px solid var(--stroke);background:var(--card);color:var(--text);font:inherit;font-weight:600;font-size:14px;cursor:pointer;text-decoration:none}
+.btn:hover{background:#efece4;border-color:var(--stroke2)}
+.btn.primary{background:var(--text);border-color:var(--text);color:#f6f4ef}
+.btn.primary:hover{background:#22335c}
+.btn[disabled]{opacity:.6;cursor:not-allowed}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:44px 0 56px;align-items:start}
+h1{font-size:38px}
+.lede{color:var(--muted);margin:10px 0 0;font-size:17px}
+.kicker{display:inline-flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em;
+  border:1px solid rgba(194,87,28,.35);background:rgba(194,87,28,.09);color:var(--signal);padding:5px 10px;border-radius:999px}
+.what{margin:22px 0 0;padding:0;list-style:none}
+.what li{display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--stroke);font-size:15px}
+.what li:last-child{border-bottom:none}
+.what .num{font-family:var(--mono);font-size:12px;color:var(--muted2);padding-top:3px;flex:0 0 auto}
+
+.card{background:var(--card);border:1px solid var(--stroke);border-radius:8px;padding:20px}
+.card h2{font-size:20px}
+.card .sub{color:var(--muted);font-size:14px;margin:4px 0 16px}
+label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
+input,select,textarea{width:100%;padding:10px 12px;border-radius:6px;border:1px solid var(--stroke);
+  background:var(--bg0);color:var(--text);font:inherit;font-size:14px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--text)}
+textarea{min-height:78px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.fine{font-size:12px;color:var(--muted2);margin-top:12px}
+.msg{margin-top:12px;padding:10px 12px;border-radius:6px;font-size:14px;display:none}
+.msg.err{display:block;border:1px solid rgba(176,58,46,.35);background:rgba(176,58,46,.08);color:var(--bad)}
+.done{display:none;text-align:left}
+.done.show{display:block}
+.done .tick{width:34px;height:34px;border-radius:999px;border:1px solid rgba(47,125,85,.4);background:rgba(47,125,85,.1);
+  color:var(--good);display:inline-flex;align-items:center;justify-content:center;font-size:17px}
+.hide{display:none}
+footer{border-top:1px solid var(--stroke);padding:20px 0;font-size:13px;color:var(--muted2)}
+footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+@media (max-width:820px){.grid{grid-template-columns:1fr;gap:22px;padding:28px 0 40px}h1{font-size:29px}}
+@media (max-width:480px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="nav">
+      <a class="brand" href="/">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M8 26 L22 12 L22 40 L8 40 Z" fill="#14213d"/><path d="M42 12 L56 12 L56 40 L42 26 Z" fill="#2b7fff"/><path d="M8 12 L24 12 L56 46 L56 52 L40 52 L8 18 Z" fill="#14213d"/></svg>
+        <span>NexCRM</span>
+      </a>
+      <a class="btn" href="/demo/enter/">Try the demo</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="grid">
+    <div>
+      <span class="kicker">EARLY ACCESS &bull; NOT YET GENERALLY AVAILABLE</span>
+      <h1>Get early access to NexCRM</h1>
+      <p class="lede">NexCRM is not open for self-serve signup yet. We are onboarding a small number of teams by hand so we can watch how the hygiene rules behave against real pipeline before we open the doors.</p>
+      <ul class="what">
+        <li><span class="num">01</span><span>You tell us how your pipeline actually breaks: stale stages, unevidenced movement, forecasts nobody trusts.</span></li>
+        <li><span class="num">02</span><span>We come back within two working days with whether NexCRM fits, honestly, including when it does not.</span></li>
+        <li><span class="num">03</span><span>If it fits, we set up a working environment against your real process and stay close through the first cycle.</span></li>
+      </ul>
+      <p class="lede" style="font-size:15px;margin-top:20px">Want to look before you talk? The <a href="/demo/enter/">interactive demo</a> runs in your browser with sample data, no signup.</p>
+    </div>
+
+    <div class="card">
+      <div id="formSide">
+        <h2>Request access</h2>
+        <p class="sub">Goes straight to a person, not a sequence.</p>
+        <div class="two">
+          <div><label for="firstName">First name</label><input id="firstName" name="firstName" autocomplete="given-name" required /></div>
+          <div><label for="lastName">Last name</label><input id="lastName" name="lastName" autocomplete="family-name" required /></div>
+        </div>
+        <label for="company">Company</label>
+        <input id="company" name="company" autocomplete="organization" required />
+        <label for="email">Work email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required />
+        <label for="phone">Phone <span style="color:var(--muted2)">(optional)</span></label>
+        <input id="phone" name="phone" type="tel" autocomplete="tel" />
+        <label for="team">Team size</label>
+        <select id="team" name="team">
+          <option>1 to 5 reps</option>
+          <option>6 to 20 reps</option>
+          <option>21 to 50 reps</option>
+          <option>50+ reps</option>
+        </select>
+        <label for="pain">What breaks in your pipeline today? <span style="color:var(--muted2)">(optional)</span></label>
+        <textarea id="pain" name="pain" placeholder="Stale deals nobody closes out, forecast built on vibes, reps logging activity that never happened..."></textarea>
+        <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off" /></div>
+        <button class="btn primary" type="button" id="submitBtn" style="width:100%;margin-top:16px">Request early access</button>
+        <div class="msg" id="msg"></div>
+        <p class="fine">We use your details to reply about early access and nothing else. No newsletter, no reselling, no drip campaign.</p>
+      </div>
+
+      <div class="done" id="done">
+        <span class="tick" aria-hidden="true">&#10003;</span>
+        <h2 style="margin-top:12px">Request received</h2>
+        <p class="sub">We read every one of these ourselves. Expect a reply within two working days, including a straight no if it is not a fit.</p>
+        <a class="btn" href="/demo/enter/" style="margin-top:6px">Try the demo while you wait</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer><div class="wrap"><span>&copy; 2026 NexCRM. All rights reserved.</span><a href="mailto:hello@nexcrm.io">hello@nexcrm.io</a></div></footer>
+
+<script>
+(function(){
+  var btn=document.getElementById("submitBtn"),msg=document.getElementById("msg");
+  function fail(t){msg.className="msg err";msg.textContent=t;}
+  btn.onclick=function(){
+    var f={firstName:"",lastName:"",company:"",email:"",phone:"",website:""};
+    for(var k in f){var el=document.getElementById(k);if(el)f[k]=el.value.trim();}
+    if(!f.firstName||!f.lastName||!f.company||!f.email){fail("Please complete first name, last name, company and work email.");return;}
+    if(f.email.indexOf("@")<1||f.email.indexOf(".")<0){fail("That email address does not look right.");return;}
+    var team=document.getElementById("team").value,pain=document.getElementById("pain").value.trim();
+    var body=new URLSearchParams();
+    body.append("firstName",f.firstName);
+    body.append("lastName",f.lastName);
+    body.append("company",f.company+" | team: "+team+(pain?" | pain: "+pain:""));
+    body.append("email",f.email);
+    body.append("phone",f.phone);
+    body.append("website",f.website);
+    btn.disabled=true;btn.textContent="Sending...";msg.className="msg";
+    fetch("/submit.php",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()})
+      .then(function(r){return r.json().catch(function(){return {ok:false,error:"Unexpected response."};});})
+      .then(function(d){
+        if(d&&d.ok){document.getElementById("formSide").className="hide";document.getElementById("done").className="done show";}
+        else{fail((d&&d.error)?d.error:"Could not send that. Email hello@nexcrm.io and we will pick it up.");btn.disabled=false;btn.textContent="Request early access";}
+      })
+      .catch(function(){fail("Network problem. Email hello@nexcrm.io and we will pick it up.");btn.disabled=false;btn.textContent="Request early access";});
+  };
+})();
+</script>
+</body>
+</html>
