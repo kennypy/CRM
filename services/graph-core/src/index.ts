@@ -14,6 +14,7 @@ import { dealsRoutes } from "./routes/deals";
 import { graphRoutes } from "./routes/graph";
 import { activitiesRoutes } from "./routes/activities";
 import { tasksRoutes } from "./routes/tasks";
+import { internalRoutes } from "./routes/internal";
 import { validateServiceToken } from "./middleware/service-token";
 
 const server = Fastify({
@@ -158,6 +159,7 @@ async function bootstrap() {
   await server.register(graphRoutes,      { prefix: "/graph" });
   await server.register(activitiesRoutes, { prefix: "/activities" });
   await server.register(tasksRoutes,      { prefix: "/tasks" });
+  await server.register(internalRoutes,   { prefix: "/internal" });
 
   const port = parseInt(process.env.GRAPH_CORE_PORT ?? "4002", 10);
   const host = process.env.HOST ?? "0.0.0.0";
