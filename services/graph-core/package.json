@@ -9,6 +9,8 @@
     "db:migrate": "node -r tsx/cjs src/db/migrate.ts",
     "db:seed": "node -r tsx/cjs src/db/seed.ts",
     "db:seed-demo": "node -r tsx/cjs src/db/seed-demo.ts",
+    "db:migrate:prod": "node dist/services/graph-core/src/db/migrate.js",
+    "db:seed-demo:prod": "node dist/services/graph-core/src/db/seed-demo.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -19,6 +19,7 @@ import * as path from "path";
 import * as dotenv from "dotenv";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
+import { toCypherMap } from "./cypher-map";
 
 dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
 
@@ -141,17 +142,25 @@ async function main() {
     console.log("[demo-seed] Tenant + users done");
 
     // ── AGE Graph ────────────────────────────────────────────────────────────
+    // Any failure here is fatal for the demo (an empty graph means an empty
+    // CRM) — it is recorded and the process exits non-zero after the summary.
+    let ageError: Error | null = null;
+    const graphCounts: Record<string, number> = {};
+    let pipelineValue = 0;
+    let dealStats = { won: 0, lost: 0, active: 0 };
     try {
       await client.query(`LOAD 'age'`);
       await client.query(`SET search_path = ag_catalog, "$user", public`);
 
+      // AGE supports MERGE and SET but not the ON CREATE / ON MATCH variants.
+      // A single unconditional SET is behaviourally equivalent here because
+      // both branches assigned the same map.
       const upsertNode = async (label: string, id: string, props: Record<string, unknown>) => {
-        const propsJson = JSON.stringify({ id, tenant_id: T.tenant, ...props });
+        const propsMap = toCypherMap({ id, tenant_id: T.tenant, ...props });
         await client.query(`
           SELECT * FROM cypher('nexcrm_graph', $$
             MERGE (n:${label} {id: '${id}', tenant_id: '${T.tenant}'})
-            ON CREATE SET n += ${propsJson}::agtype
-            ON MATCH SET  n += ${propsJson}::agtype
+            SET n += ${propsMap}
             RETURN n
           $$) AS (n agtype)
         `);
@@ -163,13 +172,15 @@ async function main() {
         toLabel: string, toId: string,
         props: Record<string, unknown> = {}
       ) => {
-        const propsJson = JSON.stringify(props);
+        const setClause = Object.keys(props).length
+          ? `SET r += ${toCypherMap(props)}`
+          : "";
         await client.query(`
           SELECT * FROM cypher('nexcrm_graph', $$
             MATCH (a:${fromLabel} {id: '${fromId}'}),
                   (b:${toLabel}   {id: '${toId}'})
             MERGE (a)-[r:${edgeLabel}]->(b)
-            SET r += ${propsJson}::agtype
+            ${setClause}
             RETURN r
           $$) AS (r agtype)
         `);
@@ -463,34 +474,81 @@ async function main() {
 
       console.log(`[demo-seed] ${activities.length} activities done`);
 
+      pipelineValue = deals.reduce((sum, d) => sum + d.value, 0);
+      dealStats = {
+        won:    deals.filter((d) => d.stage === "closed_won").length,
+        lost:   deals.filter((d) => d.stage === "closed_lost").length,
+        active: deals.filter((d) => !d.stage.startsWith("closed")).length,
+      };
+
+      // Verify by querying real counts back — the summary must never claim
+      // data exists that was not actually written.
+      const countRes = await client.query<{ lbl: string; c: string }>(`
+        SELECT * FROM cypher('nexcrm_graph', $$
+          MATCH (n) WHERE n.tenant_id = '${T.tenant}'
+          RETURN label(n), count(n)
+        $$) AS (lbl agtype, c agtype)
+      `);
+      for (const row of countRes.rows) {
+        graphCounts[String(row.lbl).replace(/"/g, "")] = Number(row.c);
+      }
+
+      const expected: Record<string, number> = {
+        Company:  companies.length,
+        Person:   contacts.length,
+        Deal:     deals.length,
+        Activity: activities.length,
+      };
+      const short = Object.entries(expected).filter(
+        ([lbl, n]) => (graphCounts[lbl] ?? 0) < n,
+      );
+      if (short.length) {
+        throw new Error(
+          "graph node counts below expected: " +
+          short.map(([lbl, n]) => `${lbl} ${graphCounts[lbl] ?? 0}/${n}`).join(", "),
+        );
+      }
+
       await client.query(`SET search_path = public`);
     } catch (e: any) {
-      console.warn("[demo-seed] AGE seeding skipped:", e.message);
+      ageError = e instanceof Error ? e : new Error(String(e));
+      console.error("[demo-seed] AGE graph seeding FAILED:", ageError.message);
+      try {
+        await client.query(`SET search_path = public`);
+      } catch { /* connection-level failure — nothing to restore */ }
     }
 
     // ── Deal signals ─────────────────────────────────────────────────────────
+    // signal_type is constrained by migration 003 to the commercial-intent
+    // watermark ladder the Reality Score engine scores against:
+    //   pricing_mentioned < quote_requested < quote_sent < quote_opened
+    //     < contract_sent < contract_opened
+    // Concepts outside that ladder are modelled elsewhere, not forced in here:
+    //   - champions / blockers → INFLUENCES edge `role` (seeded above)
+    //   - legal review blocker → blocker INFLUENCES edge + review_queue entry
+    //   - closed-won           → Deal stage; the signal trail records the
+    //                            highest commercial watermark actually reached
     await client.query(`
       INSERT INTO deal_signals (tenant_id, deal_uuid, signal_type, occurred_at, source)
       VALUES
-        ($1, $2, 'contract_sent',       $3,  'seed'),
-        ($1, $2, 'pricing_agreed',      $4,  'seed'),
-        ($1, $5, 'quote_opened',        $6,  'seed'),
-        ($1, $5, 'quote_opened',        $7,  'seed'),
-        ($1, $5, 'quote_opened',        $8,  'seed'),
-        ($1, $9, 'contract_signed',     $10, 'seed'),
-        ($1, $11, 'champion_identified', $12, 'seed'),
-        ($1, $13, 'contract_sent',      $14, 'seed'),
-        ($1, $13, 'legal_review',       $15, 'seed'),
-        ($1, $16, 'proposal_sent',      $17, 'seed')
+        ($1, $2,  'quote_sent',        $3,  'seed'),
+        ($1, $2,  'contract_sent',     $4,  'seed'),
+        ($1, $5,  'quote_opened',      $6,  'seed'),
+        ($1, $5,  'quote_opened',      $7,  'seed'),
+        ($1, $5,  'quote_opened',      $8,  'seed'),
+        ($1, $9,  'contract_sent',     $10, 'seed'),
+        ($1, $9,  'contract_opened',   $11, 'seed'),
+        ($1, $12, 'quote_sent',        $13, 'seed'),
+        ($1, $12, 'contract_sent',     $14, 'seed'),
+        ($1, $15, 'quote_sent',        $16, 'seed')
       ON CONFLICT DO NOTHING
     `, [
       T.tenant,
-      T.deal1, daysAgo(3), daysAgo(5),          // Meridian
-      T.deal2, daysAgo(1), daysAgo(3), daysAgo(5), // Vortex (opened 3x)
-      T.deal4, daysAgo(5),                        // IronForge (signed)
-      T.deal6, daysAgo(7),                        // Quantum
-      T.deal6, daysAgo(2), daysAgo(1),            // Quantum legal
-      T.deal8, daysAgo(3),                        // Crest
+      T.deal1, daysAgo(5), daysAgo(3),             // Meridian: pricing proposal, then contract out
+      T.deal2, daysAgo(1), daysAgo(3), daysAgo(5), // Vortex: quote opened 3x
+      T.deal4, daysAgo(8), daysAgo(5),             // IronForge: closed-won — contract sent + opened
+      T.deal6, daysAgo(7), daysAgo(2),             // Quantum: proposal, contract out (legal blocker is an edge)
+      T.deal8, daysAgo(3),                         // Crest: enterprise proposal sent
     ]);
 
     // ── Score snapshots (10-day baseline) ─────────────────────────────────────
@@ -575,16 +633,43 @@ async function main() {
     }
 
     console.log("[demo-seed] Signals + snapshots + review queue + products + events done");
-    console.log("[demo-seed] Complete!");
+
+    // ── Summary — real counts queried back, never hardcoded ──────────────────
+    const rel = await client.query<{
+      signals: string; snapshots: string; review_items: string; products: string;
+    }>(`
+      SELECT
+        (SELECT count(*) FROM deal_signals         WHERE tenant_id = $1) AS signals,
+        (SELECT count(*) FROM deal_score_snapshots WHERE tenant_id = $1) AS snapshots,
+        (SELECT count(*) FROM review_queue         WHERE tenant_id = $1) AS review_items,
+        (SELECT count(*) FROM products             WHERE tenant_id = $1) AS products
+    `, [T.tenant]);
+    const r = rel.rows[0];
+
     console.log("");
-    console.log("Demo credentials:");
-    console.log("  Demo Visitor: visitor@demo.nexcrm.io / DemoVisitor@nexcrm1  (tenant: demo)");
-    console.log("");
-    console.log("Demo data summary:");
-    console.log("  10 companies | 25 contacts | 8 deals | " + actCounter + " activities");
-    console.log("  Pipeline value: $2,041,000 across all stages");
-    console.log("  Deals: 1 closed-won, 1 closed-lost, 6 active");
-    console.log("");
+    console.log("Demo data summary (queried back from the database):");
+    console.log(
+      `  Graph: ${graphCounts.Company ?? 0} companies | ${graphCounts.Person ?? 0} contacts | ` +
+      `${graphCounts.Deal ?? 0} deals | ${graphCounts.Activity ?? 0} activities`,
+    );
+    console.log(
+      `  Relational: ${r.signals} signals | ${r.snapshots} snapshots | ` +
+      `${r.review_items} review items | ${r.products} products`,
+    );
+    if (!ageError) {
+      console.log(`  Pipeline value: $${pipelineValue.toLocaleString("en-US")} across all stages`);
+      console.log(`  Deals: ${dealStats.won} closed-won, ${dealStats.lost} closed-lost, ${dealStats.active} active`);
+      console.log("");
+      console.log("Demo credentials:");
+      console.log("  Demo Visitor: visitor@demo.nexcrm.io / DemoVisitor@nexcrm1  (tenant: demo)");
+      console.log("");
+      console.log("[demo-seed] Complete!");
+    } else {
+      console.error("");
+      console.error("[demo-seed] FAILED — AGE graph seeding did not complete:", ageError.message);
+      console.error("[demo-seed] The demo is NOT usable in this state. Exiting non-zero.");
+      process.exitCode = 1;
+    }
   } finally {
     client.release();
     await pool.end();

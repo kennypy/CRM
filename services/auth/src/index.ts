@@ -54,6 +54,16 @@ async function bootstrap() {
     }
   }
 
+  // Email is optional (the demo runs without it) but its absence must be loud:
+  // with no provider, /auth/forgot-password returns 503 and welcome/invite
+  // emails are dropped with an error log instead of silently vanishing.
+  if (process.env.NODE_ENV === "production" && !process.env.RESEND_API_KEY) {
+    console.warn(
+      "WARNING: RESEND_API_KEY is not set — outbound email is disabled. " +
+      "/auth/forgot-password will return 503; welcome and invite emails will be dropped.",
+    );
+  }
+
   await server.register(helmet, { contentSecurityPolicy: false });
 
   // Auth service is internal — only accept requests from the API gateway and the

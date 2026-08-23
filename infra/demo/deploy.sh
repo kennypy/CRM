@@ -50,10 +50,10 @@ case "${1:-deploy}" in
     sleep 10
 
     info "Running database migrations..."
-    docker compose -f "$COMPOSE_FILE" exec -T graph-core npm run db:migrate
+    docker compose -f "$COMPOSE_FILE" exec -T graph-core npm run db:migrate:prod
 
     info "Seeding demo data..."
-    docker compose -f "$COMPOSE_FILE" exec -T graph-core npm run db:seed-demo
+    docker compose -f "$COMPOSE_FILE" exec -T graph-core npm run db:seed-demo:prod
 
     ok "Demo instance deployed successfully!"
     ok ""
@@ -85,14 +85,14 @@ case "${1:-deploy}" in
     docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
     info "Re-running migrations..."
-    docker compose -f "$COMPOSE_FILE" exec -T graph-core npm run db:migrate
+    docker compose -f "$COMPOSE_FILE" exec -T graph-core npm run db:migrate:prod
 
     ok "Demo instance updated!"
     ;;
 
   reseed)
     info "Re-seeding demo data..."
-    docker compose -f "$COMPOSE_FILE" exec -T graph-core npm run db:seed-demo
+    docker compose -f "$COMPOSE_FILE" exec -T graph-core npm run db:seed-demo:prod
     ok "Demo data re-seeded!"
     ;;
 
