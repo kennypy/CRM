@@ -85,5 +85,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|auth|_next/static|_next/image|favicon\\.ico).*)"],
+  // scim is excluded: IdPs call /scim/v2 with a bearer token, no session cookie.
+  matcher: ["/((?!api|auth|scim|_next/static|_next/image|favicon\\.ico).*)"],
 };

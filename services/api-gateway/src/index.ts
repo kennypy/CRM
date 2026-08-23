@@ -38,6 +38,7 @@ import { outboundWebhooksRoutes } from "./routes/outbound-webhooks";
 import { billingRoutes }          from "./routes/billing";
 import { exportRoutes }           from "./routes/export";
 import { apiKeysRoutes }          from "./routes/api-keys";
+import { scimTokensRoutes }       from "./routes/scim-tokens";
 import { complianceRoutes }       from "./routes/compliance";
 import { forecastingRoutes }      from "./routes/forecasting";
 import { coachingRoutes }         from "./routes/coaching";
@@ -243,6 +244,7 @@ async function bootstrap() {
   await server.register(billingRoutes,          { prefix: "/api/v1/billing" });
   await server.register(exportRoutes,           { prefix: "/api/v1/export" });
   await server.register(apiKeysRoutes,          { prefix: "/api/v1/api-keys" });
+  await server.register(scimTokensRoutes,       { prefix: "/api/v1/scim-tokens" });
   await server.register(leadScoringRoutes,     { prefix: "/api/v1/lead-scoring" });
   await server.register(forecastingRoutes,     { prefix: "/api/v1/forecasting" });
   await server.register(anomaliesRoutes,       { prefix: "/api/v1/anomalies" });
