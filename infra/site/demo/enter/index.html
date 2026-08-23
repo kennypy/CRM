@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#f6f4ef" />
+<title>Interactive demo | NexCRM</title>
+<meta name="description" content="Click through a working sample of NexCRM: pipeline hygiene flags, activity you can audit, and forecast confidence tied to signals. Sample data, no signup." />
+<link rel="canonical" href="https://nexcrm.io/demo/enter/" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<meta property="og:title" content="Interactive demo | NexCRM" />
+<meta property="og:description" content="Click through a working sample of NexCRM. Sample data, no signup required." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://nexcrm.io/demo/enter/" />
+<meta property="og:image" content="https://nexcrm.io/og.png" />
+<meta property="og:site_name" content="NexCRM" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="preload" href="/fonts/serif-600-lat.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/fonts/plexsans-400-lat.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<style>
+@font-face{font-family:'Plex Sans';font-style:normal;font-weight:100 700;font-display:swap;src:url(/fonts/plexsans-400-lat.woff2) format('woff2');}
+@font-face{font-family:'Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/plexmono-400-lat.woff2) format('woff2');}
+@font-face{font-family:'Source Serif';font-style:normal;font-weight:400 700;font-display:swap;src:url(/fonts/serif-600-lat.woff2) format('woff2');}
+:root{
+  --bg0:#f6f4ef; --card:#fff; --card2:#fbfaf7;
+  --stroke:#ddd8cc; --stroke2:#c8c2b2;
+  --text:#14213d; --muted:rgba(20,33,61,.72); --muted2:rgba(20,33,61,.52);
+  --good:#2f7d55; --warn:#b06a1c; --bad:#b03a2e; --blue:#2b7fff; --signal:#c2571c;
+  --mono:'Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  --sans:'Plex Sans',ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  --display:'Source Serif',Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg0);color:var(--text);font-family:var(--sans);line-height:1.55}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1240px;margin:0 auto;padding:0 20px}
+h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.01em;margin:0}
+
+header{position:sticky;top:0;z-index:50;background:rgba(246,244,239,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--stroke)}
+.nav{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0}
+.brand{display:flex;gap:10px;align-items:center;font-weight:600}
+.brand svg{width:28px;height:28px;display:block}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:9px 14px;border-radius:6px;
+  border:1px solid var(--stroke);background:var(--card);color:var(--text);font:inherit;font-weight:600;font-size:14px;cursor:pointer}
+.btn:hover{background:#efece4;border-color:var(--stroke2)}
+.btn.primary{background:var(--text);border-color:var(--text);color:#f6f4ef}
+.btn.primary:hover{background:#22335c}
+.btn.sm{padding:6px 10px;font-size:13px}
+
+.notice{background:#fff;border-bottom:1px solid var(--stroke)}
+.notice .wrap{display:flex;gap:12px;align-items:baseline;padding-top:10px;padding-bottom:10px;font-size:13px;color:var(--muted)}
+.notice b{color:var(--text)}
+.tagm{font-family:var(--mono);font-size:11px;letter-spacing:.02em;padding:3px 8px;border-radius:999px;
+  border:1px solid rgba(194,87,28,.35);background:rgba(194,87,28,.10);color:var(--signal);white-space:nowrap}
+
+.head{padding:26px 0 14px}
+.head h1{font-size:30px}
+.head p{margin:6px 0 0;color:var(--muted);max-width:64ch}
+
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0 8px}
+.kpi{background:var(--card);border:1px solid var(--stroke);border-radius:8px;padding:12px}
+.kpi .l{font-size:12px;color:var(--muted2)}
+.kpi .v{font-family:var(--display);font-size:24px;font-weight:600;margin-top:2px}
+.kpi .d{font-size:12px;color:var(--muted);font-family:var(--mono)}
+
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0 10px;align-items:start}
+.col{background:var(--card2);border:1px solid var(--stroke);border-radius:8px;padding:10px;min-height:120px}
+.colhead{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px}
+.deal{width:100%;text-align:left;background:var(--card);border:1px solid var(--stroke);border-radius:6px;padding:10px;margin-bottom:8px;cursor:pointer;font:inherit;display:block}
+.deal:hover{border-color:var(--stroke2)}
+.deal[aria-selected="true"]{border-color:var(--text);box-shadow:inset 3px 0 0 var(--text)}
+.deal .n{font-weight:600;font-size:14px}
+.deal .m{display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.flags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.flag{font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:999px;border:1px solid;white-space:nowrap}
+.flag.warn{color:var(--warn);border-color:rgba(176,106,28,.35);background:rgba(176,106,28,.09)}
+.flag.bad{color:var(--bad);border-color:rgba(176,58,46,.35);background:rgba(176,58,46,.09)}
+.flag.good{color:var(--good);border-color:rgba(47,125,85,.35);background:rgba(47,125,85,.09)}
+
+.split{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin:8px 0 40px;align-items:start}
+.panel{background:var(--card);border:1px solid var(--stroke);border-radius:8px;overflow:hidden}
+.ptop{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--stroke);background:var(--card2)}
+.ptop h2,.ptop h3{font-size:16px}
+.pill{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--stroke);background:var(--bg0);padding:5px 9px;border-radius:999px}
+.pbody{padding:14px}
+.row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--stroke);font-size:14px}
+.row:last-child{border-bottom:none}
+.row span:first-child{color:var(--muted)}
+.row span:last-child{font-family:var(--mono);font-size:13px;text-align:right}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.feed{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.feed div{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--stroke)}
+.feed div:last-child{border-bottom:none}
+.feed b{color:var(--text);font-weight:400}
+.empty{color:var(--muted2);font-size:14px;padding:6px 0}
+.bar{height:6px;background:#efece4;border-radius:999px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--text)}
+
+.cta{border-top:1px solid var(--stroke);background:#fff;padding:28px 0 34px}
+.cta .wrap{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.cta h2{font-size:22px}
+.cta p{margin:4px 0 0;color:var(--muted);font-size:14px}
+footer{border-top:1px solid var(--stroke);padding:20px 0;font-size:13px;color:var(--muted2)}
+footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+@media (max-width:1000px){.board,.kpis{grid-template-columns:repeat(2,1fr)}.split{grid-template-columns:1fr}}
+@media (max-width:600px){.board,.kpis{grid-template-columns:1fr}.head h1{font-size:24px}.nav{flex-wrap:wrap}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="nav">
+      <a class="brand" href="/">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M8 26 L22 12 L22 40 L8 40 Z" fill="#14213d"/><path d="M42 12 L56 12 L56 40 L42 26 Z" fill="#2b7fff"/><path d="M8 12 L24 12 L56 46 L56 52 L40 52 L8 18 Z" fill="#14213d"/></svg>
+        <span>NexCRM</span>
+      </a>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn sm" id="reset" type="button">Reset demo</button>
+        <a class="btn primary sm" href="/start/">Get early access</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="notice">
+  <div class="wrap">
+    <span class="tagm">SAMPLE DATA</span>
+    <span>This is a click-through demo running entirely in your browser. <b>Nothing is saved and no account is created.</b> The deals, names and numbers below are fictional.</span>
+  </div>
+</div>
+
+<main class="wrap">
+  <div class="head">
+    <h1>See what stays clean when the system pushes back</h1>
+    <p>Pick a deal. NexCRM flags stage aging, missing next steps and evidence gaps as you go, and recalculates forecast confidence from those signals rather than from optimism.</p>
+  </div>
+
+  <section class="kpis" aria-label="Pipeline summary">
+    <div class="kpi"><div class="l">Active pipeline</div><div class="v" id="k-pipe">&euro;0</div><div class="d" id="k-pipe-d">across 0 deals</div></div>
+    <div class="kpi"><div class="l">Forecast confidence</div><div class="v" id="k-conf">0.00</div><div class="d" id="k-conf-d">signal-weighted</div></div>
+    <div class="kpi"><div class="l">Hygiene issues</div><div class="v" id="k-flags">0</div><div class="d" id="k-flags-d">open across pipeline</div></div>
+    <div class="kpi"><div class="l">Evidence-backed</div><div class="v" id="k-eb">0%</div><div class="d" id="k-eb-d">of stage movement</div></div>
+  </section>
+
+  <section class="board" id="board" aria-label="Pipeline board"></section>
+
+  <section class="split">
+    <div class="panel">
+      <div class="ptop"><h2 id="d-title">Select a deal</h2><span class="pill" id="d-stage">&mdash;</span></div>
+      <div class="pbody" id="d-body"><p class="empty">Choose any deal above to inspect its hygiene signals and act on them.</p></div>
+    </div>
+    <div class="panel">
+      <div class="ptop"><h3>Ops signals</h3><span class="pill">session log</span></div>
+      <div class="pbody"><div class="feed" id="feed"></div></div>
+    </div>
+  </section>
+</main>
+
+<section class="cta">
+  <div class="wrap">
+    <div>
+      <h2>This is a demo, not the product</h2>
+      <p>NexCRM is in early access. Tell us how your pipeline actually breaks and we will show you how this would run it.</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <a class="btn" href="/">Back to site</a>
+      <a class="btn primary" href="/start/">Get early access</a>
+    </div>
+  </div>
+</section>
+
+<footer><div class="wrap"><span>&copy; 2026 NexCRM. Sample data shown for demonstration only.</span><a href="mailto:hello@nexcrm.io">hello@nexcrm.io</a></div></footer>
+
+<script>
+var STAGES=[{id:"qual",n:"Qualify"},{id:"disc",n:"Discovery"},{id:"prop",n:"Proposal"},{id:"comm",n:"Commit"}];
+var SEED=[
+ {id:1,n:"Halden Logistics",v:48000,s:"qual",age:6,next:"Discovery call booked",ev:1,owner:"R. Okafor",touch:9,src:"email+calendar"},
+ {id:2,n:"Brightside Health",v:126000,s:"disc",age:31,next:"",ev:1,owner:"M. Lynch",touch:14,src:"email+calendar"},
+ {id:3,n:"Corvin Manufacturing",v:87000,s:"disc",age:11,next:"Security review scheduled",ev:1,owner:"R. Okafor",touch:21,src:"email+calendar"},
+ {id:4,n:"Tallow & Finch",v:23000,s:"qual",age:44,next:"",ev:0,owner:"S. Boyle",touch:2,src:"manual entry"},
+ {id:5,n:"Merrow Freight",v:210000,s:"prop",age:9,next:"Pricing walkthrough Thu",ev:1,owner:"M. Lynch",touch:33,src:"email+calendar"},
+ {id:6,n:"Ardan Systems",v:64000,s:"prop",age:38,next:"",ev:0,owner:"S. Boyle",touch:5,src:"manual entry"},
+ {id:7,n:"Kestrel Retail Group",v:152000,s:"comm",age:5,next:"Contract with legal",ev:1,owner:"M. Lynch",touch:41,src:"email+calendar"},
+ {id:8,n:"Vaux Energy",v:98000,s:"comm",age:27,next:"",ev:0,owner:"R. Okafor",touch:6,src:"manual entry"}
+];
+var deals=[],sel=null,log=[];
+
+function clone(){return SEED.map(function(d){var o={};for(var k in d)o[k]=d[k];return o;});}
+function stageName(id){for(var i=0;i<STAGES.length;i++)if(STAGES[i].id===id)return STAGES[i].n;return id;}
+function eur(v){return "\u20ac"+v.toLocaleString("en-IE");}
+
+function flagsFor(d){
+  var f=[];
+  if(d.age>30) f.push({t:"bad",l:"STALE "+d.age+"d"});
+  else if(d.age>21) f.push({t:"warn",l:"AGING "+d.age+"d"});
+  if(!d.next) f.push({t:"bad",l:"NO NEXT STEP"});
+  if(!d.ev) f.push({t:"warn",l:"NO EVIDENCE"});
+  if(d.touch<5) f.push({t:"warn",l:"THIN ACTIVITY"});
+  if(!f.length) f.push({t:"good",l:"CLEAN"});
+  return f;
+}
+function confidenceFor(d){
+  var c=0.9;
+  if(d.age>30)c-=0.3; else if(d.age>21)c-=0.15;
+  if(!d.next)c-=0.25;
+  if(!d.ev)c-=0.2;
+  if(d.touch<5)c-=0.1;
+  return Math.max(0.05,Math.round(c*100)/100);
+}
+function note(tag,txt){
+  log.unshift({tag:tag,txt:txt});
+  if(log.length>7)log.pop();
+  renderFeed();
+}
+
+function renderBoard(){
+  var b=document.getElementById("board");
+  b.innerHTML="";
+  STAGES.forEach(function(st){
+    var col=document.createElement("div");col.className="col";
+    var inStage=deals.filter(function(d){return d.s===st.id;});
+    var sum=inStage.reduce(function(a,d){return a+d.v;},0);
+    var h=document.createElement("div");h.className="colhead";
+    h.innerHTML="<span>"+st.n+" ("+inStage.length+")</span><span>"+eur(sum)+"</span>";
+    col.appendChild(h);
+    inStage.forEach(function(d){
+      var btn=document.createElement("button");
+      btn.className="deal";btn.type="button";
+      btn.setAttribute("aria-selected", sel===d.id?"true":"false");
+      var fl=flagsFor(d).map(function(f){return '<span class="flag '+f.t+'">'+f.l+'</span>';}).join("");
+      btn.innerHTML='<div class="n">'+d.n+'</div><div class="m"><span>'+eur(d.v)+'</span><span>'+d.owner+'</span></div><div class="flags">'+fl+'</div>';
+      btn.onclick=function(){sel=d.id;render();};
+      col.appendChild(btn);
+    });
+    if(!inStage.length){var e=document.createElement("div");e.className="empty";e.textContent="No deals";col.appendChild(e);}
+    b.appendChild(col);
+  });
+}
+
+function renderDetail(){
+  var t=document.getElementById("d-title"),st=document.getElementById("d-stage"),body=document.getElementById("d-body");
+  var d=null;for(var i=0;i<deals.length;i++)if(deals[i].id===sel)d=deals[i];
+  if(!d){t.textContent="Select a deal";st.innerHTML="&mdash;";body.innerHTML='<p class="empty">Choose any deal above to inspect its hygiene signals and act on them.</p>';return;}
+  t.textContent=d.n;st.textContent=stageName(d.s);
+  var c=confidenceFor(d);
+  var fl=flagsFor(d).map(function(f){return '<span class="flag '+f.t+'">'+f.l+'</span>';}).join("");
+  var idx=0;for(var j=0;j<STAGES.length;j++)if(STAGES[j].id===d.s)idx=j;
+  body.innerHTML=
+    '<div class="row"><span>Value</span><span>'+eur(d.v)+'</span></div>'+
+    '<div class="row"><span>Owner</span><span>'+d.owner+'</span></div>'+
+    '<div class="row"><span>Days in stage</span><span>'+d.age+'</span></div>'+
+    '<div class="row"><span>Next step</span><span>'+(d.next?d.next:"none recorded")+'</span></div>'+
+    '<div class="row"><span>Activity source</span><span>'+d.src+'</span></div>'+
+    '<div class="row"><span>Touchpoints (deduped)</span><span>'+d.touch+'</span></div>'+
+    '<div class="row"><span>Stage movement</span><span>'+(d.ev?"evidence-backed":"unevidenced")+'</span></div>'+
+    '<div style="margin-top:12px"><div class="row" style="border:none;padding-bottom:2px"><span>Forecast confidence</span><span>'+c.toFixed(2)+'</span></div><div class="bar"><i style="width:'+Math.round(c*100)+'%"></i></div></div>'+
+    '<div class="flags" style="margin-top:12px">'+fl+'</div>'+
+    '<div class="acts">'+
+      '<button class="btn sm" type="button" id="a-next" '+(d.next?"disabled":"")+'>Set next step</button>'+
+      '<button class="btn sm" type="button" id="a-ev" '+(d.ev?"disabled":"")+'>Attach evidence</button>'+
+      '<button class="btn sm" type="button" id="a-adv" '+(idx>=STAGES.length-1?"disabled":"")+'>Advance stage</button>'+
+      '<button class="btn sm" type="button" id="a-rec">Recycle deal</button>'+
+    '</div>';
+
+  document.getElementById("a-next").onclick=function(){
+    d.next="Follow-up booked with owner";d.age=Math.min(d.age,7);
+    note("CHECK","Next step recorded on "+d.n+", stage clock reset");render();};
+  document.getElementById("a-ev").onclick=function(){
+    d.ev=1;d.src="email+calendar";d.touch+=4;
+    note("SYNC","Linked 4 attributed touches to "+d.n+", movement now evidence-backed");render();};
+  document.getElementById("a-adv").onclick=function(){
+    if(!d.next||!d.ev){note("RISK","Blocked advance on "+d.n+": next step and evidence required first");render();return;}
+    var k=0;for(var j=0;j<STAGES.length;j++)if(STAGES[j].id===d.s)k=j;
+    d.s=STAGES[k+1].id;d.age=1;
+    note("AUTO",d.n+" advanced to "+stageName(d.s)+" with evidence attached");render();};
+  document.getElementById("a-rec").onclick=function(){
+    deals=deals.filter(function(x){return x.id!==d.id;});sel=null;
+    note("AUTO",d.n+" recycled out of pipeline, forecast rebalanced");render();};
+}
+
+function renderKpis(){
+  var pipe=deals.reduce(function(a,d){return a+d.v;},0);
+  var conf=deals.length?deals.reduce(function(a,d){return a+confidenceFor(d)*d.v;},0)/pipe:0;
+  var flags=deals.reduce(function(a,d){var f=flagsFor(d);return a+(f[0].t==="good"?0:f.length);},0);
+  var eb=deals.length?Math.round(deals.filter(function(d){return d.ev;}).length/deals.length*100):0;
+  document.getElementById("k-pipe").textContent=eur(pipe);
+  document.getElementById("k-pipe-d").textContent="across "+deals.length+" deals";
+  document.getElementById("k-conf").textContent=conf.toFixed(2);
+  document.getElementById("k-flags").textContent=flags;
+  document.getElementById("k-eb").textContent=eb+"%";
+}
+function renderFeed(){
+  var f=document.getElementById("feed");
+  if(!log.length){f.innerHTML='<div><b>Act on a deal to see signals appear here.</b></div>';return;}
+  f.innerHTML=log.map(function(l){return '<div><span class="flag warn" style="border-color:var(--stroke);background:var(--bg0);color:var(--muted)">'+l.tag+'</span><b>'+l.txt+'</b></div>';}).join("");
+}
+function render(){renderBoard();renderDetail();renderKpis();}
+
+document.getElementById("reset").onclick=function(){deals=clone();sel=null;log=[];note("AUTO","Demo reset to seeded sample pipeline");render();};
+deals=clone();render();renderFeed();
+</script>
+</body>
+</html>
