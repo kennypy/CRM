@@ -25,6 +25,14 @@ export default defineWorkspace([
       root: "services/auth",
     },
   },
+  // Graph core
+  {
+    extends: "services/graph-core/vitest.config.ts",
+    test: {
+      name: "graph-core",
+      root: "services/graph-core",
+    },
+  },
   // Outreach service
   {
     extends: "services/outreach/vitest.config.ts",
