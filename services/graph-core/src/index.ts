@@ -8,6 +8,8 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
+import { redis } from "@nexcrm/service-common/redis";
 import { contactsRoutes } from "./routes/contacts";
 import { companiesRoutes } from "./routes/companies";
 import { dealsRoutes } from "./routes/deals";
@@ -59,6 +61,27 @@ async function bootstrap() {
   await server.register(cors, {
     // Internal service — only allow API gateway
     origin: apiGatewayUrl ?? "http://localhost:4000",
+  });
+
+  // Rate limit — graph-core is internal (service-token gated) and the gateway
+  // already limits per-user, but defense-in-depth: the sandbox ceilings cap
+  // TOTALS, not request rates, and a buggy or compromised internal caller
+  // shouldn't be able to hammer the database. Keyed by the effective tenant
+  // (all traffic arrives from the gateway's IP, so IP alone is one bucket);
+  // the tenant param is service-token-authenticated, so a forged value only
+  // shifts the bucket. Generous default, tunable per deployment.
+  await server.register(rateLimit, {
+    max: parseInt(process.env.GRAPH_CORE_RATE_LIMIT_MAX ?? "600", 10),
+    timeWindow: "1 minute",
+    redis,
+    allowList: (req) => req.url.split("?")[0] === "/health",
+    keyGenerator: (req) => {
+      const q = (req.query ?? {}) as Record<string, unknown>;
+      const tenant =
+        (req.user as { tenantId?: string } | undefined)?.tenantId ??
+        (typeof q.tenantId === "string" ? q.tenantId : null);
+      return tenant ?? req.ip ?? crypto.randomUUID();
+    },
   });
 
   await server.register(jwt, {
