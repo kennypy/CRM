@@ -7,14 +7,16 @@
 #   cd /opt/nexcrm-demo
 #   cp .env.demo .env
 #   docker compose -f docker-compose.demo.yml up -d
-#   docker compose -f docker-compose.demo.yml exec graph-core npm run db:migrate
-#   docker compose -f docker-compose.demo.yml exec graph-core npm run db:seed-demo
+#   docker compose -f docker-compose.demo.yml exec graph-core npm run db:migrate:prod
+#   docker compose -f docker-compose.demo.yml exec graph-core npm run db:seed-demo:prod
+#
+# NOTE: the production image ships only compiled dist/ — use the :prod script
+# variants above (the plain db:migrate / db:seed-demo scripts need tsx + src/,
+# which exist only in the dev workspace).
 #
 # The demo instance exposes:
 #   - Port 3000: Next.js web app (proxy via nginx on host)
 #   - Port 4000: API gateway (internal, proxied through nginx)
-
-version: "3.9"
 
 services:
   # ── PostgreSQL with Apache AGE ──────────────────────────────────────────────
@@ -126,6 +128,9 @@ services:
       GRAPH_CORE_PORT: "4002"
       DATABASE_URL: postgresql://nexcrm:${POSTGRES_PASSWORD}@postgres:5432/nexcrm
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      # graph-core refuses to start in production without these two.
+      API_GATEWAY_URL: ${API_GATEWAY_URL}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
