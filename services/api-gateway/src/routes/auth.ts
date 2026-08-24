@@ -49,15 +49,25 @@ export async function authRoutes(server: FastifyInstance) {
   server.post("/register", publicProxy);
   server.post("/login",    publicProxy);
   server.post("/refresh",  publicProxy);
-  server.post("/logout",   publicProxy);
   server.post("/forgot-password",  publicProxy);
   server.post("/reset-password",   publicProxy);
   server.post("/verify-email",         publicProxy);
   server.post("/resend-verification",  publicProxy);
 
-  // /me requires a valid JWT — use the tenant-aware proxy
+  // /me and /logout require a valid JWT — use the tenant-aware proxy, which
+  // mints a short-lived internal token from the verified identity.
+  //
+  // /logout previously used publicProxy: the gateway's global authMiddleware
+  // hook still required a Bearer JWT to reach the handler at all (it's not in
+  // PUBLIC_PATHS), but publicProxy's raw fetch() never forwarded that JWT (or
+  // any Authorization header) downstream — so the auth service's own
+  // server.authenticate check always 401'd, and refresh tokens were never
+  // actually revoked server-side on logout. The web app's logout call is
+  // fire-and-forget (`.catch(() => {})`, never awaited before clearing
+  // cookies), so this failed silently: the client always looked logged out.
   const authedProxy = createProxy({ baseUrl: AUTH_SERVICE_URL });
-  server.get("/me", { preHandler: [authMiddleware] }, authedProxy);
+  server.get("/me",   { preHandler: [authMiddleware] }, authedProxy);
+  server.post("/logout", { preHandler: [authMiddleware] }, authedProxy);
 
   // OAuth initiation requires a valid JWT — prevents CSRF where an attacker
   // calls /auth/oauth/google?tenantId=victim-tenant and tricks the victim into
