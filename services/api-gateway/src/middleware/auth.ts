@@ -6,9 +6,12 @@ import { isTokenDenied } from "../lib/deny-list";
 const PUBLIC_PATHS = new Set([
   "/health",
   "/auth/login",
+  "/auth/register",
   "/auth/refresh",
   "/auth/forgot-password",
   "/auth/reset-password",
+  "/auth/verify-email",
+  "/auth/resend-verification",
   "/auth/oauth/google/callback",
   "/auth/oauth/microsoft/callback",
   "/webhooks/zoom",
