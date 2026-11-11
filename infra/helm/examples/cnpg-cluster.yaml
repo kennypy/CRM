@@ -1,0 +1,95 @@
+# CloudNativePG cluster for NexCRM — 3 instances (1 primary + 2 replicas),
+# synchronous replication to at least one replica (RPO ≈ 0 on node loss),
+# continuous WAL archiving + nightly base backups to S3 via barman-cloud
+# (PITR, RPO ≤ 5 min on region-level loss of the cluster).
+#
+# Prereqs: CNPG operator ≥ 1.24 installed; image built from
+# Dockerfile.postgres-age (AGE + pgvector); Secret `nexcrm-pg-backup-s3`
+# with ACCESS_KEY_ID / ACCESS_SECRET_KEY (or use IRSA / workload identity).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexcrm-pg
+spec:
+  instances: 3
+  imageName: ghcr.io/kennypy/crm/postgres-age:16-1.6.0
+  primaryUpdateStrategy: unsupervised
+  # Sync replication: commit waits for ≥1 replica. With 3 instances one replica
+  # can be lost without blocking writes.
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+  postgresql:
+    shared_preload_libraries: ["age"]
+    parameters:
+      max_connections: "300"
+      shared_buffers: "2GB"
+      effective_cache_size: "6GB"
+      work_mem: "16MB"
+      maintenance_work_mem: "512MB"
+      wal_compression: "on"
+      max_wal_size: "4GB"
+      archive_timeout: "5min"      # bounds RPO for PITR from object storage
+      log_min_duration_statement: "500ms"
+  bootstrap:
+    initdb:
+      database: nexcrm
+      owner: nexcrm
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS age;
+        - CREATE EXTENSION IF NOT EXISTS vector;
+        - CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  storage:
+    size: 100Gi
+    storageClass: premium-rwo        # zonal SSD; adjust per cloud
+  walStorage:
+    size: 30Gi
+    storageClass: premium-rwo
+  resources:
+    requests: { cpu: "2", memory: 8Gi }
+    limits: { memory: 8Gi }
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: topology.kubernetes.io/zone
+    podAntiAffinityType: required
+  monitoring:
+    enablePodMonitor: true           # exposes cnpg_* + pg_* metrics to Prometheus
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: s3://nexcrm-pg-backups/prod
+      s3Credentials:
+        accessKeyId: { name: nexcrm-pg-backup-s3, key: ACCESS_KEY_ID }
+        secretAccessKey: { name: nexcrm-pg-backup-s3, key: ACCESS_SECRET_KEY }
+      wal:
+        compression: gzip
+        maxParallel: 4
+      data:
+        compression: gzip
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: nexcrm-pg-nightly
+spec:
+  schedule: "0 0 3 * * *"            # 03:00 UTC daily (6-field cron, seconds first)
+  backupOwnerReference: self
+  cluster:
+    name: nexcrm-pg
+---
+# Pooler (PgBouncer) in front of the primary — services connect to
+# nexcrm-pg-pooler-rw:5432. Transaction mode is compatible with the SET LOCAL
+# based RLS context (set_config(..., true) inside each transaction).
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: nexcrm-pg-pooler-rw
+spec:
+  cluster:
+    name: nexcrm-pg
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      max_client_conn: "1000"
+      default_pool_size: "40"

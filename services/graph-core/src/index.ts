@@ -1,5 +1,8 @@
 import "./telemetry";
-import { setTenantContext } from "./db/pool";
+import { setTenantContext, pool, servicePool } from "./db/pool";
+import {
+  registerHealthRoutes, installGracefulShutdown, isHealthPath, pgCheck, redisCheck,
+} from "@nexcrm/service-common/lifecycle";
 import * as path from "path";
 import * as dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
@@ -9,7 +12,7 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
-import { redis } from "@nexcrm/service-common/redis";
+import { redis, requestRedis } from "@nexcrm/service-common/redis";
 import { contactsRoutes } from "./routes/contacts";
 import { companiesRoutes } from "./routes/companies";
 import { dealsRoutes } from "./routes/deals";
@@ -73,8 +76,10 @@ async function bootstrap() {
   await server.register(rateLimit, {
     max: parseInt(process.env.GRAPH_CORE_RATE_LIMIT_MAX ?? "600", 10),
     timeWindow: "1 minute",
-    redis,
-    allowList: (req) => req.url.split("?")[0] === "/health",
+    // Fail-fast client + skipOnError: a Redis outage must not hang graph reads.
+    redis: requestRedis(),
+    skipOnError: true,
+    allowList: (req) => isHealthPath(req.url),
     keyGenerator: (req) => {
       const q = (req.query ?? {}) as Record<string, unknown>;
       const tenant =
@@ -169,12 +174,11 @@ async function bootstrap() {
     setTenantContext(claim ?? fallback);
   });
 
-  // Health
-  server.get("/health", async () => ({
-    status: "ok",
+  // Health — /health (legacy), /health/live, /health/ready
+  const health = registerHealthRoutes(server, {
     service: "graph-core",
-    timestamp: new Date().toISOString(),
-  }));
+    checks: [pgCheck(servicePool), redisCheck(requestRedis())],
+  });
 
   await server.register(contactsRoutes,   { prefix: "/contacts" });
   await server.register(companiesRoutes,  { prefix: "/companies" });
@@ -188,6 +192,12 @@ async function bootstrap() {
   const host = process.env.HOST ?? "0.0.0.0";
   await server.listen({ port, host });
   server.log.info(`Graph-core service listening on ${host}:${port}`);
+
+  installGracefulShutdown(server, {
+    service: "graph-core",
+    health,
+    onClose: [() => pool.end(), () => servicePool.end(), () => redis.quit(), () => requestRedis().quit()],
+  });
 }
 
 bootstrap().catch((err) => {

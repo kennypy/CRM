@@ -1,0 +1,8 @@
+NexCRM {{ .Chart.AppVersion }} deployed as release {{ .Release.Name }}.
+
+Check readiness:
+  kubectl get pods -l app.kubernetes.io/part-of=nexcrm
+  kubectl port-forward svc/nexcrm-api-gateway 4000:4000 && curl -s localhost:4000/health/ready
+
+Postgres (with Apache AGE + pgvector) and Redis are NOT part of this chart.
+See infra/helm/examples/ and docs/OPERATIONS.md.

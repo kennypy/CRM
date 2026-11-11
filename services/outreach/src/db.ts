@@ -17,16 +17,16 @@ export const servicePool = db.servicePool;
 export const setTenantContext = db.setTenantContext;
 export const runWithTenant = db.runWithTenant;
 
-// Graceful shutdown — drain connections on process termination
-const shutdown = async () => {
+/** Close all pools — called by the graceful-shutdown handler in index.ts
+ * AFTER the HTTP server has drained (ending pools on the raw SIGTERM would
+ * fail in-flight requests). */
+export async function closePools(): Promise<void> {
   await Promise.all([
     pool.end().catch((err) => console.error("Pool shutdown error:", err)),
     servicePool.end().catch(() => {}),
     db.platformPool.end().catch(() => {}),
   ]);
-};
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+}
 
 /**
  * Emit a CRM event into the shared crm_events table.

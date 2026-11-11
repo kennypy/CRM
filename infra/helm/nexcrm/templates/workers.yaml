@@ -1,0 +1,38 @@
+{{- range $name, $svc := .Values.workers }}
+{{- if $svc.enabled }}
+{{- $ctx := dict "root" $ "name" $name "svc" $svc }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nexcrm.fullname" $name }}
+  labels:
+    {{- include "nexcrm.labels" $ctx | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ $svc.replicas }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "nexcrm.selectorLabels" $ctx | nindent 6 }}
+  template:
+    {{- include "nexcrm.podTemplate" $ctx | nindent 4 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nexcrm.fullname" $name }}
+  labels:
+    {{- include "nexcrm.labels" $ctx | nindent 4 }}
+spec:
+  minAvailable: {{ $.Values.global.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "nexcrm.selectorLabels" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,18 @@
+# Postgres image for CloudNativePG with Apache AGE + pgvector.
+# CNPG requires its own operand images (barman-cloud tools included), so we
+# extend the official CNPG PG16 image rather than apache/age.
+#   docker build -f Dockerfile.postgres-age -t ghcr.io/<org>/postgres-age:16-1.6.0 .
+FROM ghcr.io/cloudnative-pg/postgresql:16.4-bookworm
+USER root
+ARG AGE_VERSION=PG16/v1.6.0-rc0
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      build-essential git flex bison postgresql-server-dev-16 \
+      postgresql-16-pgvector ca-certificates; \
+    git clone --depth 1 --branch "${AGE_VERSION}" https://github.com/apache/age.git /tmp/age; \
+    make -C /tmp/age install; \
+    rm -rf /tmp/age; \
+    apt-get purge -y build-essential git flex bison postgresql-server-dev-16; \
+    apt-get autoremove -y; rm -rf /var/lib/apt/lists/*
+USER 26

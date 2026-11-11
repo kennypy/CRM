@@ -187,9 +187,52 @@ services:
       - "--storage.tsdb.path=/prometheus"
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infra/prometheus/rules:/etc/prometheus/rules:ro
       - .docker-data/prometheus:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
+
+  # ── Alertmanager (routes SLO / availability alerts) ─────────────────────
+  # Receiver URL comes from ALERT_WEBHOOK_URL (Slack/PagerDuty/Opsgenie webhook
+  # bridge). No secrets are committed; unset → alerts are visible in the UI only.
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: nexcrm-alertmanager
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      ALERT_WEBHOOK_URL: "${ALERT_WEBHOOK_URL:-http://127.0.0.1:9/disabled}"
+    volumes:
+      - ./infra/alertmanager:/etc/alertmanager:ro
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  # ── Blackbox exporter (synthetic /health/ready probes → ServiceDown) ─────
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: nexcrm-blackbox
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./infra/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+
+  # ── Postgres / Redis exporters (PostgresDown / RedisDown alerts) ────────
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: nexcrm-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://nexcrm:nexcrm_dev@postgres:5432/nexcrm?sslmode=disable"
+    depends_on: [postgres]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    container_name: nexcrm-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-nexcrm_redis_dev_password}"
+    depends_on: [redis]
 
   # ── Loki (log aggregation) ──────────────────────────────────────────────
   loki:

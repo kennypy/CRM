@@ -13,8 +13,10 @@ import { oauthRoutes } from "./routes/oauth.routes";
 import { scimRoutes } from "./routes/scim.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { internalRoutes } from "./routes/internal.routes";
-import { redis } from "@nexcrm/service-common/redis";
+import { redis, requestRedis } from "@nexcrm/service-common/redis";
 import { isTokenDenied } from "./lib/deny-list";
+import { pool } from "./db";
+import { registerHealthRoutes, installGracefulShutdown, isHealthPath, pgCheck, redisCheck } from "@nexcrm/service-common/lifecycle";
 
 const server = Fastify({
   logger: {
@@ -112,7 +114,12 @@ async function bootstrap() {
   await server.register(rateLimit, {
     max: 20,
     timeWindow: "1 minute",
-    redis,
+    // Fail-fast client. skipOnError stays false: if Redis is down, auth
+    // endpoints error quickly (fail closed) rather than silently losing
+    // brute-force protection — or hanging on the infinite retry queue.
+    redis: requestRedis(),
+    // Probes must not consume the strict 20/min brute-force budget.
+    allowList: (req) => isHealthPath(req.url),
     keyGenerator: (req) => {
       const key = req.ip;
       if (!key) {
@@ -157,12 +164,11 @@ async function bootstrap() {
     }
   });
 
-  // Health
-  server.get("/health", async () => ({
-    status: "ok",
+  // Health — /health (legacy), /health/live, /health/ready
+  const health = registerHealthRoutes(server, {
     service: "auth",
-    timestamp: new Date().toISOString(),
-  }));
+    checks: [pgCheck(pool), redisCheck(requestRedis())],
+  });
 
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(oauthRoutes, { prefix: "/auth" });
@@ -174,6 +180,12 @@ async function bootstrap() {
   const host = process.env.HOST ?? "0.0.0.0";
   await server.listen({ port, host });
   server.log.info(`Auth service listening on ${host}:${port}`);
+
+  installGracefulShutdown(server, {
+    service: "auth",
+    health,
+    onClose: [() => pool.end(), () => redis.quit(), () => requestRedis().quit()],
+  });
 }
 
 bootstrap().catch((err) => {

@@ -1,0 +1,111 @@
+# NexCRM alerting rules. Runbooks: docs/OPERATIONS.md#runbooks
+#
+# Multi-window, multi-burn-rate alerts for a 99% / 30-day availability SLO
+# (Google SRE workbook, ch. 5). Burn rate 14.4 over 1h consumes 2% of the
+# monthly budget; 6 over 6h consumes 5%. The short window (5m / 30m) makes the
+# alert reset quickly once the problem is fixed.
+groups:
+  - name: nexcrm-slo-burn
+    rules:
+      - alert: GatewayErrorBudgetFastBurn
+        expr: |
+          nexcrm:gateway_error_ratio:rate1h > (14.4 * 0.01)
+          and
+          nexcrm:gateway_error_ratio:rate5m > (14.4 * 0.01)
+          and
+          nexcrm:gateway_requests:rate5m > 0.05
+        for: 2m
+        labels: { severity: page, slo: gateway-availability }
+        annotations:
+          summary: "API gateway burning error budget at >14.4x (5xx ratio {{ $value | humanizePercentage }})"
+          description: "At this rate the 30-day 99% budget is gone in ~2 days."
+          runbook: "docs/OPERATIONS.md#runbook-gatewayerrorbudgetburn"
+
+      - alert: GatewayErrorBudgetSlowBurn
+        expr: |
+          nexcrm:gateway_error_ratio:rate6h > (6 * 0.01)
+          and
+          nexcrm:gateway_error_ratio:rate30m > (6 * 0.01)
+          and
+          nexcrm:gateway_requests:rate30m > 0.05
+        for: 15m
+        labels: { severity: page, slo: gateway-availability }
+        annotations:
+          summary: "API gateway burning error budget at >6x over 6h"
+          runbook: "docs/OPERATIONS.md#runbook-gatewayerrorbudgetburn"
+
+      - alert: GatewayErrorBudgetLow
+        expr: nexcrm:gateway_error_budget_remaining:ratio_30d < 0.25
+        for: 1h
+        labels: { severity: ticket, slo: gateway-availability }
+        annotations:
+          summary: "Less than 25% of the 30-day gateway error budget remains"
+          description: "Freeze risky deploys; prioritise reliability work."
+          runbook: "docs/OPERATIONS.md#runbook-gatewayerrorbudgetlow"
+
+  - name: nexcrm-availability
+    rules:
+      - alert: ServiceDown
+        expr: probe_success{job="blackbox-health"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.instance }} readiness probe failing for 2m"
+          description: "/health/ready is returning non-2xx or timing out. The response body names the failing dependency."
+          runbook: "docs/OPERATIONS.md#runbook-servicedown"
+
+      - alert: ProbeAvailabilityBelowSLO
+        expr: nexcrm:probe_availability:ratio_30d < 0.99
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.instance }} 30-day synthetic availability {{ $value | humanizePercentage }} is below 99%"
+          runbook: "docs/OPERATIONS.md#runbook-servicedown"
+
+      - alert: GatewayHighLatencyP95
+        expr: nexcrm:gateway_p95_latency_seconds:5m > 1.5
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Gateway p95 latency {{ $value | humanizeDuration }} > 1.5s for 10m"
+          runbook: "docs/OPERATIONS.md#runbook-gatewayhighlatencyp95"
+
+      - alert: PostgresDown
+        expr: pg_up == 0 or absent(pg_up)
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "Postgres unreachable from postgres-exporter"
+          runbook: "docs/OPERATIONS.md#runbook-postgresdown"
+
+      - alert: PostgresConnectionsNearLimit
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.85
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Postgres connections at {{ $value | humanizePercentage }} of max_connections"
+          runbook: "docs/OPERATIONS.md#runbook-postgresdown"
+
+      - alert: RedisDown
+        expr: redis_up == 0 or absent(redis_up)
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "Redis unreachable from redis-exporter (rate limits, queues, sessions affected)"
+          runbook: "docs/OPERATIONS.md#runbook-redisdown"
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / clamp_min(redis_memory_max_bytes, 1) > 0.9 and redis_memory_max_bytes > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Redis memory above 90% of maxmemory — BullMQ jobs may be evicted"
+          runbook: "docs/OPERATIONS.md#runbook-redisdown"
+
+      - alert: TelemetryPipelineDown
+        expr: absent(nexcrm:gateway_requests:rate5m) and on() probe_success{job="blackbox-health",instance=~".*api-gateway.*"} == 1
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Gateway is up but no request metrics arrive — SLO burn alerts are blind"
+          runbook: "docs/OPERATIONS.md#runbook-telemetrypipelinedown"

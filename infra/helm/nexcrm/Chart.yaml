@@ -1,0 +1,7 @@
+apiVersion: v2
+name: nexcrm
+description: NexCRM application tier (stateless services + workers) for an HA Kubernetes deployment. Postgres and Redis are external — see infra/helm/examples and docs/OPERATIONS.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"

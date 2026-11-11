@@ -31,6 +31,8 @@ import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls
 import { internalFetch } from "../lib/internal-fetch";
 import { safePostJson, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
 import { ENTITY_COLLECTION } from "../lib/entity-map";
+import { createLeaderLock } from "../lib/leader-lock";
+import { requestRedis } from "@nexcrm/service-common/redis";
 
 interface WorkflowDef {
   id: string;
@@ -384,8 +386,27 @@ export async function startWorkflowEngine() {
     console.error("[workflow-engine] could not load cursor, starting from now():", err);
   }
 
+  // Singleton across gateway replicas: only the lock holder consumes the
+  // crm_events cursor, otherwise every replica would fire each workflow action
+  // and outbound webhook once per replica.
+  const leader = createLeaderLock(requestRedis(), "workflow-engine", 30_000);
+  let running = false;
+
   const poll = async () => {
+    if (running) return; // previous tick still in flight
+    if (!(await leader.tick())) return;
+    running = true;
     try {
+      if (leader.justElected) {
+        // Another replica may have advanced the durable cursor while we were a
+        // follower — never resume from our stale in-memory copy.
+        const { rows } = await pool.query<{ last_processed_at: string }>(
+          `SELECT last_processed_at FROM workflow_engine_state WHERE id = TRUE`
+        );
+        if (rows[0]?.last_processed_at) {
+          lastProcessedAt = new Date(rows[0].last_processed_at).toISOString();
+        }
+      }
       const { rows: events } = await pool.query(
         `SELECT id, tenant_id, event_type, entity_type, entity_id, payload, created_at
          FROM crm_events
@@ -420,6 +441,8 @@ export async function startWorkflowEngine() {
       }
     } catch (err) {
       console.error("[workflow-engine] poll error:", err);
+    } finally {
+      running = false;
     }
   };
 

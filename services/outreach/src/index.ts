@@ -1,5 +1,7 @@
 import "./telemetry";
-import { setTenantContext } from "./db";
+import { setTenantContext, servicePool, closePools } from "./db";
+import { registerHealthRoutes, installGracefulShutdown, isHealthPath, pgCheck, redisCheck } from "@nexcrm/service-common/lifecycle";
+import { redis } from "@nexcrm/service-common/redis";
 import * as path from "path";
 import * as dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
@@ -14,7 +16,7 @@ import { emailRoutes }     from "./routes/email";
 import { sequencesRoutes } from "./routes/sequences";
 import { callsRoutes }     from "./routes/calls";
 import { dialersRoutes }   from "./routes/dialers";
-import { startSequenceRunner } from "./workers/sequence-runner";
+import { startSequenceRunner, stopSequenceRunner } from "./workers/sequence-runner";
 import { validateServiceToken } from "./middleware/service-token";
 import { resolveIdentity } from "./lib/auth-context";
 
@@ -65,6 +67,7 @@ async function bootstrap() {
   await server.register(rateLimit, {
     max: 200,
     timeWindow: "1 minute",
+    allowList: (req) => isHealthPath(req.url),
     keyGenerator: (req) => {
       const userId = req.headers["x-user-id"] as string | undefined;
       if (userId) return userId;
@@ -115,12 +118,11 @@ async function bootstrap() {
     setTenantContext(claim ?? (typeof header === "string" ? header : null));
   });
 
-  // ── Health ─────────────────────────────────────────────────────────────────
-  server.get("/health", async () => ({
-    status: "ok",
+  // ── Health — /health (legacy), /health/live, /health/ready ─────────────────
+  const health = registerHealthRoutes(server, {
     service: "outreach",
-    timestamp: new Date().toISOString(),
-  }));
+    checks: [pgCheck(servicePool), redisCheck(redis)],
+  });
 
   // ── Routes ─────────────────────────────────────────────────────────────────
   // /email/unsubscribe and /calls/webhooks/twilio/status are public
@@ -138,6 +140,12 @@ async function bootstrap() {
   const host = process.env.HOST ?? "0.0.0.0";
   await server.listen({ port, host });
   server.log.info(`Outreach service listening on ${host}:${port}`);
+
+  installGracefulShutdown(server, {
+    service: "outreach",
+    health,
+    onClose: [() => stopSequenceRunner(), () => closePools(), () => redis.quit()],
+  });
 }
 
 bootstrap().catch((err) => {
