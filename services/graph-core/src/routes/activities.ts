@@ -18,6 +18,7 @@ import { enforceSandboxRecordCeiling } from "../lib/sandbox-limits";
 import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
+import { uuidListLiteral } from "../lib/owner-filter";
 
 const ActivityTypes     = ["email", "call", "meeting", "note", "document"] as const;
 const ActivityDirections = ["inbound", "outbound", "internal"] as const;
@@ -213,23 +214,20 @@ export async function activitiesRoutes(server: FastifyInstance) {
 
     // Insert denormalized participant snapshots if we have known contact IDs
     if (linkedIds.length > 0) {
-      const { rows: persons } = await pool.query(
-        `SELECT id, first_name, last_name, email FROM ag_catalog.cypher(
-           'graph',
-           $$MATCH (p:Person) WHERE p.id IN $ids AND p.tenant_id = $tenantId
-             RETURN {id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email}$$,
-           $1
-         ) AS (props agtype)`,
-        [JSON.stringify({ ids: linkedIds, tenantId })]
-      ).catch(() => ({ rows: [] as { id: string; first_name: string; last_name: string; email: string }[] }));
+      // (This used to query a graph named 'graph' — which does not exist — with
+      // the error swallowed, so participant names/emails were never captured.)
+      const persons = await cypher<{ id: string; first_name: string; last_name: string; email: string }>(
+        `MATCH (p:Person {tenant_id: $tenantId}) WHERE p.id IN ${uuidListLiteral(linkedIds)}
+         RETURN {id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email}`,
+        { tenantId },
+      ).catch(() => [] as { id: string; first_name: string; last_name: string; email: string }[]);
 
       // Index resolved persons by id so we can still write a participant row for
       // a linked contact even if the graph lookup returned nothing (the read-side
       // timeline join keys only on contact_id).
       const byId = new Map<string, { id: string; first_name: string; last_name: string; email: string }>();
       for (const p of persons) {
-        const props = typeof p.props === "string" ? JSON.parse(p.props) : p.props;
-        if (props?.id) byId.set(props.id, props);
+        if (p?.id) byId.set(p.id, p);
       }
       for (const pid of linkedIds) {
         const props = byId.get(pid);

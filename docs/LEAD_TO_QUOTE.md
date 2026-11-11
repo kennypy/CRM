@@ -61,7 +61,7 @@ Verification for this release:
 | Owner access bug fixed | Under a Private default, record **owners were denied their own records** because `owner_access` and `team_access` were never evaluated. |
 | **User deactivation** | Deactivating replaces hard delete, which orphaned records and failed with a foreign-key error for anyone who had created a quote. Deactivation revokes sessions immediately and transfers contacts, accounts, open opportunities, open quotes and assignment rules. Pending approvals are re-routed and direct reports re-parented. Reactivation is supported. |
 | Hierarchy integrity | Manager cycles are rejected, and `GET /users/hierarchy` returns the role tree. |
-| SSO/SAML, SCIM, MFA-capable auth, field-level security, record ACLs, RLS, per-tenant encryption, legal holds, audit log | Existing |
+| SSO/SAML, SCIM (no built-in MFA — only via an SSO provider), field-level security, record ACLs, RLS, per-tenant encryption, legal holds, audit log | Existing |
 
 ### Reporting
 `GET /api/v1/reports/standard/:key?from&to` provides lead conversion by source and by owner, pipeline by stage and owner, average time in stage (from field history), win rate by owner, quote approval cycle time and quotes by status. The reports follow the sharing model. The existing report builder, dashboards, forecasting and scheduled delivery are unchanged.

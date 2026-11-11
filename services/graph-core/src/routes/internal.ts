@@ -9,6 +9,7 @@ import { servicePool } from "../db/pool";
 import { seedSampleData } from "../db/sample-data";
 import { cypher } from "../db/pool";
 import { recordFieldChanges } from "../lib/field-history";
+import { uuidListLiteral } from "../lib/owner-filter";
 
 const ReassignSchema = z.object({
   tenantId:   z.string().uuid(),
@@ -121,17 +122,17 @@ export async function internalRoutes(server: FastifyInstance) {
     }
     const { tenantId, contactIds, dealIds } = parsed.data;
     const contacts = contactIds.length ? await cypher<Record<string, unknown>>(
-      `MATCH (p:Person {tenant_id: $tenantId}) WHERE p.id IN $ids
+      `MATCH (p:Person {tenant_id: $tenantId}) WHERE p.id IN ${uuidListLiteral(contactIds)}
        OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company)
        RETURN {id: p.id, firstName: p.first_name, lastName: p.last_name, email: p.email, title: p.title,
                ownerId: p.owner_id, companyId: c.id, companyName: c.name}`,
-      { tenantId, ids: contactIds }) : [];
+      { tenantId }) : [];
     const deals = dealIds.length ? await cypher<Record<string, unknown>>(
-      `MATCH (d:Deal {tenant_id: $tenantId}) WHERE d.id IN $ids
+      `MATCH (d:Deal {tenant_id: $tenantId}) WHERE d.id IN ${uuidListLiteral(dealIds)}
        OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
        RETURN {id: d.id, name: d.name, stage: d.stage, value: d.value, currency: d.currency,
                ownerId: d.owner_id, companyId: c.id, companyName: c.name}`,
-      { tenantId, ids: dealIds }) : [];
+      { tenantId }) : [];
     return reply.send({ success: true, data: { contacts, deals } });
   });
 

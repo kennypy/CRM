@@ -88,7 +88,8 @@ is what matters.
 | Validation rules | **Has** | |
 | Flow (record-triggered, scheduled, screen flows) | **Partial** | Record-triggered workflows with conditions, 11 actions and delays now work (§8). Screen flows, scheduled flows, sub-flows and Apex-equivalent code: **Missing** |
 | Org-wide defaults, role hierarchy, teams, manual shares, FLS, profiles | **Has** | Criteria sharing rules, permission sets, restriction rules: **Missing** |
-| SSO (SAML/OIDC), SCIM, MFA-capable auth | **Has** | |
+| SSO (SAML/OIDC), SCIM | **Has** | Tested end to end (`tests/api-e2e/auth.mjs`). |
+| Multi-factor authentication | **Missing** | The auth service has no MFA of any kind (no TOTP, SMS, WebAuthn or recovery codes). Earlier versions of this document said "MFA-capable"; that was wrong. Only workspaces that sign in through an SSO provider get MFA, from the provider. Salesforce requires MFA for all logins. |
 | Field history, audit log | **Has** | Setup audit trail coverage is partial |
 | Shield: tenant-key encryption, legal holds, GDPR/CCPA DSR | **Partial / Has** | Event-monitoring-grade logs: Partial (OTel/Loki) |
 | REST + GraphQL APIs, outbound webhooks | **Has** | Webhooks were never delivered before this release (§8) |

@@ -10,7 +10,9 @@ import type { FastifyInstance } from "fastify";
 import { enforceSandboxGraphCeiling } from "../lib/sandbox-limits";
 import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
-import { OwnerIdList } from "../lib/owner-filter";
+import { OwnerIdList, cached, uuidListLiteral } from "../lib/owner-filter";
+
+const COUNT_TTL_MS = Number(process.env.LIST_COUNT_TTL_MS ?? 15_000);
 import { companyStakeholderRoutes } from "./relationships";
 import { actorId, diffTracked, eventOrigin, recordFieldChanges } from "../lib/field-history";
 import { pool, cypher } from "../db/pool";
@@ -73,19 +75,24 @@ export async function companiesRoutes(server: FastifyInstance) {
         : "c.account_status = $accountStatus");
       params.accountStatus = accountStatus;
     }
-    if (visibleOwnerIds) { where.push("c.owner_id IN $visibleOwnerIds"); params.visibleOwnerIds = visibleOwnerIds; }
+    if (visibleOwnerIds) where.push(visibleOwnerIds.length ? `c.owner_id IN ${uuidListLiteral(visibleOwnerIds)}` : "false");
     if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
 
-    const countRows = await cypher<{ n: number }>(`${cyph}  WITH count(c) AS n RETURN {n: n}`, params)
-      .catch(() => [] as { n: number }[]);
+    const countRows = await cached(`co:${cyph}:${JSON.stringify(params)}`, COUNT_TTL_MS, () =>
+      cypher<{ n: number }>(`${cyph}  WITH count(c) AS n RETURN {n: n}`, params).catch(() => [] as { n: number }[]));
     const total = countRows[0]?.n != null ? Number(countRows[0].n) : undefined;
 
     // Aggregate in WITH before RETURN (required to mix node props + aggregates in map)
-    cyph += `  OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
-  WITH c, count(d) AS open_deals, sum(d.value) AS open_deal_value
+    // Page FIRST, then join related records for just that page. Joining before
+    // ORDER BY/LIMIT made every list request traverse the relationships of every
+    // matching record in the workspace (seconds at 50k+ records).
+    cyph += `  WITH c
   ORDER BY c.name, c.id
   SKIP ${offset}
   LIMIT ${limit}
+  OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
+  WITH c, count(d) AS open_deals, sum(d.value) AS open_deal_value
+  ORDER BY c.name, c.id
   RETURN {
     id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
     industry: c.industry, headcount: c.headcount, tier: c.tier,

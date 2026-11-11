@@ -13,7 +13,10 @@ import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
 import { computeRealityScore } from "../lib/reality-score";
 import { actorId, diffTracked, eventOrigin, recordFieldChanges } from "../lib/field-history";
-import { OwnerIdList } from "../lib/owner-filter";
+import { OwnerIdList, cached, uuidListLiteral } from "../lib/owner-filter";
+
+const COUNT_TTL_MS = Number(process.env.LIST_COUNT_TTL_MS ?? 15_000);
+const AGGREGATE_TTL_MS = Number(process.env.AGGREGATE_TTL_MS ?? 15_000);
 import { dealContactRoleRoutes } from "./relationships";
 
 /** Deal fields captured in field_history on every change. */
@@ -115,17 +118,16 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (visibleOwnerIds) {
       // Private sharing model: owner in the caller's visible set, or the caller
       // is on the deal's opportunity team.
-      params.visibleOwnerIds = visibleOwnerIds;
-      params.visibleDealIds = visibleDealIds ?? [];
-      where.push("(d.owner_id IN $visibleOwnerIds OR d.id IN $visibleDealIds)");
+      const parts: string[] = [];
+      if (visibleOwnerIds.length) parts.push(`d.owner_id IN ${uuidListLiteral(visibleOwnerIds)}`);
+      if (visibleDealIds?.length) parts.push(`d.id IN ${uuidListLiteral(visibleDealIds)}`);
+      where.push(parts.length ? `(${parts.join(" OR ")})` : "false");
     }
     if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
 
     // Total for pagination (same predicates, no joins).
-    const countRows = await cypher<{ n: number }>(
-      `${cyph}  WITH count(d) AS n RETURN {n: n}`,
-      params,
-    ).catch(() => [] as { n: number }[]);
+    const countRows = await cached(`de:${cyph}:${JSON.stringify(params)}`, COUNT_TTL_MS, () =>
+      cypher<{ n: number }>(`${cyph}  WITH count(d) AS n RETURN {n: n}`, params).catch(() => [] as { n: number }[]));
     const total = countRows[0]?.n != null ? Number(countRows[0].n) : undefined;
 
     const orderBy =
@@ -133,12 +135,17 @@ export async function dealsRoutes(server: FastifyInstance) {
       : sort === "close_date" ? "d.close_date ASC, d.id"
       : "d.value DESC, d.id";
 
-    cyph += `  OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
-  OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
-  WITH d, c, count(DISTINCT p) AS bgs
+    // Page FIRST, then join related records for just that page. Joining before
+    // ORDER BY/LIMIT made every list request traverse the relationships of every
+    // matching record in the workspace (seconds at 50k+ records).
+    cyph += `  WITH d
   ORDER BY ${orderBy}
   SKIP ${offset}
   LIMIT ${limit}
+  OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
+  OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
+  WITH d, c, count(DISTINCT p) AS bgs
+  ORDER BY ${orderBy}
   RETURN {
     id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
     value: d.value, currency: d.currency, close_date: d.close_date,
@@ -266,13 +273,16 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (closeFrom) { where.push("d.close_date >= $closeFrom"); params.closeFrom = closeFrom; }
     // close_date may carry a time component; compare against the end of day.
     if (closeTo)   { where.push("d.close_date <= $closeTo"); params.closeTo = `${closeTo}T23:59:59`; }
-    const rows = await cypher<{ owner?: string; stage?: string; currency?: string; n: number; total?: number }>(
-      `MATCH (d:Deal {tenant_id: $tenantId})
-       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-       WITH d.owner_id AS owner, d.stage AS stage, d.currency AS currency, count(d) AS n, sum(d.value) AS total
-       RETURN {owner: owner, stage: stage, currency: currency, n: n, total: total}`,
-      params,
-    );
+    // Whole-workspace aggregate behind every dashboard/forecast/report load:
+    // shared for a few seconds rather than recomputed per request.
+    const rows = await cached(`agg:${JSON.stringify(params)}`, AGGREGATE_TTL_MS, () =>
+      cypher<{ owner?: string; stage?: string; currency?: string; n: number; total?: number }>(
+        `MATCH (d:Deal {tenant_id: $tenantId})
+         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+         WITH d.owner_id AS owner, d.stage AS stage, d.currency AS currency, count(d) AS n, sum(d.value) AS total
+         RETURN {owner: owner, stage: stage, currency: currency, n: n, total: total}`,
+        params,
+      ));
     return reply.send({
       success: true,
       data: rows.map((r) => ({

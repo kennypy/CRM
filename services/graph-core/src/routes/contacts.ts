@@ -13,7 +13,9 @@ import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
 import { getEgoNetwork } from "../queries/graph-queries";
-import { OwnerIdList } from "../lib/owner-filter";
+import { OwnerIdList, cached, uuidListLiteral } from "../lib/owner-filter";
+
+const COUNT_TTL_MS = Number(process.env.LIST_COUNT_TTL_MS ?? 15_000);
 import { actorId, diffTracked, eventOrigin, recordFieldChanges } from "../lib/field-history";
 import { leadConvertRoutes } from "./lead-convert";
 import { contactMergeRoutes } from "./contact-merge";
@@ -106,7 +108,7 @@ export async function contactsRoutes(server: FastifyInstance) {
       where.push(leadStatus === "new" ? "(p.lead_status = 'new' OR (p.is_lead = true AND p.lead_status IS NULL))" : "p.lead_status = $leadStatus");
       params.leadStatus = leadStatus;
     }
-    if (visibleOwnerIds) { where.push("p.owner_id IN $visibleOwnerIds"); params.visibleOwnerIds = visibleOwnerIds; }
+    if (visibleOwnerIds) where.push(visibleOwnerIds.length ? `p.owner_id IN ${uuidListLiteral(visibleOwnerIds)}` : "false");
     if (search) {
       where.push(
         "(toLower(p.first_name) CONTAINS toLower($search) OR toLower(p.last_name) CONTAINS toLower($search) OR toLower(p.email) CONTAINS toLower($search) OR toLower(p.first_name + ' ' + p.last_name) CONTAINS toLower($search))"
@@ -115,15 +117,20 @@ export async function contactsRoutes(server: FastifyInstance) {
     }
     if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
 
-    const countRows = await cypher<{ n: number }>(`${cyph}  WITH count(p) AS n RETURN {n: n}`, params)
-      .catch(() => [] as { n: number }[]);
+    const countRows = await cached(`pe:${cyph}:${JSON.stringify(params)}`, COUNT_TTL_MS, () =>
+      cypher<{ n: number }>(`${cyph}  WITH count(p) AS n RETURN {n: n}`, params).catch(() => [] as { n: number }[]));
     const total = countRows[0]?.n != null ? Number(countRows[0].n) : undefined;
 
-    cyph += `  OPTIONAL MATCH (p)-[:WORKS_AT]->(co:Company)
-  WITH p, co
+    // Page FIRST, then join related records for just that page. Joining before
+    // ORDER BY/LIMIT made every list request traverse the relationships of every
+    // matching record in the workspace (seconds at 50k+ records).
+    cyph += `  WITH p
   ORDER BY p.last_name, p.first_name, p.id
   SKIP ${offset}
   LIMIT ${limit}
+  OPTIONAL MATCH (p)-[:WORKS_AT]->(co:Company)
+  WITH p, co
+  ORDER BY p.last_name, p.first_name, p.id
   RETURN {
     id: p.id, tenant_id: p.tenant_id,
     first_name: p.first_name, last_name: p.last_name,
