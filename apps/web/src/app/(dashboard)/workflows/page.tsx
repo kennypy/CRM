@@ -1,267 +1,363 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+/**
+ * Workflows — builder + list. Triggers, trigger options, actions and action
+ * config fields all come from the gateway's automation catalog
+ * (GET /api/v1/workflows/catalog), and saves send the structured definition the
+ * engine executes: trigger {type,...}, conditions [{field,operator,value}],
+ * actions [{type, config, delayMinutes}]. Rows saved by the old builder
+ * (label-only, never executable) are flagged "Needs setup".
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
+import {
+  AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, Clock, Filter as FilterIcon, Layers,
+  Loader2, Pencil, Play, Plus, RefreshCw, Trash2, X, Zap,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import {
-  Layers, Plus, Play, Zap, AlertCircle, CheckCircle2, Clock,
-  ArrowRight, X, Pencil, Trash2, Loader2, RefreshCw,
-} from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
-import { useTranslations } from "next-intl";
 import { getStoredUser } from "@/lib/auth";
-import { WorkflowActivePanel } from "@/components/workflows/workflow-active-panel";
+import { readApiError, useOrgTeams, useOrgUsers, userName } from "@/lib/l2q";
+import {
+  KIND_OPTIONS, MAX_DELAY_MINUTES, UNARY_OPERATORS,
+  actionSummaries, actionsForTrigger, buildWorkflowBody, conditionFieldSuggestions, draftFromRow,
+  emptyAction, emptyDraft, rowCategory, triggerLabel, useAutomationCatalog, useSequences, validateDraft,
+  type AutomationCatalog, type CatalogAction, type CatalogActionField, type DraftAction,
+  type WorkflowCategory, type WorkflowDraft, type WorkflowRow,
+} from "@/lib/automation";
+import { WorkflowRunsPanel } from "@/components/workflows/workflow-active-panel";
 
-interface Workflow {
-  id: string;
-  name: string;
-  description: string;
-  trigger: string;
-  actions: string[];
-  enabled: boolean;
-  lastRun?: string;
-  runCount: number;
-  category: "deal" | "contact" | "activity" | "ai";
-  createdBy?: string;
+const inputCls = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+const smallInputCls = "w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+
+/** Translate a dynamic key, falling back to raw text when no message exists. */
+function tx(t: { has: (k: never) => boolean; (k: never): string }, key: string, fallback: string): string {
+  return t.has(key as never) ? t(key as never) : fallback;
 }
 
-const CATEGORY_CFG: Record<string, { label: string; cls: string }> = {
-  deal:     { label: "Deal",     cls: "bg-blue-100 text-blue-700" },
-  contact:  { label: "Contact",  cls: "bg-purple-100 text-purple-700" },
-  activity: { label: "Activity", cls: "bg-green-100 text-green-700" },
-  ai:       { label: "AI",       cls: "bg-orange-100 text-orange-700" },
+const CATEGORY_CLS: Record<WorkflowCategory, string> = {
+  deal: "bg-blue-100 text-blue-700",
+  contact: "bg-purple-100 text-purple-700",
+  activity: "bg-green-100 text-green-700",
+  quote: "bg-amber-100 text-amber-800",
+  other: "bg-muted text-muted-foreground",
 };
 
-// ── Workflow Modal (create / edit) ─────────────────────────────────────────────
+// ── Field inputs ──────────────────────────────────────────────────────────────
 
-const TRIGGERS = [
-  "Deal moved to Negotiation",
-  "Deal moved to Closed Won",
-  "Deal moved to Closed Lost",
-  "Deal inactive for 7 days",
-  "Deal value changes",
-  "Contact auto-captured (confidence ≥ 90%)",
-  "Contact created manually",
-  "Lead score changes",
-  "Meeting activity created",
-  "Call activity completed",
-  "Email received from contact",
-  "Review queue item pending > 24h",
-  "New deal created",
-  "Task overdue",
-  "Task completed",
-  "Sequence step completed",
-];
-
-// ── Structured action menu ─────────────────────────────────────────────────────
-
-interface ActionDef {
-  section: string;
-  action: string;
-  value: string;
-  configLabel?: string;
-  configPlaceholder?: string;
+function OptionSelect({ kind, value, onChange, required }: {
+  kind: keyof typeof KIND_OPTIONS; value: string; onChange: (v: string) => void; required?: boolean;
+}) {
+  const t = useTranslations("automation");
+  const opts = KIND_OPTIONS[kind] ?? [];
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={smallInputCls}>
+      {!required && <option value="">{t("none")}</option>}
+      {opts.map((o) => (
+        <option key={o} value={o}>{tx(t, `opt.${o}`, o)}</option>
+      ))}
+    </select>
+  );
 }
 
-const ACTION_MENU: ActionDef[] = [
-  // Tasks & CRM
-  { section: "Tasks & CRM",    action: "Create task",          value: "create_task",      configLabel: "Task title",        configPlaceholder: "e.g. Legal review" },
-  { section: "Tasks & CRM",    action: "Assign to rep",        value: "assign_rep",       configLabel: "Rep email",         configPlaceholder: "rep@company.com"   },
-  { section: "Tasks & CRM",    action: "Update deal stage",    value: "update_stage",     configLabel: "New stage",         configPlaceholder: "e.g. Negotiation"  },
-  { section: "Tasks & CRM",    action: "Add tag",              value: "add_tag",          configLabel: "Tag",               configPlaceholder: "e.g. VIP"          },
-  { section: "Tasks & CRM",    action: "Update CRM field",     value: "update_field",     configLabel: "Field: value",      configPlaceholder: "e.g. priority: high"},
-  // Notifications
-  { section: "Notifications",  action: "Notify owner via email", value: "notify_owner",   configLabel: "Message",           configPlaceholder: "Deal needs attention" },
-  { section: "Notifications",  action: "Notify manager",       value: "notify_manager",   configLabel: "Message",           configPlaceholder: "Escalation needed"   },
-  { section: "Notifications",  action: "Send Slack message",   value: "slack_message",    configLabel: "Channel",           configPlaceholder: "#channel or @user"   },
-  { section: "Notifications",  action: "Send webhook",         value: "send_webhook",     configLabel: "Webhook URL",       configPlaceholder: "https://…"           },
-  // Email
-  { section: "Email",          action: "Send email",           value: "send_email",       configLabel: "Template / subject",configPlaceholder: "Welcome email"        },
-  { section: "Email",          action: "Add to email sequence",value: "add_email_seq",    configLabel: "Sequence name",     configPlaceholder: "Nurture — Enterprise" },
-  { section: "Email",          action: "Schedule follow-up email",value:"schedule_email", configLabel: "Delay (days)",      configPlaceholder: "3"                    },
-  // Calling
-  { section: "Calling",        action: "Add to call list",     value: "add_call_list",    configLabel: "List name",         configPlaceholder: "Hot prospects"         },
-  { section: "Calling",        action: "Schedule call",        value: "schedule_call",    configLabel: "Delay (hours)",     configPlaceholder: "24"                    },
-  // Sequences
-  { section: "Sequences",      action: "Enrol in sequence",    value: "seq_enrol",        configLabel: "Sequence name",     configPlaceholder: "Onboarding — SMB"      },
-  { section: "Sequences",      action: "Remove from sequence", value: "seq_remove",       configLabel: "Sequence name",     configPlaceholder: "Leave blank for all"   },
-  { section: "Sequences",      action: "Pause sequence",       value: "seq_pause",        configLabel: "Reason",            configPlaceholder: "Deal in progress"       },
-  // AI
-  { section: "AI",             action: "Extract action items", value: "ai_extract",       configLabel: "Source field",      configPlaceholder: "meeting notes"          },
-  { section: "AI",             action: "Score lead (AI)",      value: "ai_score",                                                                                       },
-  { section: "AI",             action: "Summarise activity",   value: "ai_summarise",                                                                                   },
-];
+function FieldInput({ field, value, onChange }: {
+  field: CatalogActionField; value: string; onChange: (v: string) => void;
+}) {
+  const t = useTranslations("automation");
+  const users = useOrgUsers();
+  const teams = useOrgTeams();
+  const sequences = useSequences(field.kind === "sequence");
 
-const ACTION_SECTIONS = [...new Set(ACTION_MENU.map((a) => a.section))];
+  switch (field.kind) {
+    case "text":
+      return <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className={cn(smallInputCls, "resize-y")} />;
+    case "number":
+      return <input type="number" value={value} onChange={(e) => onChange(e.target.value)} className={smallInputCls} />;
+    case "url":
+      return <input type="url" value={value} onChange={(e) => onChange(e.target.value)} placeholder="https://…" className={smallInputCls} />;
+    case "stage": case "priority": case "recipient": case "emailTo": case "assignMode": case "channels":
+      return <OptionSelect kind={field.kind} value={value} onChange={onChange} required={field.required} />;
+    case "user":
+      // Non-admins get 403 from /users → free-text user id fallback.
+      return users.length ? (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={smallInputCls}>
+          <option value="">{t("selectUser")}</option>
+          {users.map((u) => <option key={u.id} value={u.id}>{userName(u)}</option>)}
+        </select>
+      ) : (
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={t("userIdPlaceholder")} className={smallInputCls} />
+      );
+    case "team":
+      return teams.length ? (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={smallInputCls}>
+          <option value="">{t("selectTeam")}</option>
+          {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
+        </select>
+      ) : (
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={t("teamIdPlaceholder")} className={smallInputCls} />
+      );
+    case "sequence":
+      return sequences.length ? (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={smallInputCls}>
+          <option value="">{t("selectSequence")}</option>
+          {sequences.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      ) : (
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={t("sequenceIdPlaceholder")} className={smallInputCls} />
+      );
+    default:
+      return <input value={value} onChange={(e) => onChange(e.target.value)} className={smallInputCls} />;
+  }
+}
 
-function ActionRow({ index, value, onChange, onRemove }: {
+function ActionEditor({ index, action, defs, onChange, onRemove }: {
   index: number;
-  value: string;
-  onChange: (v: string) => void;
+  action: DraftAction;
+  defs: CatalogAction[];
+  onChange: (a: DraftAction) => void;
   onRemove: () => void;
 }) {
-  // Parse existing value: "action_value||config_text"
-  const parts    = value.split("||");
-  const actionVal = parts[0] ?? "";
-  const configVal = parts[1] ?? "";
-  const def = ACTION_MENU.find((a) => a.value === actionVal);
-
-  const setActionType = (v: string) => onChange(v + (configVal ? "||" + configVal : ""));
-  const setConfig     = (c: string) => onChange(actionVal + "||" + c);
-
-  const grouped = ACTION_SECTIONS.map((sec) => ({
-    section: sec,
-    actions: ACTION_MENU.filter((a) => a.section === sec),
-  }));
-
-  const displayLabel = def ? def.action + (configVal ? ": " + configVal : "") : value;
-
+  const t = useTranslations("automation");
+  const def = defs.find((d) => d.type === action.type);
   return (
-    <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+    <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
       <div className="flex items-center gap-2">
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
           {index + 1}
         </span>
-        <select value={actionVal} onChange={(e) => setActionType(e.target.value)}
-          className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
-          <option value="">— select action —</option>
-          {grouped.map(({ section, actions }) => (
-            <optgroup key={section} label={section}>
-              {actions.map((a) => (
-                <option key={a.value} value={a.value}>{a.action}</option>
-              ))}
-            </optgroup>
-          ))}
+        <select
+          value={def ? action.type : ""}
+          onChange={(e) => {
+            const next = defs.find((d) => d.type === e.target.value);
+            onChange(next ? { ...emptyAction(next), delayMinutes: action.delayMinutes } : { ...action, type: e.target.value });
+          }}
+          className={cn(smallInputCls, "flex-1")}
+        >
+          <option value="">{t("selectAction")}</option>
+          {defs.map((d) => <option key={d.type} value={d.type}>{d.label}</option>)}
         </select>
-        <button type="button" onClick={onRemove} className="text-muted-foreground hover:text-red-600 shrink-0">
+        <button type="button" onClick={onRemove} className="shrink-0 text-muted-foreground hover:text-red-600" aria-label={t("removeAction")}>
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
-      {def?.configLabel && (
-        <div className="ml-7">
-          <input value={configVal} onChange={(e) => setConfig(e.target.value)}
-            placeholder={def.configPlaceholder ?? ""}
-            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          <p className="mt-0.5 text-xs text-muted-foreground">{def.configLabel}</p>
+      {!def && action.type && (
+        <p className="ml-7 flex items-center gap-1 text-xs text-amber-700">
+          <AlertTriangle className="h-3.5 w-3.5" /> {t("unsupportedAction", { type: action.type })}
+        </p>
+      )}
+      {def && (
+        <div className="ml-7 grid gap-2">
+          {def.fields.map((f) => (
+            <label key={f.key} className="block">
+              <span className="mb-0.5 block text-xs text-muted-foreground">
+                {f.label}{f.required && <span className="text-red-600"> *</span>}
+              </span>
+              <FieldInput field={f} value={action.config[f.key] ?? ""}
+                onChange={(v) => onChange({ ...action, config: { ...action.config, [f.key]: v } })} />
+            </label>
+          ))}
+          <label className="block">
+            <span className="mb-0.5 block text-xs text-muted-foreground">{t("delayMinutes")}</span>
+            <input type="number" min={0} max={MAX_DELAY_MINUTES} value={action.delayMinutes}
+              onChange={(e) => onChange({ ...action, delayMinutes: e.target.value })}
+              placeholder="0" className={cn(smallInputCls, "w-32")} />
+          </label>
         </div>
       )}
     </div>
   );
 }
 
-interface WorkflowModalProps {
-  initial?: Workflow;
+// ── Builder modal ─────────────────────────────────────────────────────────────
+
+function WorkflowModal({ catalog, initial, onClose, onSaved }: {
+  catalog: AutomationCatalog;
+  initial: WorkflowDraft;
   onClose: () => void;
-  onSave: (wf: Omit<Workflow, "id" | "lastRun" | "runCount">) => void;
-}
+  onSaved: (row: WorkflowRow) => void;
+}) {
+  const t = useTranslations("automation");
+  const [d, setD] = useState<WorkflowDraft>(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [details, setDetails] = useState<string[]>([]);
 
-function WorkflowModal({ initial, onClose, onSave }: WorkflowModalProps) {
-  const [name, setName]           = useState(initial?.name ?? "");
-  const [description, setDesc]    = useState(initial?.description ?? "");
-  const [trigger, setTrigger]     = useState(initial?.trigger ?? TRIGGERS[0]);
-  const [category, setCategory]   = useState<Workflow["category"]>(initial?.category ?? "deal");
-  const [actions, setActions]     = useState<string[]>(initial?.actions ?? [""]);
+  const trigDef = catalog.triggers.find((tr) => tr.type === d.triggerType);
+  const actionDefs = useMemo(() => actionsForTrigger(catalog, d.triggerType), [catalog, d.triggerType]);
+  const suggestions = useMemo(() => conditionFieldSuggestions(catalog, d.triggerType), [catalog, d.triggerType]);
 
-  const addAction    = () => setActions((a) => [...a, ""]);
-  const removeAction = (i: number) => setActions((a) => a.filter((_, j) => j !== i));
-  const setAction    = (i: number, v: string) =>
-    setActions((a) => a.map((x, j) => (j === i ? v : x)));
+  const update = (patch: Partial<WorkflowDraft>) => setD((cur) => ({ ...cur, ...patch }));
 
-  const handleSave = () => {
-    if (!name.trim()) return;
-    onSave({
-      name: name.trim(),
-      description: description.trim(),
-      trigger,
-      actions: actions.filter((a) => a.trim()),
-      enabled: initial?.enabled ?? true,
-      category,
-      createdBy: initial?.createdBy ?? "you",
-    });
-    onClose();
+  const save = async () => {
+    const problems = validateDraft(d, catalog);
+    if (problems.length) {
+      setError(t("fixProblems"));
+      setDetails(problems.map((p) => {
+        const [head, tail] = p.split(/[.:]/);
+        if (head === "action") return t("problem.unknownAction", { type: tail ?? "?" });
+        if (tail) {
+          const def = catalog.actions.find((a) => a.type === head);
+          const field = def?.fields.find((f) => f.key === tail);
+          return t("problem.actionField", { action: def?.label ?? head, field: field?.label ?? tail });
+        }
+        return tx(t, `problem.${head}`, p);
+      }));
+      return;
+    }
+    setBusy(true); setError(null); setDetails([]);
+    try {
+      const body = buildWorkflowBody(d, catalog);
+      const res = d.id ? await api.patch(`/api/v1/workflows/${d.id}`, body) : await api.post("/api/v1/workflows", body);
+      if (!res.ok) {
+        const json = await res.clone().json().catch(() => ({}));
+        const info = await readApiError(res, t("saveFailed"));
+        setError(info.message);
+        const issues = ((json as { error?: { details?: { message?: string }[] } }).error?.details ?? [])
+          .map((x) => x.message).filter((m): m is string => !!m);
+        setDetails([...new Set(issues)].filter((m) => m !== info.message));
+        return;
+      }
+      const json = await res.json();
+      onSaved(json.data as WorkflowRow);
+    } catch {
+      setError(t("saveFailed"));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-card shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col rounded-2xl border bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <Layers className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">{initial ? "Edit Workflow" : "New Workflow"}</h2>
+            <h2 className="font-semibold">{d.id ? t("editWorkflow") : t("newWorkflow")}</h2>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label={t("close")}>
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">Workflow name *</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Deal → Negotiation: Legal task"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">Description</label>
-            <textarea value={description} onChange={(e) => setDesc(e.target.value)} rows={2}
-              placeholder="What does this workflow do?"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">Category</label>
-            <div className="flex gap-2 flex-wrap">
-              {(["deal", "contact", "activity", "ai"] as const).map((c) => (
-                <button key={c} onClick={() => setCategory(c)}
-                  className={cn("rounded-full px-3 py-1 text-xs font-medium border transition-colors",
-                    category === c ? CATEGORY_CFG[c].cls + " border-current" : "border-border text-muted-foreground hover:bg-muted")}>
-                  {CATEGORY_CFG[c].label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium flex items-center gap-1.5">
-              <Zap className="h-3.5 w-3.5 text-primary" /> Trigger
+        <div className="space-y-5 overflow-y-auto p-6">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-sm font-medium">{t("name")} *</span>
+              <input value={d.name} onChange={(e) => update({ name: e.target.value })} placeholder={t("namePlaceholder")} className={inputCls} />
             </label>
-            <select value={trigger} onChange={(e) => setTrigger(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
-              {TRIGGERS.map((t) => <option key={t} value={t}>{t}</option>)}
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-sm font-medium">{t("description")}</span>
+              <textarea value={d.description} onChange={(e) => update({ description: e.target.value })} rows={2} className={cn(inputCls, "resize-none")} />
+            </label>
+          </div>
+
+          {/* Trigger */}
+          <section>
+            <h3 className="mb-1.5 flex items-center gap-1.5 text-sm font-medium"><Zap className="h-3.5 w-3.5 text-primary" /> {t("trigger")}</h3>
+            <select value={d.triggerType}
+              onChange={(e) => update({ triggerType: e.target.value, triggerOptions: {} })}
+              className={inputCls}>
+              {catalog.triggers.map((tr) => <option key={tr.type} value={tr.type}>{tr.label}</option>)}
             </select>
-          </div>
+            {trigDef?.options?.length ? (
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {trigDef.options.map((o) => (
+                  <label key={o.key} className="block">
+                    <span className="mb-0.5 block text-xs text-muted-foreground">{o.label}</span>
+                    {o.kind === "number" ? (
+                      <input type="number" min={0} max={100} value={d.triggerOptions[o.key] ?? ""}
+                        onChange={(e) => update({ triggerOptions: { ...d.triggerOptions, [o.key]: e.target.value } })}
+                        className={smallInputCls} />
+                    ) : (
+                      <OptionSelect kind={o.kind} value={d.triggerOptions[o.key] ?? ""}
+                        onChange={(v) => update({ triggerOptions: { ...d.triggerOptions, [o.key]: v } })} />
+                    )}
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </section>
 
-          <div>
-            <label className="mb-1.5 block text-sm font-medium flex items-center gap-1.5">
-              <ArrowRight className="h-3.5 w-3.5 text-primary" /> Actions
-            </label>
+          {/* Conditions */}
+          <section>
+            <h3 className="mb-1 flex items-center gap-1.5 text-sm font-medium"><FilterIcon className="h-3.5 w-3.5 text-primary" /> {t("conditions")}</h3>
+            <p className="mb-2 text-xs text-muted-foreground">{t("conditionsHelp")}</p>
+            <datalist id="wf-condition-fields">
+              {suggestions.map((s) => <option key={s} value={s} />)}
+            </datalist>
             <div className="space-y-2">
-              {actions.map((action, i) => (
-                <ActionRow
-                  key={i}
-                  index={i}
-                  value={action}
-                  onChange={(v) => setAction(i, v)}
-                  onRemove={() => removeAction(i)}
-                />
+              {d.conditions.map((c, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input list="wf-condition-fields" value={c.field} placeholder={t("field")}
+                    onChange={(e) => update({ conditions: d.conditions.map((x, j) => j === i ? { ...x, field: e.target.value } : x) })}
+                    className={cn(smallInputCls, "flex-1")} />
+                  <select value={c.operator}
+                    onChange={(e) => update({ conditions: d.conditions.map((x, j) => j === i ? { ...x, operator: e.target.value } : x) })}
+                    className={cn(smallInputCls, "w-36")}>
+                    {catalog.conditionOperators.map((op) => (
+                      <option key={op} value={op}>{tx(t, `op.${op}`, op)}</option>
+                    ))}
+                  </select>
+                  {!UNARY_OPERATORS.has(c.operator) && (
+                    <input value={c.value} placeholder={c.operator === "in" ? t("commaSeparated") : t("value")}
+                      onChange={(e) => update({ conditions: d.conditions.map((x, j) => j === i ? { ...x, value: e.target.value } : x) })}
+                      className={cn(smallInputCls, "flex-1")} />
+                  )}
+                  <button type="button" onClick={() => update({ conditions: d.conditions.filter((_, j) => j !== i) })}
+                    className="shrink-0 text-muted-foreground hover:text-red-600" aria-label={t("removeCondition")}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               ))}
             </div>
-            <button onClick={addAction} className="mt-2 text-xs text-primary hover:underline flex items-center gap-1">
-              <Plus className="h-3 w-3" /> Add action
+            <button type="button" onClick={() => update({ conditions: [...d.conditions, { field: "", operator: "equals", value: "" }] })}
+              className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline">
+              <Plus className="h-3 w-3" /> {t("addCondition")}
             </button>
-          </div>
+          </section>
+
+          {/* Actions */}
+          <section>
+            <h3 className="mb-1.5 flex items-center gap-1.5 text-sm font-medium"><ArrowRight className="h-3.5 w-3.5 text-primary" /> {t("actions")}</h3>
+            <div className="space-y-2">
+              {d.actions.map((a, i) => (
+                <ActionEditor key={i} index={i} action={a} defs={actionDefs}
+                  onChange={(next) => update({ actions: d.actions.map((x, j) => j === i ? next : x) })}
+                  onRemove={() => update({ actions: d.actions.filter((_, j) => j !== i) })} />
+              ))}
+            </div>
+            <button type="button" onClick={() => update({ actions: [...d.actions, { type: "", config: {}, delayMinutes: "" }] })}
+              className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline">
+              <Plus className="h-3 w-3" /> {t("addAction")}
+            </button>
+          </section>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={d.isActive} onChange={(e) => update({ isActive: e.target.checked })} />
+            {t("activeOnSave")}
+          </label>
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 text-xs text-red-700">
+              <p className="flex items-center gap-1.5 font-medium"><AlertCircle className="h-4 w-4 shrink-0" /> {error}</p>
+              {details.length > 0 && (
+                <ul className="ml-6 mt-1 list-disc space-y-0.5">{details.map((x, i) => <li key={i}>{x}</li>)}</ul>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 border-t px-6 py-4">
-          <button onClick={onClose}
-            className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-            Cancel
+          <button onClick={onClose} className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+            {t("cancel")}
           </button>
-          <button onClick={handleSave} disabled={!name.trim()}
-            className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
-              !name.trim() ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-            {initial ? "Save changes" : "Create Workflow"}
+          <button onClick={save} disabled={busy}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            {d.id ? t("saveChanges") : t("create")}
           </button>
         </div>
       </div>
@@ -271,337 +367,232 @@ function WorkflowModal({ initial, onClose, onSave }: WorkflowModalProps) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-type Filter = "all" | "deal" | "contact" | "activity" | "ai";
+type Filter = "all" | WorkflowCategory | "needsSetup";
 
 export default function WorkflowsPage() {
-  const t = useTranslations("workflows");
+  const t = useTranslations("automation");
+  const tw = useTranslations("workflows");
   const perms = usePermissions();
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [filter, setFilter]       = useState<Filter>("all");
-  const [showCreate,    setShowCreate]    = useState(false);
-  const [editing,       setEditing]       = useState<Workflow | null>(null);
-  const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
-  const [mutating, setMutating]   = useState(false);
-  const currentUser = getStoredUser()?.email ?? "";
-
-  const mapApiWorkflow = (w: any): Workflow => ({
-    id:          w.id,
-    name:        w.name,
-    description: w.description ?? "",
-    trigger:     w.trigger?.label ?? (typeof w.trigger === "string" ? w.trigger : JSON.stringify(w.trigger)),
-    actions:     (w.actions ?? []).map((a: any) => a.label ?? a.type ?? JSON.stringify(a)),
-    enabled:     w.is_active ?? true,
-    lastRun:     w.lastRun ?? null,
-    runCount:    w.runCount ?? 0,
-    category:    w.trigger?.category ?? w.category ?? "deal",
-    createdBy:   w.createdBy ?? null,
-  });
+  const { catalog, error: catalogError } = useAutomationCatalog();
+  const [rows, setRows] = useState<WorkflowRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [editing, setEditing] = useState<WorkflowDraft | null>(null);
+  const [runsFor, setRunsFor] = useState<WorkflowRow | null>(null);
+  const currentUserId = getStoredUser()?.id ?? "";
 
   const fetchWorkflows = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const res = await api.get("/api/v1/workflows");
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error?.message ?? `Failed to load workflows (${res.status})`);
-      }
+      if (!res.ok) throw await readApiError(res, t("loadFailed"));
       const json = await res.json();
-      setWorkflows((json.data ?? []).map(mapApiWorkflow));
-    } catch (err: any) {
-      setError(err.message ?? "Failed to load workflows");
+      setRows((json.data ?? []) as WorkflowRow[]);
+    } catch (e) {
+      setError((e as { message?: string }).message ?? t("loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
-  useEffect(() => {
-    fetchWorkflows();
-  }, [fetchWorkflows]);
+  useEffect(() => { fetchWorkflows(); }, [fetchWorkflows]);
 
-  const toggle = async (id: string) => {
-    const wf = workflows.find((w) => w.id === id);
-    if (!wf) return;
-    const newEnabled = !wf.enabled;
-    setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: newEnabled } : w));
-    try {
-      const res = await api.patch(`/api/v1/workflows/${id}`, { is_active: newEnabled });
-      if (!res.ok) throw new Error("Toggle failed");
-    } catch {
-      setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, enabled: wf.enabled } : w));
+  const toggle = async (row: WorkflowRow) => {
+    if (row.needsSetup) return;
+    const next = !row.is_active;
+    setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, is_active: next } : r)));
+    const res = await api.patch(`/api/v1/workflows/${row.id}`, { is_active: next }).catch(() => null);
+    if (!res || !res.ok) {
+      const info = res ? await readApiError(res, t("toggleFailed")) : { message: t("toggleFailed") };
+      setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, is_active: row.is_active } : r)));
+      setError(info.message);
     }
   };
 
-  const handleCreate = async (data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
-    setMutating(true);
-    try {
-      const res = await api.post("/api/v1/workflows", {
-        name:        data.name,
-        description: data.description,
-        trigger:     { label: data.trigger, category: data.category },
-        actions:     data.actions.map((a) => ({ label: a })),
-        is_active:   data.enabled,
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error?.message ?? "Failed to create workflow");
-      }
-      const json = await res.json();
-      const created = mapApiWorkflow(json.data);
-      setWorkflows((ws) => [created, ...ws]);
-    } catch (err: any) {
-      setError(err.message ?? "Failed to create workflow");
-    } finally {
-      setMutating(false);
+  const remove = async (row: WorkflowRow) => {
+    if (!window.confirm(t("confirmDelete", { name: row.name }))) return;
+    const prev = rows;
+    setRows((rs) => rs.filter((r) => r.id !== row.id));
+    const res = await api.delete(`/api/v1/workflows/${row.id}`).catch(() => null);
+    if (!res || (!res.ok && res.status !== 204)) {
+      setRows(prev);
+      setError(t("deleteFailed"));
     }
   };
 
-  const handleEdit = async (id: string, data: Omit<Workflow, "id" | "lastRun" | "runCount">) => {
-    const prev = workflows.find((w) => w.id === id);
-    setWorkflows((ws) => ws.map((w) => w.id === id ? { ...w, ...data } : w));
-    try {
-      const res = await api.patch(`/api/v1/workflows/${id}`, {
-        name:        data.name,
-        description: data.description,
-        is_active:   data.enabled,
-        trigger:     { label: data.trigger, category: data.category },
-        actions:     data.actions.map((a) => ({ label: a })),
-      });
-      if (!res.ok) {
-        throw new Error("Failed to update workflow");
-      }
-    } catch {
-      if (prev) setWorkflows((ws) => ws.map((w) => w.id === id ? prev : w));
-      setError("Failed to update workflow");
-    }
+  const onSaved = (row: WorkflowRow) => {
+    setRows((rs) => (rs.some((r) => r.id === row.id) ? rs.map((r) => (r.id === row.id ? { ...r, ...row } : r)) : [row, ...rs]));
+    setEditing(null);
   };
 
-  const handleDelete = async (id: string) => {
-    const prev = workflows;
-    setWorkflows((ws) => ws.filter((w) => w.id !== id));
-    try {
-      const res = await api.delete(`/api/v1/workflows/${id}`);
-      if (!res.ok && res.status !== 204) {
-        throw new Error("Failed to delete workflow");
-      }
-    } catch {
-      setWorkflows(prev);
-      setError("Failed to delete workflow");
-    }
-  };
+  const canEdit = (row: WorkflowRow) => perms.canWrite && (perms.canManageUsers || row.createdBy === currentUserId);
 
-  // A user can edit a workflow if they're admin/manager, or if they created it
-  const canEdit = (wf: Workflow) =>
-    perms.canWrite && (perms.canManageUsers || wf.createdBy === currentUser);
-
-  const filtered = filter === "all" ? workflows : workflows.filter((w) => w.category === filter);
-  const active   = workflows.filter((w) => w.enabled).length;
+  const filtered = rows.filter((r) => {
+    if (filter === "all") return true;
+    if (filter === "needsSetup") return !!r.needsSetup;
+    return rowCategory(r, catalog) === filter;
+  });
+  const activeCount = rows.filter((r) => r.is_active && !r.needsSetup).length;
+  const setupCount = rows.filter((r) => r.needsSetup).length;
+  const filters: Filter[] = ["all", "deal", "contact", "activity", "quote", "other", ...(setupCount ? ["needsSetup" as const] : [])];
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Layers className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-semibold">{t("title")}</h1>
+          <h1 className="text-xl font-semibold">{tw("title")}</h1>
           {!loading && (
             <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-              {active} active
+              {t("activeCount", { count: activeCount })}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={fetchWorkflows}
-            disabled={loading}
-            className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
-            title="Refresh workflows"
-          >
+          <button onClick={fetchWorkflows} disabled={loading} title={t("refresh")}
+            className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            disabled={mutating}
-            className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
-          >
-            <Plus className="h-4 w-4" /> {t("newWorkflow")}
+          <button onClick={() => catalog && setEditing(emptyDraft(catalog))} disabled={!catalog || !perms.canWrite}
+            className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+            <Plus className="h-4 w-4" /> {tw("newWorkflow")}
           </button>
         </div>
       </div>
 
-      {showCreate && (
-        <WorkflowModal onClose={() => setShowCreate(false)} onSave={handleCreate} />
+      {editing && catalog && (
+        <WorkflowModal catalog={catalog} initial={editing} onClose={() => setEditing(null)} onSaved={onSaved} />
       )}
-      {editing && (
-        <WorkflowModal
-          initial={editing}
-          onClose={() => setEditing(null)}
-          onSave={(data) => { handleEdit(editing.id, data); setEditing(null); }}
-        />
-      )}
-      {activeWorkflow && (
-        <WorkflowActivePanel
-          workflow={activeWorkflow}
-          onClose={() => setActiveWorkflow(null)}
-        />
+      {runsFor && (
+        <WorkflowRunsPanel
+          workflow={{ id: runsFor.id, name: runsFor.name, trigger: triggerLabel(runsFor, catalog) }}
+          onClose={() => setRunsFor(null)} />
       )}
 
-      {/* Error banner */}
-      {error && (
+      {(error || catalogError) && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50/50 p-3 text-xs text-red-700">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p className="flex-1">{error}</p>
-          <button onClick={() => setError(null)} className="shrink-0 hover:text-red-900">
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <p className="flex-1">{error ?? t("catalogFailed", { error: catalogError ?? "" })}</p>
+          {error && <button onClick={() => setError(null)} className="shrink-0 hover:text-red-900"><X className="h-3.5 w-3.5" /></button>}
         </div>
       )}
 
-      {/* Info banner */}
-      <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-xs text-blue-700">
-        <Zap className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>Workflows run automatically based on triggers. They replace manual follow-ups and ensure every deal gets the right attention at the right time.</p>
-      </div>
+      {setupCount > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{t("needsSetupBanner", { count: setupCount })}</p>
+        </div>
+      )}
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
-        {(["all", "deal", "contact", "activity", "ai"] as Filter[]).map((f) => (
+      <div className="flex w-fit flex-wrap gap-1 rounded-lg bg-muted p-1">
+        {filters.map((f) => (
           <button key={f} onClick={() => setFilter(f)}
-            className={cn("rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors",
-              filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-          >{f === "all" ? "All" : CATEGORY_CFG[f].label}</button>
+            className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            {t(`filter.${f}` as never)}
+          </button>
         ))}
       </div>
 
-      {/* Loading state */}
       {loading && (
-        <div className="flex flex-1 items-center justify-center py-12">
-          <div className="flex flex-col items-center gap-3 text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin" />
-            <p className="text-sm">Loading workflows...</p>
-          </div>
+        <div className="flex flex-1 items-center justify-center py-12 text-muted-foreground">
+          <Loader2 className="mr-2 h-6 w-6 animate-spin" /> {t("loading")}
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && !error && workflows.length === 0 && (
-        <div className="flex flex-1 items-center justify-center py-12">
-          <div className="flex flex-col items-center gap-3 text-muted-foreground">
-            <Layers className="h-10 w-10" />
-            <p className="text-sm font-medium">No workflows yet</p>
-            <p className="text-xs">Create your first workflow to automate your CRM processes.</p>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="mt-2 flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" /> {t("newWorkflow")}
-            </button>
-          </div>
+      {!loading && !error && rows.length === 0 && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+          <Layers className="h-10 w-10" />
+          <p className="text-sm font-medium">{t("emptyTitle")}</p>
+          <p className="text-xs">{t("emptyBody")}</p>
         </div>
       )}
 
-      {/* Workflow cards */}
       {!loading && filtered.length > 0 && (
-      <div className="flex-1 overflow-auto">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {filtered.map((wf) => (
-            <div key={wf.id} className={cn("rounded-xl border bg-card p-5 transition-opacity", !wf.enabled && "opacity-60")}>
-              <div className="flex items-start justify-between gap-3">
-                <button
-                  className="min-w-0 flex-1 text-left hover:opacity-80 transition-opacity"
-                  onClick={() => setActiveWorkflow(wf)}
-                  title="Click to see active entities"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", CATEGORY_CFG[wf.category].cls)}>
-                      {CATEGORY_CFG[wf.category].label}
-                    </span>
-                    {wf.enabled
-                      ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                      : <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                    }
-                  </div>
-                  <h3 className="font-semibold text-sm">{wf.name}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{wf.description}</p>
-                </button>
-
-                {/* Controls */}
-                <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                  {canEdit(wf) && (
-                    <button
-                      onClick={() => setEditing(wf)}
-                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      title="Edit workflow"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  {/* Toggle */}
-                  <button
-                    onClick={() => toggle(wf.id)}
-                    className={cn(
-                      "flex h-7 w-12 items-center rounded-full px-1 transition-colors",
-                      wf.enabled ? "bg-primary justify-end" : "bg-muted justify-start"
-                    )}
-                    title={wf.enabled ? "Disable workflow" : "Enable workflow"}
-                  >
-                    <div className="h-5 w-5 rounded-full bg-background shadow-sm" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Trigger → actions */}
-              <div className="mt-4 rounded-lg bg-muted/50 p-3 text-xs">
-                <div className="flex items-start gap-2 mb-2">
-                  <Zap className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-                  <span className="font-medium text-foreground">{wf.trigger}</span>
-                </div>
-                <div className="space-y-1 pl-5">
-                  {wf.actions.map((action, i) => {
-                    const parts = action.split("||");
-                    const def = ACTION_MENU.find((a) => a.value === parts[0]);
-                    const label = def ? def.action + (parts[1] ? ": " + parts[1] : "") : action;
-                    return (
-                      <div key={i} className="flex items-center gap-1.5 text-muted-foreground">
-                        <ArrowRight className="h-3 w-3 shrink-0" />
-                        {label}
+        <div className="flex-1 overflow-auto">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {filtered.map((row) => {
+              const cat = rowCategory(row, catalog);
+              const enabled = row.is_active && !row.needsSetup;
+              return (
+                <div key={row.id} className={cn("rounded-xl border bg-card p-5", !enabled && "opacity-80")}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", CATEGORY_CLS[cat])}>
+                          {t(`filter.${cat}` as never)}
+                        </span>
+                        {row.needsSetup ? (
+                          <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                            title={row.setupReason ?? ""}>
+                            <AlertTriangle className="h-3 w-3" /> {t("needsSetup", { reason: row.setupReason ?? "" })}
+                          </span>
+                        ) : enabled ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
+                      <h3 className="text-sm font-semibold">{row.name}</h3>
+                      {row.description && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{row.description}</p>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {canEdit(row) && (
+                        <button onClick={() => setEditing(draftFromRow(row, catalog))} disabled={!catalog}
+                          className={cn("rounded p-1 hover:bg-muted", row.needsSetup ? "text-amber-700" : "text-muted-foreground hover:text-foreground")}
+                          title={row.needsSetup ? t("fixSetup") : t("edit")}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button onClick={() => toggle(row)} disabled={!!row.needsSetup || !canEdit(row)}
+                        className={cn("flex h-7 w-12 items-center rounded-full px-1 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                          enabled ? "justify-end bg-primary" : "justify-start bg-muted")}
+                        title={row.needsSetup ? t("cannotActivate") : enabled ? t("disable") : t("enable")}>
+                        <div className="h-5 w-5 rounded-full bg-background shadow-sm" />
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Stats */}
-              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                <button
-                  onClick={() => setActiveWorkflow(wf)}
-                  className="flex items-center gap-1 hover:text-primary transition-colors"
-                  title="View active entities"
-                >
-                  <Play className="h-3 w-3" /> {wf.runCount} runs
-                </button>
-                <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                  {wf.lastRun && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> Last run {wf.lastRun}
-                    </span>
-                  )}
-                  {canEdit(wf) && (
-                    <button
-                      onClick={() => handleDelete(wf.id)}
-                      className="text-muted-foreground hover:text-red-600 transition-colors"
-                      title="Delete workflow"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
+                  <div className="mt-4 rounded-lg bg-muted/50 p-3 text-xs">
+                    <div className="mb-2 flex items-start gap-2">
+                      <Zap className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+                      <span className="font-medium text-foreground">{triggerLabel(row, catalog)}</span>
+                    </div>
+                    {Array.isArray(row.conditions) && row.conditions.length > 0 && (
+                      <p className="mb-1 pl-5 text-muted-foreground">{t("conditionCount", { count: row.conditions.length })}</p>
+                    )}
+                    <div className="space-y-1 pl-5">
+                      {actionSummaries(row, catalog).map((s, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-muted-foreground">
+                          <ArrowRight className="h-3 w-3 shrink-0" /> {s}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                    <button onClick={() => setRunsFor(row)} className="flex items-center gap-1 hover:text-primary">
+                      <Play className="h-3 w-3" /> {t("runsLink", { count: row.runCount ?? 0 })}
                     </button>
-                  )}
+                    <div className="flex items-center gap-3">
+                      {row.lastRun && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> {new Date(row.lastRun).toLocaleString()}
+                        </span>
+                      )}
+                      {canEdit(row) && (
+                        <button onClick={() => remove(row)} className="hover:text-red-600" title={t("delete")}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              );
+            })}
+          </div>
         </div>
-      </div>
       )}
     </div>
   );
