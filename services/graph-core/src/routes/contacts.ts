@@ -14,8 +14,9 @@ import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
 import { getEgoNetwork } from "../queries/graph-queries";
 import { OwnerIdList } from "../lib/owner-filter";
-import { actorId, diffTracked, recordFieldChanges } from "../lib/field-history";
+import { actorId, diffTracked, eventOrigin, recordFieldChanges } from "../lib/field-history";
 import { leadConvertRoutes } from "./lead-convert";
+import { contactMergeRoutes } from "./contact-merge";
 
 const TRACKED_CONTACT_FIELDS = ["ownerId", "isLead", "email", "source"] as const;
 
@@ -67,6 +68,7 @@ const FETCH_ONE = `
 
 export async function contactsRoutes(server: FastifyInstance) {
   await leadConvertRoutes(server);
+  await contactMergeRoutes(server);
 
   /**
    * GET /contacts?tenantId=&search=&companyId=&limit=
@@ -241,7 +243,10 @@ export async function contactsRoutes(server: FastifyInstance) {
       ).catch((err) => { console.error("[contacts] lead registry write failed:", err.message); });
     }
 
-    await emitEvent(tenantId, "contact.created", "person", id, "user", {});
+    const createdPayload = { isLead: isLead ?? false, source: source ?? "user", ownerId: ownerId ?? null, email,
+      webFormId: (customFields as Record<string, unknown> | undefined)?.webForm ?? null };
+    await emitEvent(tenantId, "contact.created", "contact", id, "user", createdPayload);
+    if (isLead) await emitEvent(tenantId, "lead.created", "contact", id, "user", createdPayload);
 
     const created = await cypher(
       `MATCH (p:Person {id: $id, tenant_id: $tenantId})\n${FETCH_ONE}`,
@@ -364,7 +369,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     }
 
     await recordFieldChanges(tenantId, "contact", id, historyChanges, actorId(request));
-    await emitEvent(tenantId, "contact.updated", "person", id, "user", fields);
+    await emitEvent(tenantId, "contact.updated", "contact", id, "user", { ...fields, changes: historyChanges, _origin: eventOrigin(request) });
 
     const updated = await cypher(
       `MATCH (p:Person {id: $id, tenant_id: $tenantId})\n${FETCH_ONE}`,
@@ -391,7 +396,7 @@ export async function contactsRoutes(server: FastifyInstance) {
        RETURN {id: p.id}`,
       { id, tenantId, now: new Date().toISOString() }
     );
-    await emitEvent(tenantId, "contact.deleted", "person", id, "user", {});
+    await emitEvent(tenantId, "contact.deleted", "contact", id, "user", {});
     return reply.status(204).send();
   });
 

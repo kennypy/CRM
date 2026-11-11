@@ -11,6 +11,7 @@ import { enforceSandboxGraphCeiling } from "../lib/sandbox-limits";
 import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
 import { OwnerIdList } from "../lib/owner-filter";
+import { eventOrigin } from "../lib/field-history";
 import { pool, cypher } from "../db/pool";
 
 const CreateCompanySchema = z.object({
@@ -253,6 +254,12 @@ export async function companiesRoutes(server: FastifyInstance) {
        } LIMIT 1`,
       { id, tenantId }
     );
+    // company.updated was never published (account automations could not fire).
+    await pool.query(
+      `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
+       VALUES ($1, 'company.updated', 'user', 'company', $2, $3)`,
+      [tenantId, id, JSON.stringify({ ...f, _origin: eventOrigin(request) })],
+    ).catch((err) => { console.error("[companies] event write failed:", err.message); });
     return reply.send({ success: true, data: toCompanyResponse(updated[0]) });
   });
 

@@ -21,6 +21,7 @@ import { requireAdmin } from "../middleware/rbac";
 import { redis } from "@nexcrm/service-common/redis";
 import { internalFetch } from "../lib/internal-fetch";
 import { GRAPH_CORE_URL } from "../lib/service-urls";
+import { emitEvent } from "../lib/events";
 
 const IdParam = z.object({ id: z.string().uuid() });
 const DeactivateBody = z.object({ transferToUserId: z.string().uuid().optional() });
@@ -172,6 +173,7 @@ export async function deactivateUser(
     [tenantId, actorId, userId, JSON.stringify({ transferredTo: target, counts })],
   ).catch((err) => request.log.warn({ err }, "audit_write_failed"));
 
+  await emitEvent(tenantId, "user.deactivated", userId, { transferredTo: target, counts }, { actorId });
   return { status: 200, body: { success: true, data: { userId, transferredTo: target, counts } } };
 }
 
@@ -208,6 +210,7 @@ export async function usersLifecycleRoutes(server: FastifyInstance) {
        VALUES ($1, $2, 'user.reactivated', 'user', $3, '{}')`,
       [tenantId, sub, p.data.id],
     ).catch(() => undefined);
+    await emitEvent(tenantId, "user.reactivated", p.data.id, {}, { actorId: sub });
     return reply.send({ success: true, data: { userId: p.data.id } });
   });
 }

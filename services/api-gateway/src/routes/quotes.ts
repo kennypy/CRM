@@ -23,6 +23,7 @@ import { checkValidationRules, validationFailureReply } from "../lib/validation-
 import { ApprovalError, actOnRequest, submitQuoteForApproval } from "../lib/approvals";
 import { SyncError, syncQuoteToDeal } from "../lib/quote-sync";
 import { renderQuotePdf } from "../lib/quote-pdf";
+import { emitEvent } from "../lib/events";
 
 const LineItemSchema = z.object({
   productId:   z.string().uuid().optional(),
@@ -345,6 +346,9 @@ export async function quotesRoutes(server: FastifyInstance) {
       const { rows: savedItems } = await client.query(
         `SELECT * FROM quote_items WHERE quote_id=$1 ORDER BY sort_order`, [quote.id]
       );
+      await emitEvent(tenantId, "quote.created", quote.id, {
+        dealId: quote.deal_id ?? null, total: Number(quote.total), approvalRequired, quoteNumber: quote.quote_number,
+      }, { actorId: userId });
       return reply.status(201).send({ success: true, data: toQuote(quote, savedItems) });
     } catch (err) {
       await client.query("ROLLBACK");
@@ -520,6 +524,9 @@ export async function quotesRoutes(server: FastifyInstance) {
       await syncQuoteToDeal(request, id).catch((err) => request.log.warn({ err }, "quote_resync_failed"));
     }
     const { rows: updatedItems } = await pool.query(`SELECT * FROM quote_items WHERE quote_id=$1 ORDER BY sort_order`, [id]);
+    await emitEvent(tenantId, "quote.updated", id, {
+      dealId: updated.deal_id ?? null, total: Number(updated.total), approvalRequired: updated.approval_required,
+    }, { actorId: userId });
     return reply.send({ success: true, data: toQuote(updated, updatedItems) });
   });
 
@@ -548,6 +555,8 @@ export async function quotesRoutes(server: FastifyInstance) {
       return reply.status(400).send({ success: false, error: { code: "INVALID_STATE", message: `Cannot send a quote in status: ${q.status}` } });
 
     await pool.query(`UPDATE quotes SET status='sent', sent_at=NOW(), updated_at=NOW() WHERE id=$1`, [id]);
+    await emitEvent(tenantId, "quote.sent", id, { dealId: q.deal_id ?? null, total: Number(q.total) },
+      { actorId: request.user.sub });
     // TODO: dispatch email via outreach service
     return reply.send({ success: true, message: "Quote marked as sent" });
   });
@@ -680,6 +689,11 @@ export async function quotesRoutes(server: FastifyInstance) {
       `UPDATE quotes SET status=$2, ${tsCol[status]}=NOW(), updated_at=NOW() WHERE id=$1 AND tenant_id=$3`,
       [id, status, tenantId]
     );
+    if (status === "accepted" || status === "rejected") {
+      const { rows: [q2] } = await pool.query(`SELECT deal_id, total FROM quotes WHERE id = $1`, [id]);
+      await emitEvent(tenantId, `quote.${status}`, id, { dealId: q2?.deal_id ?? null, total: Number(q2?.total ?? 0) },
+        { actorId: request.user.sub });
+    }
     return reply.send({ success: true });
   });
 }

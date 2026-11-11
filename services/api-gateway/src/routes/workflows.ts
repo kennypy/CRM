@@ -1,10 +1,12 @@
 /**
  * Workflow definitions CRUD — backed by the workflow_definitions table.
  *
- * Execution engine is not yet implemented (E1 from audit).
- * These routes give the frontend a real persistence layer to replace
- * the current in-memory demo state.
+ * Definitions are validated against the automation catalog
+ * (lib/automation-catalog.ts) so everything saved here is executable by the
+ * workflow engine. Rows saved before validation existed are returned with
+ * `needsSetup: true` + `setupReason` and are skipped by the engine.
  *
+ * GET    /api/v1/workflows/catalog  — events, triggers, actions (builder contract)
  * GET    /api/v1/workflows          — list tenant workflows
  * POST   /api/v1/workflows          — create a workflow
  * PATCH  /api/v1/workflows/:id      — update name/description/trigger/actions/is_active
@@ -17,6 +19,8 @@ import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
 import { moduleAccessGate } from "../middleware/module-access";
+import { ACTION_ALIASES, ACTION_CATALOG, EVENT_CATALOG, TRIGGER_CATALOG } from "../lib/automation-catalog";
+import { CONDITION_OPERATORS, DefinitionSchema, checkDefinition } from "../lib/workflow-definition";
 
 const CreateSchema = z.object({
   name:        z.string().min(1).max(255),
@@ -38,7 +42,10 @@ const UpdateSchema = z.object({
 });
 
 function toWorkflow(row: Record<string, unknown>) {
+  const check = checkDefinition(row as { trigger: unknown; conditions: unknown; actions: unknown });
   return {
+    needsSetup:  !check.ok,
+    setupReason: check.ok ? null : check.reason,
     id:          row.id,
     name:        row.name,
     description: row.description ?? null,
@@ -59,6 +66,19 @@ function toWorkflow(row: Record<string, unknown>) {
 export async function workflowsRoutes(server: FastifyInstance) {
   // Custom-role permission grid (Settings → Users → Profiles)
   server.addHook("preHandler", moduleAccessGate("workflows"));
+  // ── GET /api/v1/workflows/catalog ─────────────────────────────────────────
+  server.get("/catalog", { preHandler: [requireCrmRead] }, async (_request, reply) =>
+    reply.send({
+      success: true,
+      data: {
+        events: EVENT_CATALOG,
+        triggers: TRIGGER_CATALOG,
+        actions: ACTION_CATALOG,
+        actionAliases: Object.keys(ACTION_ALIASES),
+        conditionOperators: CONDITION_OPERATORS,
+      },
+    }));
+
   // ── GET /api/v1/workflows ─────────────────────────────────────────────────
   server.get("/", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const tenantId = request.user.tenantId;
@@ -88,7 +108,17 @@ export async function workflowsRoutes(server: FastifyInstance) {
       });
     }
 
-    const { name, description, trigger, conditions, actions, is_active } = parsed.data;
+    const def = DefinitionSchema.safeParse({
+      trigger: parsed.data.trigger, conditions: parsed.data.conditions, actions: parsed.data.actions,
+    });
+    if (!def.success) {
+      return reply.status(422).send({
+        success: false,
+        error: { code: "INVALID_WORKFLOW", message: def.error.issues[0].message, details: def.error.issues },
+      });
+    }
+    const { name, description, is_active } = parsed.data;
+    const { trigger, conditions, actions } = def.data;
     const { tenantId, sub: userId } = request.user;
 
     const { rows } = await pool.query(
@@ -116,6 +146,30 @@ export async function workflowsRoutes(server: FastifyInstance) {
 
     const { tenantId } = request.user;
     const data = parsed.data;
+
+    // Validate the merged definition whenever any part of it changes, and
+    // refuse to activate one the engine cannot run.
+    if (data.trigger !== undefined || data.conditions !== undefined || data.actions !== undefined || data.is_active === true) {
+      const { rows: [cur] } = await pool.query(
+        `SELECT trigger, conditions, actions FROM workflow_definitions WHERE id = $1 AND tenant_id = $2`,
+        [id, tenantId],
+      );
+      if (!cur) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+      const def = DefinitionSchema.safeParse({
+        trigger: data.trigger ?? cur.trigger,
+        conditions: data.conditions ?? cur.conditions ?? [],
+        actions: data.actions ?? cur.actions ?? [],
+      });
+      if (!def.success) {
+        return reply.status(422).send({
+          success: false,
+          error: { code: "INVALID_WORKFLOW", message: def.error.issues[0].message, details: def.error.issues },
+        });
+      }
+      if (data.trigger !== undefined) data.trigger = def.data.trigger;
+      if (data.conditions !== undefined) data.conditions = def.data.conditions;
+      if (data.actions !== undefined) data.actions = def.data.actions;
+    }
 
     const sets: string[] = ["updated_at = NOW()", "version = version + 1"];
     const vals: unknown[] = [id, tenantId];

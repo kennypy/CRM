@@ -13,6 +13,8 @@ import { servicePool } from "../db";
 import { evaluateLeaf, LEAF_OPS, type LeafCondition } from "./rule-conditions";
 import { internalFetch } from "./internal-fetch";
 import { GRAPH_CORE_URL } from "./service-urls";
+import { emitEvent } from "./events";
+import { notifyUser } from "./notify";
 
 export const ASSIGNMENT_FIELDS = [
   "source", "country", "title", "seniority", "email", "companyName",
@@ -129,7 +131,9 @@ export async function pickAssignee(
 }
 
 /** Set the lead's owner in the graph (service-token call). */
-export async function setLeadOwner(tenantId: string, contactId: string, ownerId: string): Promise<boolean> {
+export async function setLeadOwner(
+  tenantId: string, contactId: string, ownerId: string, ruleId?: string | null,
+): Promise<boolean> {
   const res = await internalFetch(
     `${GRAPH_CORE_URL}/contacts/${encodeURIComponent(contactId)}?tenantId=${encodeURIComponent(tenantId)}`,
     {
@@ -144,6 +148,11 @@ export async function setLeadOwner(tenantId: string, contactId: string, ownerId:
       `UPDATE lead_registry SET owner_id = $3 WHERE tenant_id = $1 AND contact_id = $2`,
       [tenantId, contactId, ownerId],
     ).catch(() => undefined);
+    await emitEvent(tenantId, "lead.assigned", contactId, { ownerId, ruleId: ruleId ?? null }, { source: "assignment_rules" });
+    await notifyUser({
+      tenantId, userId: ownerId, type: "lead_assigned", title: "New lead assigned to you",
+      actionUrl: `/contacts/${contactId}`, entityType: "contact", entityId: contactId, channels: "both",
+    }).catch(() => undefined);
   }
   return res.ok;
 }

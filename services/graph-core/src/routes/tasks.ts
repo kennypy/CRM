@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { enforceSandboxRecordCeiling } from "../lib/sandbox-limits";
 import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
+import { eventOrigin } from "../lib/field-history";
 import { pool } from "../db/pool";
 
 const CreateTaskSchema = z.object({
@@ -92,6 +93,7 @@ export async function tasksRoutes(server: FastifyInstance) {
        RETURNING *`,
       [tenantId, title, dueDate ?? null, priority, status, assigneeId ?? null, relatedToType ?? null, relatedToId ?? null]
     );
+    await emitTaskEvent(tenantId, "task.created", rows[0], eventOrigin(request));
 
     return reply.status(201).send({ success: true, data: toTaskResponse(rows[0]) });
   });
@@ -120,6 +122,12 @@ export async function tasksRoutes(server: FastifyInstance) {
     if (f.dueDate   !== undefined) { setParts.push(`due_date = $${idx}`);  params.push(f.dueDate);   idx++; }
     if (f.priority  !== undefined) { setParts.push(`priority = $${idx}`);  params.push(f.priority);  idx++; }
     if (f.status    !== undefined) { setParts.push(`status = $${idx}`);    params.push(f.status);    idx++; }
+    // assigneeId was accepted by the schema but never written (reassignment no-op).
+    if (f.assigneeId !== undefined) { setParts.push(`assignee_id = $${idx}`); params.push(f.assigneeId ?? null); idx++; }
+
+    const { rows: [before] } = await pool.query(
+      `SELECT status FROM tasks WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, [id, tenantId],
+    );
 
     params.push(id, tenantId);
     const { rows } = await pool.query(
@@ -131,6 +139,9 @@ export async function tasksRoutes(server: FastifyInstance) {
 
     if (!rows.length) {
       return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
+    }
+    if (f.status === "done" && before?.status !== "done") {
+      await emitTaskEvent(tenantId, "task.completed", rows[0], eventOrigin(request));
     }
     return reply.send({ success: true, data: toTaskResponse(rows[0]) });
   });
@@ -151,6 +162,18 @@ export async function tasksRoutes(server: FastifyInstance) {
     );
     return reply.status(204).send();
   });
+}
+
+async function emitTaskEvent(tenantId: string, type: string, row: Record<string, unknown>, origin?: string) {
+  await pool.query(
+    `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
+     VALUES ($1, $2, 'user', 'task', $3, $4)`,
+    [tenantId, type, row.id, JSON.stringify({
+      title: row.title, assigneeId: row.assignee_id ?? null,
+      relatedToType: row.related_to_type ?? null, relatedToId: row.related_to_id ?? null,
+      _origin: origin,
+    })],
+  ).catch((err) => console.error("[tasks] event write failed:", err.message));
 }
 
 function toTaskResponse(row: Record<string, unknown>) {

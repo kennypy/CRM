@@ -40,6 +40,16 @@ export function diffTracked(
   return out;
 }
 
+/**
+ * Origin marker for events caused by automation (x-event-origin:
+ * "workflow:<depth>", set by the workflow engine). Copied into event payloads
+ * as `_origin` so the engine can stop runaway trigger→action→trigger loops.
+ */
+export function eventOrigin(request: FastifyRequest): string | undefined {
+  const h = request.headers["x-event-origin"];
+  return typeof h === "string" && /^workflow:\d{1,2}$/.test(h) ? h : undefined;
+}
+
 /** Acting user: verified internal-JWT subject, else the gateway-set header. */
 export function actorId(request: FastifyRequest): string | null {
   const sub = (request.user as { sub?: string } | undefined)?.sub;

@@ -159,7 +159,7 @@ export async function leadsRoutes(server: FastifyInstance) {
     if (!contact) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
     if (contact.isLead !== true) return bad(reply, "Only open leads can be assigned by rules", "NOT_A_LEAD", 409);
     const { userId, ruleId } = await pickAssignee(tenantId, leadFactsFromContact(contact));
-    if (userId) await setLeadOwner(tenantId, p.data.id, userId);
+    if (userId) await setLeadOwner(tenantId, p.data.id, userId, ruleId);
     return reply.send({ success: true, data: { assignedTo: userId, ruleId } });
   });
 
@@ -295,9 +295,9 @@ export async function autoAssignOnCreate(
     const contact = parsed.data;
     if (!contact?.id) return payload;
     const tenantId = request.user.tenantId;
-    const { userId } = await pickAssignee(tenantId, leadFactsFromContact(contact));
+    const { userId, ruleId } = await pickAssignee(tenantId, leadFactsFromContact(contact));
     if (!userId) return payload;
-    if (await setLeadOwner(tenantId, contact.id as string, userId)) {
+    if (await setLeadOwner(tenantId, contact.id as string, userId, ruleId)) {
       contact.ownerId = userId;
       return JSON.stringify(parsed);
     }

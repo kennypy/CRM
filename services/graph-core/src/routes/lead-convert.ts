@@ -263,14 +263,14 @@ export async function leadConvertRoutes(server: FastifyInstance) {
           ...(result.ownerId ? [{ field: "ownerId", oldValue: null, newValue: result.ownerId }] : []),
         ], actor);
       }
-      const events: [string, string, string][] = [["lead.converted", "person", id]];
+      const events: [string, string, string][] = [["lead.converted", "contact", id]];
       if (result.companyCreated && result.companyId) events.push(["company.created", "company", result.companyId]);
       if (result.dealId) events.push(["deal.created", "deal", result.dealId]);
       for (const [type, entity, entityId] of events) {
         await pool.query(
           `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
            VALUES ($1, $2, 'user', $3, $4, $5)`,
-          [tenantId, type, entity, entityId, JSON.stringify({ conversionId: result.conversionId })],
+          [tenantId, type, entity, entityId, JSON.stringify({ conversionId: result.conversionId, companyId: result.companyId, dealId: result.dealId, contactId: id })],
         ).catch((err) => console.error("[lead-convert] event write failed:", err.message));
       }
 

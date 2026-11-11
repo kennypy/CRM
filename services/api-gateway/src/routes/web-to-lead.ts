@@ -159,8 +159,8 @@ export async function webToLeadRoutes(server: FastifyInstance) {
       const created = ((await create.json()) as { data?: Record<string, unknown> }).data;
       if (created?.id) {
         const facts = { ...leadFactsFromContact(created), companyName: s.company ?? null, country: s.country ?? null };
-        const { userId } = await pickAssignee(tenantId, facts).catch(() => ({ userId: null }));
-        if (userId) await setLeadOwner(tenantId, created.id as string, userId).catch(() => false);
+        const { userId, ruleId } = await pickAssignee(tenantId, facts).catch(() => ({ userId: null, ruleId: null }));
+        if (userId) await setLeadOwner(tenantId, created.id as string, userId, ruleId).catch(() => false);
       }
       return done(reply, s.retURL, allowed, 201);
     },

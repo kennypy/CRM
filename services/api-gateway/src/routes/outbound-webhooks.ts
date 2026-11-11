@@ -12,9 +12,11 @@
  * This file also exports `dispatchWebhookEvent` for use by other routes.
  */
 
+import { randomUUID } from "node:crypto";
 import { createHmac, randomBytes } from "crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { EVENT_TYPES } from "../lib/automation-catalog";
 import { pool, servicePool } from "../db";
 import { decryptTenantSecret, encryptTenantSecret } from "@nexcrm/service-common/tenant-crypto";
 import { webhookDeliveryQueue } from "../workers/webhook-delivery";
@@ -38,13 +40,9 @@ async function validateWebhookUrl(url: string): Promise<string | null> {
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
-const VALID_EVENT_TYPES = [
-  "contact.created", "contact.updated", "contact.deleted",
-  "company.created", "company.updated", "company.deleted",
-  "deal.created",    "deal.updated",    "deal.deleted",    "deal.stage_changed",
-  "activity.created",
-  "sequence.enrollment.completed",
-] as const;
+// Derived from the automation catalog so every event any module publishes is
+// subscribable (previously a hand-kept list missed quotes, approvals, leads…).
+const VALID_EVENT_TYPES = EVENT_TYPES as [string, ...string[]];
 
 const WebhookSchema = z.object({
   name:        z.string().min(1).max(100),
@@ -75,6 +73,9 @@ export async function dispatchWebhookEvent(
     rows.map((wh) => ({
       name: "deliver",
       data: {
+        // Stable id across BullMQ retries (was missing → every delivery failed
+        // on a NULL primary key and no webhook was ever delivered).
+        deliveryId: randomUUID(),
         webhookId:  wh.id,
         tenantId,
         eventType,

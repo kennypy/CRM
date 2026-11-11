@@ -1,443 +1,212 @@
 /**
- * Workflow execution engine — evaluates triggers and runs actions.
+ * Workflow engine — the central consumer of the crm_events bus.
  *
- * Polls for active workflows and matches CRM events to triggers.
- * When a match is found, creates a workflow_run and executes actions sequentially.
+ * Every 5s (leader-locked: exactly one consumer across gateway replicas):
+ *   1. take unprocessed events (processed_at IS NULL) in commit-visible order —
+ *      no timestamp cursor, so late-committing or same-timestamp events are
+ *      never skipped (migration 063);
+ *   2. for each active, valid workflow whose trigger matches: load the record,
+ *      evaluate conditions, run actions (or schedule delayed ones);
+ *   3. fan the event out to outbound webhooks;
+ *   4. mark the event processed;
+ *   5. execute delayed actions that are due.
  *
- * Supported triggers:
- *   - deal.stage_changed      — fires when a deal moves to a specific stage
- *   - deal.created            — fires when any deal is created
- *   - contact.created         — fires when a contact is auto-captured or manually added
- *   - activity.created        — fires when an activity is logged
- *   - score.threshold         — fires when Reality Score crosses a threshold
- *   - schedule.daily          — fires once daily at a configured time
- *
- * Supported actions:
- *   - create_task             — create a CRM task
- *   - assign_owner            — assign/change record owner
- *   - update_field            — update a field on the entity
- *   - send_email              — send an email via outreach service
- *   - add_to_sequence         — enroll contact in a sequence
- *   - notify_slack            — send Slack notification (if connected)
- *   - fire_webhook            — POST to an external URL
- *   - add_tag                 — tag the entity
- *   - ai_score_lead           — trigger AI lead scoring
- *   - ai_summarize            — trigger AI summarization
+ * Triggers, actions and their config come from lib/automation-catalog.ts;
+ * definitions are validated on save (routes/workflows.ts) and re-validated
+ * here — rows that fail (e.g. saved by the old builder) are skipped, never
+ * guessed at. Loops are cut off after MAX_WORKFLOW_DEPTH automation hops.
  */
-
 import { servicePool as pool } from "../db";
 import { dispatchWebhookEvent } from "../routes/outbound-webhooks";
-import { GRAPH_CORE_URL, OUTREACH_URL, AI_ENGINE_URL } from "../lib/service-urls";
+import { GRAPH_CORE_URL } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
-import { safePostJson, SsrfBlockedError } from "@nexcrm/service-common/ssrf-guard";
-import { ENTITY_COLLECTION } from "../lib/entity-map";
 import { createLeaderLock } from "../lib/leader-lock";
 import { requestRedis } from "@nexcrm/service-common/redis";
+import { canonicalEntityType } from "../lib/automation-catalog";
+import { checkDefinition, type WorkflowDefinition } from "../lib/workflow-definition";
+import {
+  MAX_WORKFLOW_DEPTH, buildContext, evaluateConditions, eventDepth, matchesTrigger, type CrmEvent,
+} from "../lib/workflow-runtime";
+import { runAction, type ActionContext, type ActionOutcome } from "./workflow-actions";
 
-interface WorkflowDef {
-  id: string;
-  tenant_id: string;
-  trigger: {
-    type: string;
-    category?: string;
-    [key: string]: unknown;
+const BATCH = 200;
+const COLLECTION: Record<string, string> = { contact: "contacts", company: "companies", deal: "deals" };
+
+interface StepLog { action: string; status: ActionOutcome["status"] | "scheduled"; result: string; success: boolean; timestamp: string }
+
+async function loadRecord(event: CrmEvent): Promise<Record<string, unknown> | null> {
+  const collection = COLLECTION[canonicalEntityType(event.entity_type)];
+  if (!collection || event.event_type.endsWith(".deleted")) return null;
+  const res = await internalFetch(
+    `${GRAPH_CORE_URL}/${collection}/${encodeURIComponent(event.entity_id)}?tenantId=${encodeURIComponent(event.tenant_id)}`,
+    { headers: { "x-tenant-id": event.tenant_id }, signal: AbortSignal.timeout(5000) },
+  ).catch(() => null);
+  if (!res?.ok) return null;
+  return ((await res.json()) as { data?: Record<string, unknown> }).data ?? null;
+}
+
+function logStep(action: string, o: ActionOutcome | { status: "scheduled"; message: string }): StepLog {
+  return {
+    action, status: o.status, result: o.message,
+    success: o.status !== "failed", timestamp: new Date().toISOString(),
   };
-  conditions: Array<Record<string, unknown>>;
-  actions: Array<{
-    type: string;
-    config?: Record<string, unknown>;
-  }>;
 }
 
-interface CrmEvent {
-  id: string;
-  tenant_id: string;
-  event_type: string;
-  entity_type: string;
-  entity_id: string;
-  payload: Record<string, unknown>;
-}
+async function runWorkflow(
+  wf: { id: string; name: string; def: WorkflowDefinition }, event: CrmEvent,
+  record: Record<string, unknown> | null,
+): Promise<void> {
+  const context = buildContext(event, record);
+  if (!evaluateConditions(wf.def.conditions, context)) return;
 
-function matchesTrigger(workflow: WorkflowDef, event: CrmEvent): boolean {
-  const trigger = workflow.trigger;
-  if (!trigger?.type) return false;
-
-  switch (trigger.type) {
-    case "deal.stage_changed":
-      return event.event_type === "deal.updated" &&
-        event.entity_type === "deal" &&
-        (!trigger.toStage || event.payload?.stage === trigger.toStage);
-
-    case "deal.created":
-      return event.event_type === "deal.created" && event.entity_type === "deal";
-
-    case "contact.created":
-      return event.event_type === "contact.created" && event.entity_type === "person";
-
-    case "activity.created":
-      return event.event_type === "activity.created" && event.entity_type === "activity";
-
-    case "contact.updated":
-      return event.event_type === "contact.updated" && event.entity_type === "person";
-
-    case "lead.lifecycle_changed":
-      return event.event_type === "contact.updated" &&
-        event.entity_type === "person" &&
-        event.payload?.lifecycleStage !== undefined &&
-        (!trigger.toStage || event.payload.lifecycleStage === trigger.toStage);
-
-    case "company.updated":
-      return event.event_type === "company.updated" && event.entity_type === "company";
-
-    case "score.threshold":
-      return event.event_type === "reality_score.updated" &&
-        typeof event.payload?.score === "number" &&
-        typeof trigger.threshold === "number" &&
-        (trigger.direction === "below"
-          ? event.payload.score < trigger.threshold
-          : event.payload.score >= trigger.threshold);
-
-    default:
-      return false;
-  }
-}
-
-function evaluateConditions(conditions: Array<Record<string, unknown>>, event: CrmEvent): boolean {
-  if (!conditions.length) return true;
-
-  return conditions.every((cond) => {
-    const field = String(cond.field ?? "");
-    const operator = String(cond.operator ?? "equals");
-    const value = cond.value;
-    const actual = event.payload?.[field];
-
-    switch (operator) {
-      case "equals":     return actual === value;
-      case "not_equals": return actual !== value;
-      case "contains":   return String(actual ?? "").includes(String(value));
-      case "gt":         return Number(actual) > Number(value);
-      case "lt":         return Number(actual) < Number(value);
-      case "gte":        return Number(actual) >= Number(value);
-      case "lte":        return Number(actual) <= Number(value);
-      default:           return true;
-    }
-  });
-}
-
-type ActionResult = { success: boolean; result?: string; error?: string };
-type ActionConfig = Record<string, unknown> | undefined;
-
-type ActionHandler = (
-  config: ActionConfig,
-  event: CrmEvent,
-  tenantId: string
-) => Promise<ActionResult>;
-
-const actionHandlers: Record<string, ActionHandler> = {
-  async create_task(config, event, tenantId) {
-    const res = await internalFetch(`${GRAPH_CORE_URL}/tasks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-      body: JSON.stringify({
-        title: config?.title ?? `Follow up on ${event.entity_type} ${event.entity_id}`,
-        priority: config?.priority ?? "medium",
-        status: "open",
-        related_entity_type: event.entity_type,
-        related_entity_id: event.entity_id,
-      }),
-    });
-    return { success: res.ok, result: `Task created (${res.status})` };
-  },
-
-  async send_email(config, event, tenantId) {
-    // NOTE: outreach mounts this at /email/send (no /api/v1 prefix). The payload
-    // still needs a provider/bodyText decision to satisfy SendEmailSchema — see
-    // review report.
-    const res = await internalFetch(`${OUTREACH_URL}/email/send`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-      body: JSON.stringify({
-        to: config?.to ?? event.payload?.email,
-        subject: config?.subject ?? "Automated notification",
-        body: config?.body ?? "This is an automated message from NexCRM.",
-      }),
-    });
-    return { success: res.ok, result: `Email sent (${res.status})` };
-  },
-
-  async fire_webhook(config, _event, tenantId) {
-    const webhookUrl = String(config?.url ?? "");
-    if (!webhookUrl) return { success: false, error: "No webhook URL configured" };
-    // SSRF-safe POST: a workflow author is a tenant user, not trusted to point
-    // the engine at internal/metadata addresses. safePostJson validates every
-    // hop, pins the vetted IP (defeats DNS rebinding), and re-checks redirects.
-    try {
-      const res = await safePostJson(
-        webhookUrl,
-        JSON.stringify({ event: _event, tenantId, timestamp: new Date().toISOString() }),
-        { "Content-Type": "application/json" },
-        { protocols: ["https:", "http:"], allowPrivateEnvVar: "WEBHOOKS_ALLOW_PRIVATE_HOST" },
-      );
-      return { success: res.ok, result: `Webhook delivered (${res.status})` };
-    } catch (err) {
-      if (err instanceof SsrfBlockedError) {
-        return { success: false, error: `Blocked webhook URL: ${err.message}` };
-      }
-      return { success: false, error: (err as Error).message };
-    }
-  },
-
-  async update_field(config, event, tenantId) {
-    const field = String(config?.field ?? "");
-    const value = config?.value;
-    if (!field) return { success: false, error: "No field specified" };
-    const collection = ENTITY_COLLECTION[event.entity_type];
-    // Not-applicable to this entity type is a skip, not a failure — returning
-    // success:false here would abort the whole workflow run and skip every
-    // later action (regression). Report it honestly as skipped.
-    if (!collection) return { success: true, result: `Skipped update_field: not applicable to '${event.entity_type}'` };
-    // Actually persist the change via graph-core (the field authority), then
-    // record the audit event. Previously this only wrote the audit row, so the
-    // automation reported success while the record was never modified.
-    const res = await internalFetch(`${GRAPH_CORE_URL}/${collection}/${event.entity_id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-      body: JSON.stringify({ [field]: value }),
-    });
-    if (!res.ok) return { success: false, error: `Field update failed (${res.status})` };
-    await pool.query(
-      `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
-       VALUES ($1, $2, 'workflow', $3, $4, $5)`,
-      [tenantId, `${event.entity_type}.updated`, event.entity_type, event.entity_id,
-       JSON.stringify({ field, value, updatedBy: "workflow" })]
-    );
-    return { success: true, result: `Field ${field} updated` };
-  },
-
-  async add_tag(config, event, tenantId) {
-    const tag = String(config?.tag ?? config?.value ?? "");
-    if (!tag) return { success: false, error: "No tag specified" };
-    if (!["contact", "company", "deal", "lead"].includes(event.entity_type)) {
-      // Skip, don't fail the run (regression) — this action just doesn't apply here.
-      return { success: true, result: `Skipped add_tag: not applicable to '${event.entity_type}'` };
-    }
-    // Actually persist the tag (was a success-reporting no-op).
-    await pool.query(
-      `INSERT INTO entity_tags (tenant_id, entity_type, entity_id, tag)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (tenant_id, entity_type, entity_id, tag) DO NOTHING`,
-      [tenantId, event.entity_type, event.entity_id, tag]
-    );
-    return { success: true, result: `Tag '${tag}' added` };
-  },
-
-  async add_to_sequence(config, event, tenantId) {
-    const sequenceId = String(config?.sequenceId ?? "");
-    if (!sequenceId) return { success: false, error: "No sequenceId specified" };
-
-    // The enroll endpoint takes contact records (email is required), not graph
-    // entity ids — resolve the contact first. (The previous call targeted a
-    // non-existent /api/v1/sequences/enroll route with the wrong body, so this
-    // action always failed silently.)
-    const contactRes = await internalFetch(
-      `${GRAPH_CORE_URL}/contacts/${event.entity_id}?tenantId=${tenantId}`,
-      { headers: { "x-tenant-id": tenantId } }
-    );
-    if (!contactRes.ok) return { success: false, error: `Contact lookup failed (${contactRes.status})` };
-    const contact = ((await contactRes.json()) as { data?: { email?: string; firstName?: string; lastName?: string } }).data;
-    if (!contact?.email) return { success: false, error: "Contact has no email to enroll" };
-
-    const res = await internalFetch(`${OUTREACH_URL}/sequences/${sequenceId}/enroll`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-      body: JSON.stringify({
-        contacts: [{
-          id: event.entity_id,
-          email: contact.email,
-          firstName: contact.firstName ?? "",
-          lastName: contact.lastName ?? "",
-        }],
-      }),
-    });
-    return { success: res.ok, result: `Enrolled in sequence (${res.status})` };
-  },
-
-  async assign_owner(config, event, tenantId) {
-    const ownerId = String(config?.ownerId ?? "");
-    if (!ownerId) return { success: false, error: "No ownerId specified" };
-    const collection = ENTITY_COLLECTION[event.entity_type];
-    // Skip, don't fail the run (regression) for entity types without an owner edge.
-    if (!collection) return { success: true, result: `Skipped assign_owner: not applicable to '${event.entity_type}'` };
-    // Actually persist ownership via graph-core (was a success-reporting no-op).
-    const res = await internalFetch(`${GRAPH_CORE_URL}/${collection}/${event.entity_id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-      body: JSON.stringify({ ownerId }),
-    });
-    if (!res.ok) return { success: false, error: `Owner assignment failed (${res.status})` };
-    return { success: true, result: `Owner assigned to ${ownerId}` };
-  },
-
-  async ai_score_lead(_config, event, tenantId) {
-    const res = await internalFetch(`${AI_ENGINE_URL}/lead-scoring/compute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-      body: JSON.stringify({ contactId: event.entity_id }),
-    });
-    return { success: res.ok, result: `Lead scoring triggered (${res.status})` };
-  },
-
-  async ai_summarize(_config, event, tenantId) {
-    const res = await internalFetch(`${AI_ENGINE_URL}/summarize`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-      body: JSON.stringify({ entityType: event.entity_type, entityId: event.entity_id }),
-    });
-    return { success: res.ok, result: `AI summary triggered (${res.status})` };
-  },
-};
-
-async function executeAction(
-  action: { type: string; config?: Record<string, unknown> },
-  event: CrmEvent,
-  tenantId: string
-): Promise<ActionResult> {
-  try {
-    const handler = actionHandlers[action.type];
-    if (!handler) {
-      return { success: true, result: `Action '${action.type}' acknowledged (no-op)` };
-    }
-    return await handler(action.config, event, tenantId);
-  } catch (err: any) {
-    return { success: false, error: err.message };
-  }
-}
-
-async function processEvent(event: CrmEvent) {
-  // Load all active workflows for this tenant
-  const { rows: workflows } = await pool.query(
-    `SELECT * FROM workflow_definitions
-     WHERE tenant_id = $1 AND is_active = TRUE`,
-    [event.tenant_id]
+  const { rows: [run] } = await pool.query(
+    `INSERT INTO workflow_runs (tenant_id, workflow_id, trigger_event, status)
+     VALUES ($1, $2, $3, 'running') RETURNING id`,
+    [event.tenant_id, wf.id, JSON.stringify(event)],
   );
+  const ctx: ActionContext = {
+    tenantId: event.tenant_id, workflowId: wf.id, workflowName: wf.name,
+    event, record, context, depth: eventDepth(event),
+  };
+  const steps: StepLog[] = [];
+  let status = "completed";
+  for (const action of wf.def.actions) {
+    if (action.delayMinutes > 0) {
+      await pool.query(
+        `INSERT INTO workflow_delayed_actions (tenant_id, workflow_id, run_id, action, event, run_at)
+         VALUES ($1, $2, $3, $4, $5, NOW() + make_interval(mins => $6))`,
+        [event.tenant_id, wf.id, run.id, JSON.stringify(action), JSON.stringify(event), action.delayMinutes],
+      );
+      steps.push(logStep(action.type, { status: "scheduled", message: `Scheduled in ${action.delayMinutes} min` }));
+      continue;
+    }
+    const outcome = await runAction(action, ctx);
+    steps.push(logStep(action.type, outcome));
+    if (outcome.status === "failed") { status = "failed"; break; }
+  }
+  await pool.query(
+    `UPDATE workflow_runs SET status = $1, steps_log = $2, completed_at = NOW(), error_message = $3 WHERE id = $4`,
+    [status, JSON.stringify(steps), status === "failed" ? steps[steps.length - 1]?.result ?? null : null, run.id],
+  );
+}
 
-  for (const wf of workflows as WorkflowDef[]) {
-    if (!matchesTrigger(wf, event)) continue;
-    if (!evaluateConditions(wf.conditions, event)) continue;
+export async function processEvent(event: CrmEvent): Promise<number> {
+  if (eventDepth(event) >= MAX_WORKFLOW_DEPTH) return 0; // runaway automation chain
+  const { rows } = await pool.query(
+    `SELECT id, name, trigger, conditions, actions FROM workflow_definitions
+      WHERE tenant_id = $1 AND is_active = TRUE`,
+    [event.tenant_id],
+  );
+  const matching = rows
+    .map((r) => ({ r, check: checkDefinition(r) }))
+    .filter((x): x is { r: typeof x.r; check: { ok: true; def: WorkflowDefinition } } => x.check.ok)
+    .filter((x) => matchesTrigger(x.check.def.trigger, event));
+  if (!matching.length) return 0;
+  const record = await loadRecord(event);
+  for (const { r, check } of matching) {
+    try {
+      await runWorkflow({ id: r.id, name: r.name, def: check.def }, event, record);
+    } catch (err) {
+      console.error(`[workflow-engine] workflow ${r.id} failed on event ${event.id}:`, (err as Error).message);
+    }
+  }
+  return matching.length;
+}
 
-    // Create a workflow run
-    const { rows: runRows } = await pool.query(
-      `INSERT INTO workflow_runs (tenant_id, workflow_id, trigger_event, status)
-       VALUES ($1, $2, $3, 'running')
-       RETURNING id`,
-      [event.tenant_id, wf.id, JSON.stringify(event)]
+async function runDueDelayedActions(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `SELECT d.*, w.name AS workflow_name, w.is_active
+         FROM workflow_delayed_actions d JOIN workflow_definitions w ON w.id = d.workflow_id
+        WHERE d.status = 'pending' AND d.run_at <= NOW()
+        ORDER BY d.run_at LIMIT 50
+        FOR UPDATE OF d SKIP LOCKED`,
     );
-    const runId = runRows[0].id;
-
-    const stepsLog: Array<{ action: string; result: string; success: boolean; timestamp: string }> = [];
-    let runStatus = "completed";
-
-    // Execute actions sequentially
-    for (const action of wf.actions) {
-      const result = await executeAction(action, event, event.tenant_id);
-      stepsLog.push({
-        action: action.type,
-        result: result.result ?? result.error ?? "",
-        success: result.success,
-        timestamp: new Date().toISOString(),
-      });
-
-      if (!result.success) {
-        runStatus = "failed";
-        break;
+    for (const d of rows) {
+      let outcome: ActionOutcome;
+      if (!d.is_active) {
+        outcome = { status: "skipped", message: "Workflow deactivated before the delayed action ran" };
+      } else {
+        const event = d.event as CrmEvent;
+        const record = await loadRecord(event);
+        outcome = await runAction(d.action, {
+          tenantId: d.tenant_id, workflowId: d.workflow_id, workflowName: d.workflow_name,
+          event, record, context: buildContext(event, record), depth: eventDepth(event),
+        });
+      }
+      await client.query(
+        `UPDATE workflow_delayed_actions SET status = $2, result = $3, attempts = attempts + 1, executed_at = NOW()
+          WHERE id = $1`,
+        [d.id, outcome.status === "success" ? "done" : outcome.status, outcome.message],
+      );
+      if (d.run_id) {
+        await client.query(
+          `UPDATE workflow_runs SET steps_log = COALESCE(steps_log, '[]'::jsonb) || $2::jsonb,
+                  status = CASE WHEN $3 THEN 'failed' ELSE status END,
+                  error_message = CASE WHEN $3 THEN $4 ELSE error_message END
+            WHERE id = $1`,
+          [d.run_id, JSON.stringify([logStep(d.action?.type ?? "action", outcome)]), outcome.status === "failed", outcome.message],
+        );
       }
     }
-
-    // Update run record
-    await pool.query(
-      `UPDATE workflow_runs
-       SET status = $1, steps_log = $2, completed_at = NOW(),
-           error_message = $3
-       WHERE id = $4`,
-      [runStatus, JSON.stringify(stepsLog),
-       runStatus === "failed" ? stepsLog[stepsLog.length - 1]?.result : null,
-       runId]
-    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    console.error("[workflow-engine] delayed actions failed:", (err as Error).message);
+  } finally {
+    client.release();
   }
 }
 
-/**
- * Start the workflow engine polling loop.
- * Polls crm_events for unprocessed events every 5 seconds.
- */
-export async function startWorkflowEngine() {
-  // Resume from the durable cursor so events created during a deploy/crash
-  // window are not silently skipped. Falls back to now() only if the state row
-  // is somehow missing (first-ever boot before the migration seeded it).
-  let lastProcessedAt = new Date().toISOString();
-  try {
-    const { rows } = await pool.query<{ last_processed_at: string }>(
-      `SELECT last_processed_at FROM workflow_engine_state WHERE id = TRUE`
-    );
-    if (rows[0]?.last_processed_at) {
-      lastProcessedAt = new Date(rows[0].last_processed_at).toISOString();
+export async function consumeOnce(): Promise<number> {
+  const { rows: events } = await pool.query(
+    // created_at is also selected as exact text: node-pg turns timestamptz into a
+    // millisecond Date, which never equals the microsecond value in an UPDATE —
+    // events would never be marked processed and would re-run every tick.
+    `SELECT id, tenant_id, event_type, entity_type, entity_id, payload, created_at,
+            created_at::text AS created_at_exact
+       FROM crm_events
+      WHERE processed_at IS NULL AND created_at > NOW() - INTERVAL '7 days'
+      ORDER BY created_at, id
+      LIMIT ${BATCH}`,
+  );
+  for (const event of events as CrmEvent[]) {
+    await processEvent(event).catch((err) =>
+      console.error("[workflow-engine] event failed:", event.id, (err as Error).message));
+    try {
+      await dispatchWebhookEvent(event.tenant_id, event.event_type, {
+        entityType: canonicalEntityType(event.entity_type),
+        entityId: event.entity_id,
+        payload: event.payload,
+        occurredAt: event.created_at,
+      });
+    } catch (err) {
+      console.error("[workflow-engine] webhook dispatch failed:", (err as Error).message);
     }
-  } catch (err) {
-    console.error("[workflow-engine] could not load cursor, starting from now():", err);
+    await pool.query(
+      `UPDATE crm_events SET processed_at = NOW() WHERE id = $1 AND created_at = $2::timestamptz`,
+      [event.id, (event as CrmEvent & { created_at_exact: string }).created_at_exact],
+    );
   }
+  await runDueDelayedActions();
+  return events.length;
+}
 
-  // Singleton across gateway replicas: only the lock holder consumes the
-  // crm_events cursor, otherwise every replica would fire each workflow action
-  // and outbound webhook once per replica.
+export async function startWorkflowEngine() {
+  // Singleton across gateway replicas: only the lock holder consumes events,
+  // otherwise every replica would fire each action and webhook once per replica.
   const leader = createLeaderLock(requestRedis(), "workflow-engine", 30_000);
   let running = false;
-
   const poll = async () => {
-    if (running) return; // previous tick still in flight
+    if (running) return;
     if (!(await leader.tick())) return;
     running = true;
     try {
-      if (leader.justElected) {
-        // Another replica may have advanced the durable cursor while we were a
-        // follower — never resume from our stale in-memory copy.
-        const { rows } = await pool.query<{ last_processed_at: string }>(
-          `SELECT last_processed_at FROM workflow_engine_state WHERE id = TRUE`
-        );
-        if (rows[0]?.last_processed_at) {
-          lastProcessedAt = new Date(rows[0].last_processed_at).toISOString();
-        }
-      }
-      const { rows: events } = await pool.query(
-        `SELECT id, tenant_id, event_type, entity_type, entity_id, payload, created_at
-         FROM crm_events
-         WHERE created_at > $1
-         ORDER BY created_at ASC
-         LIMIT 100`,
-        [lastProcessedAt]
-      );
-
-      for (const event of events as CrmEvent[]) {
-        await processEvent(event);
-        // Fan the event out to any subscribed outbound webhooks. This poll
-        // loop is the central consumer of crm_events, so it is also the
-        // dispatch point (previously dispatchWebhookEvent had no caller and
-        // webhook subscriptions never fired).
-        try {
-          await dispatchWebhookEvent(event.tenant_id, event.event_type, {
-            entityType: event.entity_type,
-            entityId: event.entity_id,
-            payload: event.payload,
-            occurredAt: (event as any).created_at,
-          });
-        } catch (err: any) {
-          console.error("[workflow-engine] webhook dispatch failed:", err.message);
-        }
-        lastProcessedAt = (event as any).created_at;
-        // Persist the cursor after each event so a crash resumes cleanly.
-        await pool.query(
-          `UPDATE workflow_engine_state SET last_processed_at = $1, updated_at = NOW() WHERE id = TRUE`,
-          [lastProcessedAt]
-        ).catch((e) => console.error("[workflow-engine] cursor persist failed:", e.message));
+      // Drain backlog in batches before yielding.
+      for (let i = 0; i < 10; i++) {
+        if ((await consumeOnce()) < BATCH) break;
       }
     } catch (err) {
       console.error("[workflow-engine] poll error:", err);
@@ -445,8 +214,6 @@ export async function startWorkflowEngine() {
       running = false;
     }
   };
-
-  // Poll every 5 seconds
   setInterval(poll, 5000);
   console.log("[workflow-engine] started — polling every 5s");
 }

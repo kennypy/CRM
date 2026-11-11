@@ -12,7 +12,7 @@ import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
 import { computeRealityScore } from "../lib/reality-score";
-import { actorId, diffTracked, recordFieldChanges } from "../lib/field-history";
+import { actorId, diffTracked, eventOrigin, recordFieldChanges } from "../lib/field-history";
 import { OwnerIdList } from "../lib/owner-filter";
 
 /** Deal fields captured in field_history on every change. */
@@ -379,7 +379,9 @@ export async function dealsRoutes(server: FastifyInstance) {
     if (f.stage !== undefined) {
       setParts.push("d.stage = $stage");
       params.stage = f.stage;
-      stageChanged = true;
+      // Only a real transition fires stage events (re-saving the same stage
+      // used to re-trigger stage automations).
+      stageChanged = (beforeRows[0] as { stage?: string }).stage !== f.stage;
     }
 
     await cypher(
@@ -425,10 +427,15 @@ export async function dealsRoutes(server: FastifyInstance) {
         : "deal.stage_changed"
       : "deal.updated";
 
-    await pool.query(
+    const previousStage = (beforeRows[0] as { stage?: string }).stage ?? null;
+    const evPayload = { ...f, previousStage, changes: historyChanges, _origin: eventOrigin(request) };
+    // A stage change is still an update: publish deal.updated too so
+    // "any update" subscribers see every edit.
+    const evTypes = evType === "deal.updated" ? [evType] : [evType, "deal.updated"];
+    for (const t of evTypes) await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, $2, 'user', 'deal', $3, $4)`,
-      [tenantId, evType, id, JSON.stringify(f)]
+      [tenantId, t, id, JSON.stringify(evPayload)]
     ).catch((err) => { console.error("[deals] non-fatal write failed:", err.message); });
 
     const updated = await cypher(

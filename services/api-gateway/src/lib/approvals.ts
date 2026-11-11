@@ -17,6 +17,8 @@ import {
   buildApproverChain, computeApprovalLevels, effectiveDiscountPct, type DiscountTier,
 } from "./approval-routing";
 import { getManagerChain } from "./visibility";
+import { notifyUser } from "./notify";
+import { emitEvent } from "./events";
 
 export class ApprovalError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -24,12 +26,17 @@ export class ApprovalError extends Error {
   }
 }
 
+/** Side effects (Slack DMs) that must only happen once the change is committed. */
+const afterCommit = new WeakMap<PoolClient, (() => Promise<unknown>)[]>();
+
 async function withTx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
+  afterCommit.set(client, []);
   try {
     await client.query("BEGIN");
     const out = await fn(client);
     await client.query("COMMIT");
+    for (const f of afterCommit.get(client) ?? []) await f().catch(() => undefined);
     return out;
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -43,11 +50,21 @@ async function notify(
   c: PoolClient, tenantId: string, userId: string, title: string, body: string, requestId: string,
   priority: "normal" | "high" = "normal",
 ) {
-  await c.query(
-    `INSERT INTO notifications (tenant_id, user_id, type, title, body, priority, action_url, entity_type, entity_id)
-     VALUES ($1, $2, 'approval', $3, $4, $5, '/approvals', 'approval_request', $6)`,
-    [tenantId, userId, title, body, priority, requestId],
-  );
+  const { slack } = await notifyUser({
+    tenantId, userId, type: "approval", title, body, priority, actionUrl: "/approvals",
+    entityType: "approval_request", entityId: requestId, channels: "both",
+  }, c);
+  afterCommit.get(c)?.push(slack);
+}
+
+/** Publish an approval lifecycle event in the same transaction as the change. */
+async function approvalEvent(
+  c: PoolClient, tenantId: string, type: string, req: { id: string; entity_id: string },
+  actorId: string, extra: Record<string, unknown> = {},
+) {
+  const { rows: [q] } = await c.query(`SELECT deal_id FROM quotes WHERE id = $1`, [req.entity_id]);
+  await emitEvent(tenantId, type, req.id, { quoteId: req.entity_id, dealId: q?.deal_id ?? null, ...extra },
+    { actorId, client: c });
 }
 
 export interface QuoteApprovalFacts {
@@ -130,6 +147,8 @@ export async function submitQuoteForApproval(
     }
     await notify(c, tenantId, approvers[0], `Approval needed: ${label}`,
       `Discount ${facts.discountPct}% on ${facts.total.toFixed(2)} (step 1 of ${approvers.length})`, req.id, "high");
+    await approvalEvent(c, tenantId, "approval.submitted", { id: req.id, entity_id: quoteId }, submitterId,
+      { discountPct: facts.discountPct, total: facts.total, levels: approvers.length });
     return getRequest(c, tenantId, req.id);
   });
 }
@@ -154,6 +173,7 @@ export async function actOnRequest(
       await c.query(
         `UPDATE approval_steps SET status = 'skipped' WHERE request_id = $1 AND status = 'pending'`, [requestId],
       );
+      await approvalEvent(c, tenantId, "approval.recalled", req, actorId);
       return getRequest(c, tenantId, requestId);
     }
 
@@ -188,6 +208,7 @@ export async function actOnRequest(
       );
       await c.query(`UPDATE approval_steps SET status = 'skipped' WHERE request_id = $1 AND status = 'pending'`, [requestId]);
       await notify(c, tenantId, req.submitted_by, `Rejected: ${req.entity_label}`, comment ?? "", requestId, "high");
+      await approvalEvent(c, tenantId, "approval.rejected", req, actorId, { reason: comment ?? null });
       return getRequest(c, tenantId, requestId);
     }
 
@@ -211,6 +232,7 @@ export async function actOnRequest(
         );
       }
       await notify(c, tenantId, req.submitted_by, `Approved: ${req.entity_label}`, "All approval steps complete", requestId);
+      await approvalEvent(c, tenantId, "approval.approved", req, actorId);
     }
     return getRequest(c, tenantId, requestId);
   });

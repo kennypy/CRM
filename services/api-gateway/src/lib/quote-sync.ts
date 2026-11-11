@@ -7,6 +7,7 @@ import type { FastifyRequest } from "fastify";
 import { pool } from "../db";
 import { internalFetch, internalIdentityHeaders } from "./internal-fetch";
 import { GRAPH_CORE_URL } from "./service-urls";
+import { emitEvent } from "./events";
 
 export class SyncError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -59,5 +60,7 @@ export async function syncQuoteToDeal(request: FastifyRequest, quoteId: string) 
   } finally {
     client.release();
   }
+  await emitEvent(tenantId, "quote.synced", quoteId, { dealId: q.deal_id, value: Number(q.total), currency: q.currency },
+    { actorId: request.user.sub });
   return { dealId: q.deal_id as string, value: Number(q.total), currency: q.currency as string };
 }
