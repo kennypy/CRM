@@ -12,7 +12,7 @@ import {
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
   FileText, Package, ChevronDown, Columns3, Box, LockKeyhole, UsersRound, Upload,
-  Copy, Check, CalendarClock, Layers,
+  Copy, Check, CalendarClock, Layers, Route, FormInput, ShieldAlert, BookOpen,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -25,6 +25,10 @@ import { TeamsTab } from "@/components/settings/teams-tab";
 import { NavigationTab } from "@/components/settings/navigation-tab";
 import { ExchangeRatesCard } from "@/components/settings/exchange-rates-card";
 import { ProductsImportModal } from "@/components/settings/products-import-modal";
+import { AssignmentRulesTab } from "@/components/settings/assignment-rules-tab";
+import { WebFormsTab } from "@/components/settings/web-forms-tab";
+import { ValidationRulesTab } from "@/components/settings/validation-rules-tab";
+import { PriceBooksTab } from "@/components/settings/price-books-tab";
 import { previewEnabled } from "@/lib/feature-flags";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -98,7 +102,7 @@ function detectedTimezone(): string {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
 }
 
-type Tab = "profile" | "general" | "users" | "teams" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions" | "navigation";
+type Tab = "profile" | "general" | "users" | "teams" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions" | "navigation" | "assignment-rules" | "web-forms" | "validation-rules" | "price-books";
 
 // ── Theme Selector ─────────────────────────────────────────────────────────────
 
@@ -2788,6 +2792,10 @@ function useTabs() {
     { id: "integrations" as Tab,     label: t("tabs.integrations"),   icon: Plug,      adminOnly: true },
     { id: "quoting" as Tab,          label: t("tabs.quoting"),        icon: FileText,  adminOnly: true },
     { id: "products" as Tab,         label: t("tabs.products"),       icon: Package,   adminOnly: true },
+    { id: "price-books" as Tab,      label: t("tabs.priceBooks"),     icon: BookOpen,  adminOnly: true },
+    { id: "assignment-rules" as Tab, label: t("tabs.assignmentRules"), icon: Route,    adminOnly: true },
+    { id: "web-forms" as Tab,        label: t("tabs.webForms"),       icon: FormInput, adminOnly: true },
+    { id: "validation-rules" as Tab, label: t("tabs.validationRules"), icon: ShieldAlert, adminOnly: true },
     { id: "communications" as Tab,   label: t("tabs.communications"), icon: Phone,     adminOnly: true },
     { id: "billing" as Tab,          label: t("tabs.billing"),        icon: CreditCard, adminOnly: true },
     { id: "custom-fields" as Tab,    label: t("tabs.customFields"),   icon: Columns3,   adminOnly: true },
@@ -2800,7 +2808,7 @@ function useTabs() {
 const VALID_TAB_IDS: Set<string> = new Set([
   "profile", "security", "general", "users", "teams", "integrations", "quoting",
   "products", "communications", "billing", "custom-fields", "custom-objects", "permissions",
-  "navigation",
+  "navigation", "assignment-rules", "web-forms", "validation-rules", "price-books",
 ]);
 
 function SettingsInner() {
@@ -2881,6 +2889,10 @@ function SettingsInner() {
         {tab === "custom-objects" && <CustomObjectsTab />}
         {tab === "permissions"    && <PermissionsTab />}
         {tab === "navigation"     && <NavigationTab />}
+        {tab === "price-books"      && <PriceBooksTab />}
+        {tab === "assignment-rules" && <AssignmentRulesTab />}
+        {tab === "web-forms"        && <WebFormsTab />}
+        {tab === "validation-rules" && <ValidationRulesTab />}
       </div>
     </div>
   );

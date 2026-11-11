@@ -11,7 +11,7 @@ import {
   MoreHorizontal, Shield, CreditCard, X, Mail, FileText,
   Headphones, Target, Globe, GraduationCap, ShieldCheck,
   Cog, LineChart, ShieldAlert, Store, Megaphone,
-  ScrollText, BookOpen, CalendarClock,
+  ScrollText, BookOpen, CalendarClock, ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getStoredUser } from "@/lib/auth";
@@ -39,6 +39,7 @@ const MORE_NAV = [
   { href: "/tasks",        icon: CheckSquare,  labelKey: "tasks"          },
   { href: "/scheduler",    icon: CalendarClock, labelKey: "scheduler"     },
   { href: "/quotes",       icon: FileText,     labelKey: "quotes"         },
+  { href: "/approvals",    icon: ClipboardCheck, labelKey: "approvals"    },
   { href: "/reports",      icon: BarChart3,    labelKey: "reports"        },
   { href: "/insights",     icon: LineChart,     labelKey: "insights"      },
   { href: "/forecasting",  icon: Target,        labelKey: "forecasting"   },

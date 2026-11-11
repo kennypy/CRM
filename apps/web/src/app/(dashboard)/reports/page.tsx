@@ -10,6 +10,7 @@ import {
 import { cn, formatDate as fmtDate, formatRelativeTime as fmtRelative } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useTranslations } from "next-intl";
+import { StandardReports } from "@/components/reports/standard-reports";
 
 import {
   SOURCE_LABELS,
@@ -659,7 +660,8 @@ function ReportCard({ report, onDelete, onSubscribe, onSnapshot }: {
 
 export default function ReportsPage() {
   const t = useTranslations("reports");
-  const [tab,            setTab]            = useState<"saved" | "quick">("saved");
+  const [tab,            setTab]            = useState<"saved" | "quick" | "standard">("saved");
+  const tsr = useTranslations("standardReports");
   const [reports,        setReports]        = useState<SavedReport[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [search,         setSearch]         = useState("");
@@ -709,6 +711,7 @@ export default function ReportsPage() {
         {([
           { key: "saved" as const, label: "Saved Reports", Icon: Rows3 },
           { key: "quick" as const, label: "Quick Run",      Icon: Play  },
+          { key: "standard" as const, label: tsr("tab"),    Icon: BarChart3 },
         ]).map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
@@ -717,6 +720,9 @@ export default function ReportsPage() {
           </button>
         ))}
       </div>
+
+      {/* Standard Lead-to-Quote reports */}
+      {tab === "standard" && <StandardReports />}
 
       {/* Saved Reports */}
       {tab === "saved" && (

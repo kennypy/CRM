@@ -9,6 +9,8 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
+import { useTranslations } from "next-intl";
+import { getData, type PriceBook, type PriceBookEntry } from "@/lib/l2q";
 import {
   DEMO_PRODUCTS, BILLING_CYCLE_LABELS,
   computeLineTotal, computeQuoteTotals,
@@ -153,7 +155,57 @@ export function QuoteBuilderModal({
       .catch(() => { /* use demo data */ });
   }, []);
 
-  const filteredProducts = products.filter((p) =>
+  // ── Price book ─────────────────────────────────────────────────────────────
+  // When a price book is chosen, the picker offers only that book's active
+  // entries and fills unitPrice from the book (not the product's list price).
+  const tpb = useTranslations("priceBooks");
+  const [priceBooks,  setPriceBooks]  = useState<PriceBook[]>([]);
+  const [priceBookId, setPriceBookId] = useState<string>(existing?.priceBookId ?? "");
+  const [bookEntries, setBookEntries] = useState<PriceBookEntry[] | null>(null);
+
+  useEffect(() => {
+    getData<PriceBook[]>("/api/v1/price-books")
+      .then((books) => {
+        const active = (books ?? []).filter((b) => b.active);
+        setPriceBooks(active);
+        // New quotes default to the standard book when one exists.
+        if (!existing && !priceBookId) {
+          const std = active.find((b) => b.isStandard);
+          if (std) setPriceBookId(std.id);
+        }
+      })
+      .catch(() => { /* price books optional */ });
+  }, []);
+
+  useEffect(() => {
+    if (!priceBookId) { setBookEntries(null); return; }
+    let alive = true;
+    getData<PriceBookEntry[]>(`/api/v1/price-books/${priceBookId}/entries`)
+      .then((entries) => { if (alive) setBookEntries((entries ?? []).filter((e) => e.active)); })
+      .catch(() => { if (alive) setBookEntries(null); });
+    const book = priceBooks.find((b) => b.id === priceBookId);
+    if (book && !isEdit) setCurrency(book.currency);
+    return () => { alive = false; };
+  }, [priceBookId, priceBooks]);
+
+  const pickerProducts: Product[] = bookEntries
+    ? bookEntries.map((e) => {
+        const base = products.find((p) => p.id === e.productId);
+        const book = priceBooks.find((b) => b.id === priceBookId);
+        return {
+          id: e.productId,
+          sku: base?.sku ?? null,
+          name: base?.name ?? e.productName,
+          description: base?.description ?? null,
+          unitPrice: e.unitPrice,
+          currency: book?.currency ?? base?.currency ?? currency,
+          billingCycle: base?.billingCycle ?? "one_time",
+          active: true,
+        };
+      })
+    : products;
+
+  const filteredProducts = pickerProducts.filter((p) =>
     pickerSearch === "" ||
     p.name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
     (p.sku ?? "").toLowerCase().includes(pickerSearch.toLowerCase())
@@ -203,6 +255,7 @@ export function QuoteBuilderModal({
         taxRate,
         discountType:  allLinesMatchOrder ? "none" : discountType,
         discountValue: allLinesMatchOrder ? 0      : discountValue,
+        priceBookId:   priceBookId || undefined,
         dealId:      dealId      || existing?.dealId      || undefined,
         companyId:   companyId   || existing?.companyId   || undefined,
         companyName: companyName || existing?.companyName || undefined,
@@ -314,6 +367,17 @@ export function QuoteBuilderModal({
               )}
             </div>
 
+            {priceBooks.length > 0 && (
+              <div>
+                <label className={labelCls}>{tpb("priceBook")}</label>
+                <select value={priceBookId} onChange={(e) => setPriceBookId(e.target.value)} className={inputCls}>
+                  <option value="">{tpb("noPriceBook")}</option>
+                  {priceBooks.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name} ({b.currency}){b.isStandard ? ` · ${tpb("standard")}` : ""}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className={labelCls}>Currency</label>
               <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputCls}>
