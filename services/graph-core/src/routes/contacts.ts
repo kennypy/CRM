@@ -13,6 +13,11 @@ import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
 import { getEgoNetwork } from "../queries/graph-queries";
+import { OwnerIdList } from "../lib/owner-filter";
+import { actorId, diffTracked, recordFieldChanges } from "../lib/field-history";
+import { leadConvertRoutes } from "./lead-convert";
+
+const TRACKED_CONTACT_FIELDS = ["ownerId", "isLead", "email", "source"] as const;
 
 const SeniorityValues = [
   "individual_contributor", "manager", "director", "vp", "c_suite", "founder",
@@ -37,7 +42,11 @@ const GetContactsQuery = z.object({
   search:    z.string().optional(),
   companyId: z.string().uuid().optional(),
   isLead:    z.enum(["true", "false"]).optional(),
-  limit:     z.coerce.number().int().min(1).max(100).default(20),
+  ownerId:   z.string().uuid().optional(),
+  /** Gateway-set under a Private sharing default (client values are stripped). */
+  visibleOwnerIds: OwnerIdList.optional(),
+  limit:     z.coerce.number().int().min(1).max(200).default(20),
+  offset:    z.coerce.number().int().min(0).max(1_000_000).default(0),
 });
 
 
@@ -50,13 +59,15 @@ const FETCH_ONE = `
     email: p.email, title: p.title, phone: p.phone,
     seniority: p.seniority, influence_score: p.influence_score,
     last_activity_at: p.last_activity_at, source: p.source,
-    owner_id: p.owner_id,
+    owner_id: p.owner_id, is_lead: p.is_lead, converted_at: p.converted_at,
     custom_fields: p.custom_fields,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
   } LIMIT 1`;
 
 export async function contactsRoutes(server: FastifyInstance) {
+  await leadConvertRoutes(server);
+
   /**
    * GET /contacts?tenantId=&search=&companyId=&limit=
    */
@@ -68,7 +79,7 @@ export async function contactsRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
       });
     }
-    const { tenantId, search, companyId, isLead, limit } = parsed.data;
+    const { tenantId, search, companyId, isLead, ownerId, visibleOwnerIds, limit, offset } = parsed.data;
     const params: Record<string, unknown> = { tenantId };
 
     let cyph = `MATCH (p:Person {tenant_id: $tenantId})\n`;
@@ -81,6 +92,8 @@ export async function contactsRoutes(server: FastifyInstance) {
     const where: string[] = [];
     if (isLead === "true")  where.push("p.is_lead = true");
     if (isLead === "false") where.push("(p.is_lead IS NULL OR p.is_lead = false)");
+    if (ownerId) { where.push("p.owner_id = $ownerId"); params.ownerId = ownerId; }
+    if (visibleOwnerIds) { where.push("p.owner_id IN $visibleOwnerIds"); params.visibleOwnerIds = visibleOwnerIds; }
     if (search) {
       where.push(
         "(toLower(p.first_name) CONTAINS toLower($search) OR toLower(p.last_name) CONTAINS toLower($search) OR toLower(p.email) CONTAINS toLower($search) OR toLower(p.first_name + ' ' + p.last_name) CONTAINS toLower($search))"
@@ -89,26 +102,35 @@ export async function contactsRoutes(server: FastifyInstance) {
     }
     if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
 
+    const countRows = await cypher<{ n: number }>(`${cyph}  WITH count(p) AS n RETURN {n: n}`, params)
+      .catch(() => [] as { n: number }[]);
+    const total = countRows[0]?.n != null ? Number(countRows[0].n) : undefined;
+
     cyph += `  OPTIONAL MATCH (p)-[:WORKS_AT]->(co:Company)
+  WITH p, co
+  ORDER BY p.last_name, p.first_name, p.id
+  SKIP ${offset}
+  LIMIT ${limit}
   RETURN {
     id: p.id, tenant_id: p.tenant_id,
     first_name: p.first_name, last_name: p.last_name,
     email: p.email, title: p.title, phone: p.phone,
     seniority: p.seniority, influence_score: p.influence_score,
     last_activity_at: p.last_activity_at, source: p.source,
-    owner_id: p.owner_id,
+    owner_id: p.owner_id, is_lead: p.is_lead, converted_at: p.converted_at,
     custom_fields: p.custom_fields,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
-  }
-  ORDER BY p.last_name, p.first_name
-  LIMIT ${limit}`;     // validated integer — safe literal
+  }`;     // offset/limit are validated integers — safe literals
 
     const rows = await cypher(cyph, params);
     return reply.send({
       success: true,
       data: rows.map(toContactResponse),
-      pagination: { total: rows.length, limit, hasMore: rows.length === limit },
+      pagination: {
+        total, limit, offset,
+        hasMore: total != null ? offset + rows.length < total : rows.length === limit,
+      },
     });
   });
 
@@ -210,6 +232,15 @@ export async function contactsRoutes(server: FastifyInstance) {
       }
     }
 
+    if (isLead) {
+      // Denominator for lead-conversion reporting (non-fatal).
+      await pool.query(
+        `INSERT INTO lead_registry (tenant_id, contact_id, lead_source, owner_id)
+         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+        [tenantId, id, source ?? "user", ownerId ?? null],
+      ).catch((err) => { console.error("[contacts] lead registry write failed:", err.message); });
+    }
+
     await emitEvent(tenantId, "contact.created", "person", id, "user", {});
 
     const created = await cypher(
@@ -284,6 +315,16 @@ export async function contactsRoutes(server: FastifyInstance) {
     const params: Record<string, unknown> = { id, tenantId, now: new Date().toISOString() };
     const setParts = ["p.updated_at = $now"];
 
+    const beforeRows = await cypher<Record<string, unknown>>(
+      `MATCH (p:Person {id: $id, tenant_id: $tenantId})
+       RETURN {ownerId: p.owner_id, isLead: p.is_lead, email: p.email, source: p.source}`,
+      { id, tenantId },
+    );
+    if (!beforeRows.length) {
+      return reply.status(404).send({ success: false, error: { code: "NOT_FOUND", message: "Contact not found" } });
+    }
+    const historyChanges = diffTracked(beforeRows[0], fields as Record<string, unknown>, TRACKED_CONTACT_FIELDS);
+
     if (fields.firstName) { setParts.push("p.first_name = $firstName"); params.firstName = fields.firstName; }
     if (fields.lastName)  { setParts.push("p.last_name  = $lastName");  params.lastName  = fields.lastName; }
     // `email` was accepted by the schema but never written (silent no-op, same
@@ -322,6 +363,7 @@ export async function contactsRoutes(server: FastifyInstance) {
       }
     }
 
+    await recordFieldChanges(tenantId, "contact", id, historyChanges, actorId(request));
     await emitEvent(tenantId, "contact.updated", "person", id, "user", fields);
 
     const updated = await cypher(
@@ -386,6 +428,7 @@ function toContactResponse(row: Record<string, unknown>) {
     phone:           row.phone          || undefined,
     seniority:       row.seniority      || undefined,
     isLead:          row.is_lead === true,
+    convertedAt:     (row.converted_at as string) || undefined,
     source:          (row.source as string) || "user",
     ownerId:         (row.owner_id as string) || undefined,
     influenceScore:  row.influence_score,

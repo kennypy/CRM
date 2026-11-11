@@ -51,7 +51,15 @@ import { anomaliesRoutes }        from "./routes/anomalies";
 import { marketplaceRoutes }      from "./routes/marketplace";
 import { zoomRoutes }             from "./routes/zoom";
 import { slackRoutes }            from "./routes/slack";
-import { errorHandler }           from "./middleware/error-handler";
+import { errorHandler, notFoundHandler, resolveRequestId } from "./middleware/error-handler";
+import { createIdempotency, withStoreTimeout } from "./middleware/idempotency";
+import { workersEnabled } from "./lib/leader-lock";
+import { flushUsage } from "./lib/usage-recorder";
+import { GRAPH_CORE_URL, AUTH_SERVICE_URL } from "./lib/service-urls";
+import {
+  registerHealthRoutes, installGracefulShutdown, isHealthPath,
+  pgCheck, redisCheck, httpCheck,
+} from "@nexcrm/service-common/lifecycle";
 import { authMiddleware }         from "./middleware/auth";
 import { typeDefs }               from "./graphql/schema";
 import { resolvers }              from "./graphql/resolvers";
@@ -81,8 +89,15 @@ import { bookingRoutes }                 from "./routes/booking";
 import { auditLogRoutes }                from "./routes/audit-log";
 import { searchRoutes }                  from "./routes/search";
 import { teamsRoutes }                   from "./routes/teams";
-import { redis }                        from "@nexcrm/service-common/redis";
-import { setTenantContext, pool }       from "./db";
+import { leadsRoutes }                   from "./routes/leads";
+import { webToLeadRoutes }               from "./routes/web-to-lead";
+import { priceBooksRoutes }              from "./routes/price-books";
+import { approvalsRoutes }               from "./routes/approvals";
+import { validationRulesRoutes }         from "./routes/validation-rules";
+import { standardReportsRoutes }         from "./routes/standard-reports";
+import { usersLifecycleRoutes }          from "./routes/users-lifecycle";
+import { redis, requestRedis }         from "@nexcrm/service-common/redis";
+import { setTenantContext, pool, servicePool, platformPool } from "./db";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
 
 const server = Fastify({
@@ -92,7 +107,9 @@ const server = Fastify({
       ? { target: "pino-pretty", options: { colorize: true } }
       : undefined,
   },
-  genReqId: () => crypto.randomUUID(),
+  // Honour a sane inbound x-request-id (from the LB / web app) so one id
+  // follows a request across services and logs; otherwise mint a UUID.
+  genReqId: (req) => resolveRequestId(req.headers["x-request-id"]),
 
   // ── DDoS / abuse defences ──────────────────────────────────────────────────
   // Reject bodies larger than 512 KB (prevents memory exhaustion from oversized
@@ -143,7 +160,13 @@ async function bootstrap() {
   await server.register(rateLimit, {
     max: 200,
     timeWindow: "1 minute",
-    redis,
+    // Fail-fast client + skipOnError: a Redis outage degrades to "no rate
+    // limiting" instead of hanging every request (the shared client queues
+    // commands forever while disconnected).
+    redis: requestRedis(),
+    skipOnError: true,
+    // Probes from the kubelet / LB must never be throttled.
+    allowList: (req) => isHealthPath(req.url),
     // Key on verified JWT sub (user ID) — not a client-supplied header.
     // Falls back to IP for unauthenticated/pre-auth requests.
     keyGenerator: (req) => {
@@ -162,12 +185,22 @@ async function bootstrap() {
     verify: { algorithms: ["HS256"] },
   });
 
-  // ── Health check (no auth) ────────────────────────────────────────────────
-  server.get("/health", async () => ({
-    status: "ok",
+  // ── Request id on every response ──────────────────────────────────────────
+  server.addHook("onRequest", async (request, reply) => {
+    reply.header("x-request-id", String(request.id));
+  });
+
+  // ── Health checks (no auth) ───────────────────────────────────────────────
+  // /health (legacy), /health/live, /health/ready — see service-common/lifecycle.
+  const health = registerHealthRoutes(server, {
     service: "api-gateway",
-    timestamp: new Date().toISOString(),
-  }));
+    checks: [
+      pgCheck(pool),
+      redisCheck(requestRedis()),
+      httpCheck("graph-core", `${GRAPH_CORE_URL}/health/live`),
+      httpCheck("auth", `${AUTH_SERVICE_URL}/health/live`),
+    ],
+  });
 
   // ── Public routes ─────────────────────────────────────────────────────────
   await server.register(authRoutes, { prefix: "/auth" });
@@ -188,6 +221,10 @@ async function bootstrap() {
   // the credential (minted by managers via POST /api/v1/reports/:id/embed).
   await server.register(embedRoutes, { prefix: "/api/v1/embed" });
 
+  // Web-to-lead capture — PUBLIC (embedded on customer sites). The per-form
+  // unguessable key is the credential; see routes/web-to-lead.ts for defences.
+  await server.register(webToLeadRoutes, { prefix: "/public" });
+
   // ── Protected routes ──────────────────────────────────────────────────────
   server.addHook("preHandler", authMiddleware);
 
@@ -203,6 +240,12 @@ async function bootstrap() {
   // Data-residency backstop: refuse requests for tenants pinned to another
   // region when this stack declares DEPLOYMENT_REGION (no-op otherwise).
   server.addHook("preHandler", residencyGuard);
+
+  // Idempotency-Key replay protection for POST/PATCH under /api/v1. Runs after
+  // auth so keys are scoped to the verified tenant + user.
+  const idempotency = createIdempotency(withStoreTimeout(requestRedis()));
+  server.addHook("preHandler", idempotency.preHandler);
+  server.addHook("onSend", idempotency.onSend);
 
   // Usage metering — count every authenticated API call per tenant (batched;
   // flushed to workspace_usage_stats by the usage recorder). AI endpoints
@@ -277,6 +320,13 @@ async function bootstrap() {
   await server.register(teamsRoutes,             { prefix: "/api/v1/teams" });
   await server.register(kbRoutes,                { prefix: "/api/v1/kb" });
   await server.register(bookingLinksRoutes,      { prefix: "/api/v1/booking-links" });
+  // ── Lead-to-Quote ─────────────────────────────────────────────────────────
+  await server.register(leadsRoutes,             { prefix: "/api/v1/leads" });
+  await server.register(priceBooksRoutes,        { prefix: "/api/v1/price-books" });
+  await server.register(approvalsRoutes,         { prefix: "/api/v1/approvals" });
+  await server.register(validationRulesRoutes,   { prefix: "/api/v1/validation-rules" });
+  await server.register(standardReportsRoutes,   { prefix: "/api/v1/reports/standard" });
+  await server.register(usersLifecycleRoutes,    { prefix: "/api/v1/users" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.
@@ -302,16 +352,26 @@ async function bootstrap() {
 
   // ── Error handling ────────────────────────────────────────────────────────
   server.setErrorHandler(errorHandler);
+  server.setNotFoundHandler(notFoundHandler);
 
   // ── Background workers ────────────────────────────────────────────────────
-  startWebhookDeliveryWorker();
-  startWorkflowEngine();
-  startSlackNotificationWorker();
-  startImportProcessorWorker();
-  startCloseDateCheckerWorker();
-  startDsrProcessorWorker();
-  startScheduledReportsWorker();
-  startExportProcessorWorker();
+  // RUN_WORKERS=false → API-only replica (Helm runs workers in a dedicated
+  // deployment). Default on, so docker-compose keeps a single all-in-one gateway.
+  // BullMQ workers are safe with N consumers; the two interval pollers
+  // (workflow engine, scheduled reports) additionally hold a Redis leader lock.
+  if (workersEnabled()) {
+    startWebhookDeliveryWorker();
+    startWorkflowEngine();
+    startSlackNotificationWorker();
+    startImportProcessorWorker();
+    startCloseDateCheckerWorker();
+    startDsrProcessorWorker();
+    startScheduledReportsWorker();
+    startExportProcessorWorker();
+  } else {
+    server.log.info("RUN_WORKERS=false — background workers disabled in this process");
+  }
+  // Per-process usage batching — must run on every replica that serves traffic.
   startUsageRecorder();
 
   // ── Start ─────────────────────────────────────────────────────────────────
@@ -320,6 +380,19 @@ async function bootstrap() {
 
   await server.listen({ port, host });
   server.log.info(`API Gateway listening on ${host}:${port}`);
+
+  installGracefulShutdown(server, {
+    service: "api-gateway",
+    health,
+    onClose: [
+      () => flushUsage(),
+      () => pool.end(),
+      () => servicePool.end(),
+      () => platformPool.end(),
+      () => redis.quit(),
+      () => requestRedis().quit(),
+    ],
+  });
 }
 
 bootstrap().catch((err) => {

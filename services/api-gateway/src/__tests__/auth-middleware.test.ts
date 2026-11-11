@@ -15,6 +15,9 @@ describe("tenant isolation invariants", () => {
   // anti-abuse checks ever ran — and this test still passed throughout).
   it("PUBLIC_PATHS covers all unauthenticated endpoints", () => {
     // All webhook verification paths must be public (Stripe, Slack, Zoom verify by signature)
+    expect(PUBLIC_PATHS.has("/health")).toBe(true);
+    expect(PUBLIC_PATHS.has("/health/live")).toBe(true);
+    expect(PUBLIC_PATHS.has("/health/ready")).toBe(true);
     expect(PUBLIC_PATHS.has("/webhooks/stripe")).toBe(true);
     expect(PUBLIC_PATHS.has("/webhooks/slack")).toBe(true);
     expect(PUBLIC_PATHS.has("/webhooks/zoom")).toBe(true);

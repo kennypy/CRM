@@ -66,7 +66,7 @@ nexcrm/
 │   ├── service-common/         # Shared Node service infra (RLS pools, Redis, tenant crypto)
 │   └── ui-components/          # Shared React components (Tailwind + CVA)
 ├── infra/
-│   ├── db/                     # DB init scripts + migrations (54 migrations)
+│   ├── db/                     # DB init scripts + migrations
 │   ├── otel/                   # OpenTelemetry collector config
 │   ├── grafana/                # Grafana dashboards + provisioning
 │   ├── prometheus/             # Prometheus scrape config
@@ -135,6 +135,8 @@ Services will be available at:
 | [API.md](docs/API.md) | REST endpoints, GraphQL schema, webhook specs |
 | [SECURITY.md](docs/SECURITY.md) | Security architecture, RBAC, RLS, compliance roadmap |
 | [CURRENCY.md](docs/CURRENCY.md) | Multi-currency model, exchange rates, base-currency rollups |
+| [LEAD_TO_QUOTE.md](docs/LEAD_TO_QUOTE.md) | Lead-to-Quote capability matrix, API, and known gaps |
+| [OPERATIONS.md](docs/OPERATIONS.md) | SLO (99%), alerts, runbooks, backup/restore, HA deployment, sizing |
 
 ---
 
@@ -232,6 +234,24 @@ Services will be available at:
 - [x] Embedded analytics — signed, expiring embed tokens serving white-label, iframe-able report pages
 - [x] Usage metering — API calls, AI events, emails, and calls recorded per workspace and surfaced in admin dashboards
 - [x] Outbound webhooks + export pipeline — event dispatch with signed deliveries and a background export worker
+
+---
+
+## Phase 4 — Lead-to-Quote Parity + Production Readiness
+
+> Full matrix, API list and **known gaps**: [docs/LEAD_TO_QUOTE.md](docs/LEAD_TO_QUOTE.md). Uptime/SLO, deployment and runbooks: [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+- [x] Lead conversion (account match/create + contact + opportunity, one transaction)
+- [x] Lead assignment rules (criteria → user or team round-robin) and web-to-lead forms
+- [x] Price books; discounts measured against list price
+- [x] Multi-step quote approvals routed by the manager hierarchy and discount tiers; approvals inbox
+- [x] Server-side quote PDF; quote ↔ opportunity sync; sequential quote numbers
+- [x] Validation rules (declarative, per object)
+- [x] Field history tracking; opportunity teams and splits
+- [x] Org-wide defaults + role hierarchy enforced on lists *and* records; user deactivation with record transfer
+- [x] Standard L2Q reports (conversion, pipeline, stage duration, win rate, approval cycle time)
+- [x] Health/readiness probes, graceful shutdown, idempotency keys, SLO burn-rate alerts, Helm chart (HA), CloudNativePG guide
+- [ ] Quote email delivery, record types/page layouts, criteria sharing rules, load test at production volume (see gaps)
 
 ---
 

@@ -5,6 +5,7 @@
  * Queries the shared `users` table directly (same DB as the rest of the gateway).
  */
 
+import { createsManagerCycle, deactivateUser } from "./users-lifecycle";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -86,6 +87,8 @@ function toUser(row: Record<string, unknown>) {
     capabilities:  row.capabilities  ?? {},
     profileId:     row.profile_id    ?? null,
     managerId:     row.manager_id    ?? null,
+    active:        row.deleted_at == null,
+    deactivatedAt: row.deleted_at ?? null,
     country:       row.country       ?? null,
     timezone:      row.timezone      ?? null,
     language:      row.language      ?? null,
@@ -100,7 +103,7 @@ export async function usersRoutes(server: FastifyInstance) {
     const { tenantId } = request.user;
     const { rows } = await pool.query(
       `SELECT id, email, first_name, last_name, role, avatar_url, password_hash, last_login_at, created_at, can_quote, capabilities, profile_id, manager_id,
-              country, timezone, language, phone, twilio_number
+              country, timezone, language, phone, twilio_number, deleted_at
        FROM users
        WHERE tenant_id = $1
        ORDER BY created_at ASC`,
@@ -180,15 +183,14 @@ export async function usersRoutes(server: FastifyInstance) {
       });
     }
 
-    const { rowCount } = await pool.query(
-      `DELETE FROM users WHERE id = $1 AND tenant_id = $2`,
-      [id, tenantId]
-    );
-
-    if (!rowCount) {
-      return reply.status(404).send({ success: false, error: { code: "USER_NOT_FOUND" } });
+    // Users are deactivated, never hard-deleted: a hard DELETE orphaned their
+    // CRM records and failed outright (FK) for anyone who had created a quote.
+    const out = await deactivateUser(request, id);
+    if (out.status !== 200) {
+      const code = (out.body as { error?: { code?: string } }).error?.code;
+      if (code === "ALREADY_INACTIVE") return reply.status(204).send();
+      return reply.status(out.status).send(out.body);
     }
-
     return reply.status(204).send();
   });
 
@@ -313,6 +315,17 @@ export async function usersRoutes(server: FastifyInstance) {
     if (d.lastName   !== undefined) { vals.push(d.lastName);  sets.push(`last_name  = $${vals.length}`); }
     if (d.email      !== undefined) { vals.push(d.email.toLowerCase()); sets.push(`email = $${vals.length}`); }
     if (effRole      !== undefined) { vals.push(effRole); sets.push(`role = $${vals.length}`); }
+    if (d.managerId) {
+      const { rows: mgr } = await pool.query(
+        `SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, [d.managerId, tenantId],
+      );
+      if (!mgr.length) {
+        return reply.status(422).send({ success: false, error: { code: "INVALID_MANAGER", message: "Manager must be an active user in this workspace" } });
+      }
+      if (await createsManagerCycle(tenantId, id, d.managerId)) {
+        return reply.status(422).send({ success: false, error: { code: "MANAGER_CYCLE", message: "That manager would create a reporting loop" } });
+      }
+    }
     if (d.managerId  !== undefined) { vals.push(d.managerId); sets.push(`manager_id = $${vals.length}`); }
     if (d.timezone   !== undefined) { vals.push(d.timezone); sets.push(`timezone = $${vals.length}`); }
     if (d.language   !== undefined) { vals.push(d.language); sets.push(`language = $${vals.length}`); }

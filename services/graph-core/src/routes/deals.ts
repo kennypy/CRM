@@ -12,6 +12,13 @@ import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
 import { pool, cypher } from "../db/pool";
 import { computeRealityScore } from "../lib/reality-score";
+import { actorId, diffTracked, recordFieldChanges } from "../lib/field-history";
+import { OwnerIdList } from "../lib/owner-filter";
+
+/** Deal fields captured in field_history on every change. */
+const TRACKED_DEAL_FIELDS = [
+  "stage", "value", "currency", "closeDate", "ownerId", "declaredProbability", "name",
+] as const;
 
 const DealStages = [
   "lead", "qualified", "discovery", "proposal",
@@ -38,7 +45,17 @@ const GetDealsQuery = z.object({
   stage:    z.enum(DealStages).optional(),
   atRisk:   z.enum(["true", "false"]).optional(),
   search:   z.string().optional(),
+  ownerId:  z.string().uuid().optional(),
+  /**
+   * Set ONLY by the API gateway (client-supplied values are stripped there):
+   * owners whose deals the caller may see under a Private sharing default.
+   */
+  visibleOwnerIds: OwnerIdList.optional(),
+  /** Deals the caller is on the opportunity team of (also gateway-set). */
+  visibleDealIds:  OwnerIdList.optional(),
   limit:    z.coerce.number().int().min(1).max(200).default(50),
+  offset:   z.coerce.number().int().min(0).max(1_000_000).default(0),
+  sort:     z.enum(["value", "updated", "close_date"]).default("value"),
 });
 
 
@@ -69,7 +86,7 @@ export async function dealsRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
       });
     }
-    const { tenantId, stage, atRisk, search, limit } = parsed.data;
+    const { tenantId, stage, atRisk, search, ownerId, visibleOwnerIds, visibleDealIds, limit, offset, sort } = parsed.data;
     const params: Record<string, unknown> = { tenantId };
 
     let cyph = `MATCH (d:Deal {tenant_id: $tenantId})\n`;
@@ -88,12 +105,36 @@ export async function dealsRoutes(server: FastifyInstance) {
       where.push("toLower(d.name) CONTAINS toLower($search)");
       params.search = search;
     }
+    if (ownerId) {
+      where.push("d.owner_id = $ownerId");
+      params.ownerId = ownerId;
+    }
+    if (visibleOwnerIds) {
+      // Private sharing model: owner in the caller's visible set, or the caller
+      // is on the deal's opportunity team.
+      params.visibleOwnerIds = visibleOwnerIds;
+      params.visibleDealIds = visibleDealIds ?? [];
+      where.push("(d.owner_id IN $visibleOwnerIds OR d.id IN $visibleDealIds)");
+    }
     if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
+
+    // Total for pagination (same predicates, no joins).
+    const countRows = await cypher<{ n: number }>(
+      `${cyph}  WITH count(d) AS n RETURN {n: n}`,
+      params,
+    ).catch(() => [] as { n: number }[]);
+    const total = countRows[0]?.n != null ? Number(countRows[0].n) : undefined;
+
+    const orderBy =
+      sort === "updated" ? "d.updated_at DESC, d.id"
+      : sort === "close_date" ? "d.close_date ASC, d.id"
+      : "d.value DESC, d.id";
 
     cyph += `  OPTIONAL MATCH (c:Company)-[:INVOLVED_IN]->(d)
   OPTIONAL MATCH (p:Person)-[inf:INFLUENCES]->(d)
   WITH d, c, count(DISTINCT p) AS bgs
-  ORDER BY d.value DESC
+  ORDER BY ${orderBy}
+  SKIP ${offset}
   LIMIT ${limit}
   RETURN {
     id: d.id, tenant_id: d.tenant_id, name: d.name, stage: d.stage,
@@ -112,7 +153,12 @@ export async function dealsRoutes(server: FastifyInstance) {
     return reply.send({
       success: true,
       data: rows.map(toDealResponse),
-      pagination: { total: rows.length, limit, hasMore: rows.length === limit },
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: total != null ? offset + rows.length < total : rows.length === limit,
+      },
     });
   });
 
@@ -176,6 +222,12 @@ export async function dealsRoutes(server: FastifyInstance) {
       ).catch((err) => { console.error("[deals] non-fatal write failed:", err.message); });
     }
 
+    // Seed history so stage-duration reporting knows when the first stage began.
+    await recordFieldChanges(tenantId, "deal", id, [
+      { field: "stage", oldValue: null, newValue: stage },
+      ...(ownerId ? [{ field: "ownerId", oldValue: null, newValue: ownerId }] : []),
+    ], actorId(request));
+
     await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
        VALUES ($1, 'deal.created', 'user', 'deal', $2, $3)`,
@@ -189,6 +241,42 @@ export async function dealsRoutes(server: FastifyInstance) {
       { id, tenantId }
     );
     return reply.status(201).send({ success: true, data: toDealResponse(created[0]) });
+  });
+
+  /**
+   * GET /deals/aggregate?tenantId=&closeFrom=&closeTo=
+   * Count + value per owner/stage/currency — feeds pipeline and win-rate
+   * reports without paging every deal through the gateway.
+   */
+  server.get("/aggregate", async (request, reply) => {
+    const q = z.object({
+      tenantId:  z.string().min(1),
+      closeFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      closeTo:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }).safeParse(request.query);
+    if (!q.success) {
+      return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: q.error.issues[0].message } });
+    }
+    const { tenantId, closeFrom, closeTo } = q.data;
+    const where: string[] = [];
+    const params: Record<string, unknown> = { tenantId };
+    if (closeFrom) { where.push("d.close_date >= $closeFrom"); params.closeFrom = closeFrom; }
+    // close_date may carry a time component; compare against the end of day.
+    if (closeTo)   { where.push("d.close_date <= $closeTo"); params.closeTo = `${closeTo}T23:59:59`; }
+    const rows = await cypher<{ owner?: string; stage?: string; currency?: string; n: number; total?: number }>(
+      `MATCH (d:Deal {tenant_id: $tenantId})
+       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+       WITH d.owner_id AS owner, d.stage AS stage, d.currency AS currency, count(d) AS n, sum(d.value) AS total
+       RETURN {owner: owner, stage: stage, currency: currency, n: n, total: total}`,
+      params,
+    );
+    return reply.send({
+      success: true,
+      data: rows.map((r) => ({
+        ownerId: r.owner || null, stage: r.stage ?? null, currency: r.currency ?? null,
+        count: Number(r.n ?? 0), value: Number(r.total ?? 0),
+      })),
+    });
   });
 
   server.get("/:id", async (request, reply) => {
@@ -265,6 +353,18 @@ export async function dealsRoutes(server: FastifyInstance) {
     const params: Record<string, unknown> = { id, tenantId, now: new Date().toISOString() };
     const setParts = ["d.updated_at = $now"];
 
+    // Snapshot tracked fields before the write (field history).
+    const beforeRows = await cypher<Record<string, unknown>>(
+      `MATCH (d:Deal {id: $id, tenant_id: $tenantId})
+       RETURN {stage: d.stage, value: d.value, currency: d.currency, closeDate: d.close_date,
+               ownerId: d.owner_id, declaredProbability: d.declared_probability, name: d.name}`,
+      { id, tenantId },
+    );
+    if (!beforeRows.length) {
+      return reply.status(404).send({ success: false, error: { code: "NOT_FOUND", message: "Deal not found" } });
+    }
+    const historyChanges = diffTracked(beforeRows[0], f as Record<string, unknown>, TRACKED_DEAL_FIELDS);
+
     if (f.name                !== undefined) { setParts.push("d.name                 = $name");                params.name                = f.name; }
     if (f.value               !== undefined) { setParts.push("d.value                = $value");               params.value               = f.value; }
     if (f.currency            !== undefined) { setParts.push("d.currency             = $currency");            params.currency            = f.currency; }
@@ -316,6 +416,8 @@ export async function dealsRoutes(server: FastifyInstance) {
         );
       }
     }
+
+    await recordFieldChanges(tenantId, "deal", id, historyChanges, actorId(request));
 
     const evType = stageChanged
       ? f.stage === "closed_won" ? "deal.closed_won"

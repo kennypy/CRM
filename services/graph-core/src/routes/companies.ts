@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { enforceSandboxGraphCeiling } from "../lib/sandbox-limits";
 import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
+import { OwnerIdList } from "../lib/owner-filter";
 import { pool, cypher } from "../db/pool";
 
 const CreateCompanySchema = z.object({
@@ -27,7 +28,11 @@ const CreateCompanySchema = z.object({
 const GetCompaniesQuery = z.object({
   tenantId: z.string().min(1),
   search:   z.string().optional(),
-  limit:    z.coerce.number().int().min(1).max(100).default(20),
+  ownerId:  z.string().uuid().optional(),
+  /** Gateway-set under a Private sharing default (client values are stripped). */
+  visibleOwnerIds: OwnerIdList.optional(),
+  limit:    z.coerce.number().int().min(1).max(200).default(20),
+  offset:   z.coerce.number().int().min(0).max(1_000_000).default(0),
 });
 
 
@@ -40,18 +45,29 @@ export async function companiesRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
       });
     }
-    const { tenantId, search, limit } = parsed.data;
+    const { tenantId, search, ownerId, visibleOwnerIds, limit, offset } = parsed.data;
     const params: Record<string, unknown> = { tenantId };
 
     let cyph = `MATCH (c:Company {tenant_id: $tenantId})\n`;
+    const where: string[] = [];
     if (search) {
-      cyph += `  WHERE (c.name CONTAINS $search OR c.domain CONTAINS $search)\n`;
+      where.push("(toLower(c.name) CONTAINS toLower($search) OR toLower(c.domain) CONTAINS toLower($search))");
       params.search = search;
     }
+    if (ownerId) { where.push("c.owner_id = $ownerId"); params.ownerId = ownerId; }
+    if (visibleOwnerIds) { where.push("c.owner_id IN $visibleOwnerIds"); params.visibleOwnerIds = visibleOwnerIds; }
+    if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
+
+    const countRows = await cypher<{ n: number }>(`${cyph}  WITH count(c) AS n RETURN {n: n}`, params)
+      .catch(() => [] as { n: number }[]);
+    const total = countRows[0]?.n != null ? Number(countRows[0].n) : undefined;
 
     // Aggregate in WITH before RETURN (required to mix node props + aggregates in map)
     cyph += `  OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
   WITH c, count(d) AS open_deals, sum(d.value) AS open_deal_value
+  ORDER BY c.name, c.id
+  SKIP ${offset}
+  LIMIT ${limit}
   RETURN {
     id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
     industry: c.industry, headcount: c.headcount, tier: c.tier,
@@ -61,15 +77,16 @@ export async function companiesRoutes(server: FastifyInstance) {
     created_by: c.created_by, owner_id: c.owner_id, custom_fields: c.custom_fields,
     open_deals: open_deals, open_deal_value: open_deal_value,
     created_at: c.created_at, updated_at: c.updated_at
-  }
-  ORDER BY c.name
-  LIMIT ${limit}`;     // validated integer — safe literal
+  }`;     // offset/limit are validated integers — safe literals
 
     const rows = await cypher(cyph, params);
     return reply.send({
       success: true,
       data: rows.map(toCompanyResponse),
-      pagination: { total: rows.length, limit, hasMore: rows.length === limit },
+      pagination: {
+        total, limit, offset,
+        hasMore: total != null ? offset + rows.length < total : rows.length === limit,
+      },
     });
   });
 
