@@ -17,6 +17,8 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { GRAPH_CORE_URL } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
 import { z } from "zod";
 import { servicePool as pool, servicePool as readPool } from "../db";
 import { requireMinRole } from "../middleware/rbac";
@@ -311,76 +313,24 @@ async function runFeaturesActiveUsed() {
 async function runFieldUsage(tenantId: string) {
   const rows: Record<string, unknown>[] = [];
 
-  // Check contact fields via graph-core or direct query
-  const contactFields = ["email", "title", "seniority"];
-  for (const field of contactFields) {
-    try {
-      const { rows: [r] } = await readPool.query(`
-        SELECT
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE properties->>'${field}' IS NOT NULL AND properties->>'${field}' != '') AS filled
-        FROM ag_catalog.cypher('nexcrm_graph', $$
-          MATCH (c:Contact {tenant_id: '${tenantId}'}) RETURN properties(c) AS properties
-        $$) AS (properties agtype)
-      `);
-      rows.push({
-        entity: "contacts",
-        field,
-        totalRecords: Number(r?.total ?? 0),
-        filledRecords: Number(r?.filled ?? 0),
-        fillRate: r?.total > 0 ? `${Math.round((r.filled / r.total) * 100)}%` : "0%",
-      });
-    } catch {
-      // Graph not available — try SQL approach for known tables
+  // Graph entities: fill rates come from graph-core. (The old code ran Cypher
+  // from the gateway with a role that has no graph access, against a label
+  // that does not exist, and swallowed the errors — the report was empty.)
+  try {
+    const res = await internalFetch(`${GRAPH_CORE_URL}/internal/fill-rates?tenantId=${encodeURIComponent(tenantId)}`, {
+      headers: { "x-tenant-id": tenantId }, signal: AbortSignal.timeout(15_000),
+    });
+    if (res.ok) {
+      const { data } = (await res.json()) as { data: { entity: string; field: string; total: number; filled: number }[] };
+      for (const r of data) {
+        rows.push({
+          entity: r.entity, field: r.field, totalRecords: r.total, filledRecords: r.filled,
+          fillRate: r.total > 0 ? `${Math.round((r.filled / r.total) * 100)}%` : "0%",
+        });
+      }
     }
-  }
-
-  // Check company fields
-  const companyFields = ["domain", "industry", "country", "revenue", "employees"];
-  for (const field of companyFields) {
-    try {
-      const { rows: [r] } = await readPool.query(`
-        SELECT
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE properties->>'${field}' IS NOT NULL AND properties->>'${field}' != '') AS filled
-        FROM ag_catalog.cypher('nexcrm_graph', $$
-          MATCH (c:Company {tenant_id: '${tenantId}'}) RETURN properties(c) AS properties
-        $$) AS (properties agtype)
-      `);
-      rows.push({
-        entity: "companies",
-        field,
-        totalRecords: Number(r?.total ?? 0),
-        filledRecords: Number(r?.filled ?? 0),
-        fillRate: r?.total > 0 ? `${Math.round((r.filled / r.total) * 100)}%` : "0%",
-      });
-    } catch {
-      // Graph not available
-    }
-  }
-
-  // Check deal fields from graph
-  const dealFields = ["value", "close_date", "stage", "company_id"];
-  for (const field of dealFields) {
-    try {
-      const { rows: [r] } = await readPool.query(`
-        SELECT
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE properties->>'${field}' IS NOT NULL AND properties->>'${field}' != '') AS filled
-        FROM ag_catalog.cypher('nexcrm_graph', $$
-          MATCH (d:Deal {tenant_id: '${tenantId}'}) RETURN properties(d) AS properties
-        $$) AS (properties agtype)
-      `);
-      rows.push({
-        entity: "deals",
-        field,
-        totalRecords: Number(r?.total ?? 0),
-        filledRecords: Number(r?.filled ?? 0),
-        fillRate: r?.total > 0 ? `${Math.round((r.filled / r.total) * 100)}%` : "0%",
-      });
-    } catch {
-      // Graph not available
-    }
+  } catch {
+    // graph-core unavailable — user fields below still render
   }
 
   // Check user fields (SQL)

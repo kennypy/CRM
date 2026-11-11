@@ -49,20 +49,14 @@ interface Lead {
   email: string;
   title?: string;
   company?: { id: string; name: string };
-  score: number;
-  tier: "hot" | "warm" | "cold";
+  /** Real AI lead score (lead_scores); null until the lead has been scored. */
+  score: number | null;
+  tier: "hot" | "warm" | "cold" | null;
   source: string;
   lifecycleStage: string;
   ownerId?: string;
   lastActivityAt?: string;
   createdAt: string;
-}
-
-// Deterministic score from ID — no Math.random() in render
-function hashScore(id: string): number {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
-  return 20 + (h % 61); // 20–80
 }
 
 function scoreTier(score: number): "hot" | "warm" | "cold" {
@@ -71,7 +65,8 @@ function scoreTier(score: number): "hot" | "warm" | "cold" {
   return "cold";
 }
 
-function TierBadge({ tier, t }: { tier: string; t: (key: string) => string }) {
+function TierBadge({ tier, t }: { tier: string | null; t: (key: string) => string }) {
+  if (!tier) return <span className="text-xs text-muted-foreground">{t("notScored")}</span>;
   const cfg: Record<string, { labelKey: string; icon: React.FC<{ className?: string }>; cls: string }> = {
     hot:  { labelKey: "hot",  icon: Flame,     cls: "bg-red-100 text-red-700" },
     warm: { labelKey: "warm", icon: Minus,     cls: "bg-yellow-100 text-yellow-700" },
@@ -86,7 +81,8 @@ function TierBadge({ tier, t }: { tier: string; t: (key: string) => string }) {
   );
 }
 
-function ScoreBar({ score }: { score: number }) {
+function ScoreBar({ score }: { score: number | null }) {
+  if (score === null) return <span className="text-xs text-muted-foreground">—</span>;
   const color = score >= 70 ? "bg-red-500" : score >= 40 ? "bg-yellow-500" : "bg-blue-400";
   return (
     <div className="flex items-center gap-2">
@@ -278,13 +274,22 @@ export default function LeadsPage() {
       const res = await api.get(`/api/v1/contacts?${params}&isLead=true`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      // Real scores from the lead-scoring engine. This page used to invent a
+      // score from a hash of the record id (and a Hot/Warm/Cold tier from that)
+      // whenever a lead had not been scored — reps were shown random numbers.
+      const scores = new Map<string, { score: number; tier: string }>();
+      try {
+        const sr = await api.get("/api/v1/lead-scoring?limit=200");
+        if (sr.ok) for (const x of (await sr.json()).data ?? []) scores.set(x.contactId, { score: Math.round(x.score), tier: x.tier });
+      } catch { /* scores are optional */ }
       const raw: Lead[] = (json.data ?? []).map((c: any) => {
-        const score = c.engagementScore ?? hashScore(c.id);
+        const real = scores.get(c.id);
+        const score = real ? real.score : null;
         return {
           id: c.id, firstName: c.firstName, lastName: c.lastName, email: c.email,
           title: c.title, company: c.company,
           score,
-          tier: scoreTier(score),
+          tier: score === null ? null : (["hot", "warm", "cold"].includes(real!.tier) ? real!.tier as Lead["tier"] : scoreTier(score)),
           source: c.source ?? "auto",
           lifecycleStage: c.lifecycleStage ?? "lead",
           ownerId: c.ownerId,

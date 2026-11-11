@@ -59,7 +59,8 @@
     "apply": "Aplicar",
     "clear": "Limpar",
     "select": "Selecionar…",
-    "columns": "Colunas"
+    "columns": "Colunas",
+    "optional": "opcional"
   },
   "nav": {
     "home": "Início",
@@ -192,7 +193,10 @@
     "newQuote": "Nova Cotação",
     "closes": "Fecha em {date}",
     "opportunityName": "Nome da Oportunidade",
-    "createdBy": "Criado por"
+    "createdBy": "Criado por",
+    "company": "Company",
+    "source": "Source",
+    "contacts": "Contacts"
   },
   "pipeline": {
     "title": "Oportunidades",
@@ -209,7 +213,9 @@
     "scoreEvidence": "Clique para ver evidências da pontuação",
     "noDeals": "Sem negócios",
     "rep": "Rep: {value}%",
-    "reality": "Real: {value}%"
+    "reality": "Real: {value}%",
+    "lead": "Pré-qualificada",
+    "qualified": "Qualificada"
   },
   "leads": {
     "title": "Leads",
@@ -227,7 +233,11 @@
     "convertedToContact": "Convertido para contato!",
     "convertToContact": "Converter para Contato",
     "noMatch": "Nenhum lead corresponde à sua busca",
-    "empty": "Nenhum lead ainda — conecte uma caixa de entrada para capturar automaticamente"
+    "empty": "Nenhum lead ainda — conecte uma caixa de entrada para capturar automaticamente",
+    "hot": "Quente",
+    "warm": "Morno",
+    "cold": "Frio",
+    "notScored": "Sem pontuação"
   },
   "activities": {
     "title": "Feed de Atividades",
@@ -252,7 +262,21 @@
     "notesPlaceholder": "Pontos-chave discutidos, resultados, próximos passos…",
     "dateTime": "Data e Hora",
     "durationMinutes": "Duração (minutos)",
-    "activityLogged": "Atividade registrada!"
+    "activityLogged": "Atividade registrada!",
+    "failedToLoad": "Falha ao carregar atividades",
+    "failedToLog": "Falha ao registrar atividade",
+    "linkToOpportunity": "Vincular à oportunidade",
+    "linkedContactOrLead": "Contato ou lead vinculado",
+    "networkError": "Erro de rede. Tente novamente.",
+    "noOpenOpportunities": "Nenhuma oportunidade aberta",
+    "page": "Página {page}",
+    "saving": "Salvando…",
+    "searchContactsOrLeads": "Buscar contatos ou leads…",
+    "shown": "exibidas",
+    "subjectPlaceholderCall": "ex.: Ligação de descoberta",
+    "subjectPlaceholderDefault": "ex.: Acompanhamento",
+    "subjectPlaceholderMeeting": "ex.: Demonstração do produto",
+    "type": "Tipo"
   },
   "dashboard": {
     "title": "Painel",
@@ -308,7 +332,20 @@
     "assignee": "Responsável",
     "high": "Alta",
     "medium": "Média",
-    "low": "Baixa"
+    "low": "Baixa",
+    "allCaughtUp": "Tudo em dia",
+    "createTask": "Criar tarefa",
+    "creating": "Criando…",
+    "due": "Vence",
+    "filterMine": "Minhas tarefas",
+    "filterOpen": "Abertas",
+    "linkToContactOrAccount": "Vincular a contato ou conta",
+    "linkToContactPlaceholder": "Buscar contatos ou contas…",
+    "loadingTasks": "Carregando tarefas…",
+    "newTask": "Nova tarefa",
+    "overdueCount": "{count} atrasadas",
+    "taskTitle": "Título da tarefa",
+    "taskTitlePlaceholder": "ex.: Enviar proposta"
   },
   "sequences": {
     "title": "Sequências",
@@ -521,7 +558,8 @@
       "assignmentRules": "Atribuição de Leads",
       "webForms": "Web-to-Lead",
       "validationRules": "Regras de Validação",
-      "webhooks": "Webhooks"
+      "webhooks": "Webhooks",
+      "company": "Empresa"
     },
     "personalInfo": "Informações Pessoais",
     "firstName": "Nome",
@@ -674,7 +712,14 @@
     "addToSequence": "Adicionar à sequência…",
     "export": "Exportar",
     "deleteSelected": "Excluir selecionados",
-    "clearSelection": "Limpar seleção"
+    "clearSelection": "Limpar seleção",
+    "edit": "Edit",
+    "bulkEdit": "Bulk Edit",
+    "fieldName": "Field name",
+    "newValue": "New value",
+    "updating": "Updating...",
+    "updateCount": "Update {count} records",
+    "deleteConfirm": "Delete {count} {entity}(s)?"
   },
   "leadConvert": {
     "title": "Converter Lead",
@@ -1184,5 +1229,57 @@
     "descZoom": "Transcrições de reuniões resumidas em atividades",
     "ingestionUnavailable": "A importação de e-mail e agenda não está disponível nesta instância — o serviço de ingestão não está implantado, então Gmail e Outlook não podem ser conectados.",
     "ingestionUnavailableShort": "O serviço de ingestão não está implantado nesta instância"
+  },
+  "contactDrawer": {
+    "title": "Contact Details",
+    "email": "Email",
+    "phone": "Phone",
+    "call": "Call",
+    "company": "Company",
+    "seniority": "Seniority",
+    "influence": "Influence",
+    "lastActivity": "Last Activity",
+    "source": "Source",
+    "added": "Added",
+    "updated": "Updated",
+    "createdBy": "Created By",
+    "linkedin": "LinkedIn",
+    "viewProfile": "View profile",
+    "manual": "Manual",
+    "autoCaptured": "Auto-captured"
+  },
+  "commandBar": {
+    "placeholder": "Try \"show deals losing momentum\" or \"log that Acme legal is involved\"",
+    "suggestions": "Suggestions",
+    "thinking": "Thinking…",
+    "error": "Failed to process command. Please try again."
+  },
+  "addContact": {
+    "title": "Add Contact",
+    "firstName": "First name *",
+    "lastName": "Last name *",
+    "email": "Email *",
+    "accountCompany": "Account / Company",
+    "searchCompany": "Search or type company name…",
+    "linkedTo": "Linked to",
+    "phone": "Phone",
+    "linkedinUrl": "LinkedIn URL",
+    "notes": "Notes",
+    "notesPlaceholder": "Any context to add…",
+    "contactCreated": "Contact created!",
+    "creating": "Creating…",
+    "createContact": "Create Contact"
+  },
+  "editContact": {
+    "title": "Edit Contact",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "email": "Email",
+    "emailReadonly": "Email cannot be changed",
+    "phone": "Phone",
+    "seniority": "Seniority",
+    "selectSeniority": "— select —",
+    "saved": "Saved!",
+    "saveChanges": "Save Changes"
   }
 }

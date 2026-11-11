@@ -131,12 +131,22 @@ function daysSince(isoDate: string): number {
 
 async function fetchDashboardData(): Promise<DashboardData> {
   // Fetch deals (up to 200 to get a good picture), activities, and contacts in parallel
-  const [dealsRes, activitiesRes, contactsRes, allActivitiesRes] = await Promise.all([
+  const [dealsRes, activitiesRes, contactsRes, allActivitiesRes, summaryRes] = await Promise.all([
     api.get("/api/v1/deals?limit=200"),
     api.get("/api/v1/activities?limit=5"),
     api.get("/api/v1/contacts?limit=1"),
     api.get("/api/v1/activities?limit=200"),
+    // Exact totals for every opportunity the user may see. The 200-deal page
+    // above only feeds the "stale deals" list; totals derived from it were
+    // wrong for any team with more than 200 opportunities.
+    api.get("/api/v1/deals/summary"),
   ]);
+  const summaryBody = summaryRes.ok ? await summaryRes.json() : { success: false };
+  const summary: {
+    stages: { stage: string; count: number; value: number }[];
+    open: { count: number; value: number }; won: { count: number; value: number };
+    lost: { count: number }; winRate: number;
+  } | null = summaryBody.success ? summaryBody.data : null;
 
   // Parse responses, defaulting to empty arrays on failure
   const dealsBody = dealsRes.ok ? await dealsRes.json() : { success: false };
@@ -267,18 +277,23 @@ async function fetchDashboardData(): Promise<DashboardData> {
   };
 
   return {
-    pipelineStages,
+    pipelineStages: summary
+      ? summary.stages.filter((x) => x.count > 0).map((x) => ({
+          stage: STAGE_LABELS[x.stage] ?? x.stage, value: x.value, deals: x.count,
+          color: STAGE_COLORS[x.stage] ?? "bg-gray-400",
+        }))
+      : pipelineStages,
     recentActivities: activities,
     staleDeals: staleDealCandidates,
     topReps,
     kpis: {
-      openPipeline,
-      openDealCount: openDeals.length,
-      revenue30d,
-      closedWonCount: wonCount,
-      winRate,
-      wonCount,
-      lostCount,
+      openPipeline: summary?.open.value ?? openPipeline,
+      openDealCount: summary?.open.count ?? openDeals.length,
+      revenue30d: summary?.won.value ?? revenue30d,
+      closedWonCount: summary?.won.count ?? wonCount,
+      winRate: summary?.winRate ?? winRate,
+      wonCount: summary?.won.count ?? wonCount,
+      lostCount: summary?.lost.count ?? lostCount,
       activeContacts: contactsTotal,
     },
     activityStats,

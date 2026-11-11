@@ -11,6 +11,8 @@ import { moduleAccessGate } from "../middleware/module-access";
 import { enforceValidationRules } from "../lib/validation-rules";
 import { applyListVisibility } from "../lib/list-visibility";
 import { pool } from "../db";
+import { internalFetch, internalIdentityHeaders } from "../lib/internal-fetch";
+import { visibleOwnerIdsForList } from "../lib/visibility";
 
 const IdParam = z.object({ id: z.string().uuid() });
 const TeamBody = z.object({
@@ -79,6 +81,49 @@ export async function dealsRoutes(server: FastifyInstance) {
   server.delete("/:id", { preHandler: [requireManager, requireCrmWrite, aclDelete, holdGuard] }, graphProxy);
 
   // ── Field history ─────────────────────────────────────────────────────────
+  // ── Pipeline summary (exact totals, sharing-aware) ────────────────────────
+  // Dashboards used to total the first page of 200 deals, so every KPI was
+  // wrong for any team with more than 200 opportunities.
+  server.get("/summary", { preHandler: [requireCrmRead] }, async (request, reply) => {
+    const { tenantId, sub, role } = request.user;
+    const res = await internalFetch(
+      `${GRAPH_CORE}/deals/aggregate?tenantId=${encodeURIComponent(tenantId)}`,
+      { headers: internalIdentityHeaders(request), signal: AbortSignal.timeout(15_000) },
+    );
+    if (!res.ok) return reply.status(502).send({ success: false, error: { code: "UPSTREAM_ERROR" } });
+    const { data } = (await res.json()) as {
+      data: { ownerId: string | null; stage: string | null; currency: string | null; count: number; value: number }[];
+    };
+    const visible = await visibleOwnerIdsForList(tenantId, sub, role, "deal");
+    const rows = data.filter((r) => r.stage && (!visible || (r.ownerId !== null && visible.includes(r.ownerId))));
+    const ORDER = ["lead", "qualified", "discovery", "proposal", "negotiation", "closed_won", "closed_lost"];
+    const stages = ORDER.map((stage) => {
+      const m = rows.filter((r) => r.stage === stage);
+      return { stage, count: m.reduce((a, r) => a + r.count, 0), value: m.reduce((a, r) => a + r.value, 0) };
+    });
+    const open = stages.filter((x) => !x.stage.startsWith("closed_"));
+    const won = stages.find((x) => x.stage === "closed_won")!;
+    const lost = stages.find((x) => x.stage === "closed_lost")!;
+    const owners = new Map<string, { won: number; wonValue: number; lost: number }>();
+    for (const r of rows) {
+      if (!r.ownerId || !r.stage!.startsWith("closed_")) continue;
+      const o = owners.get(r.ownerId) ?? { won: 0, wonValue: 0, lost: 0 };
+      if (r.stage === "closed_won") { o.won += r.count; o.wonValue += r.value; } else o.lost += r.count;
+      owners.set(r.ownerId, o);
+    }
+    return reply.send({
+      success: true,
+      data: {
+        stages,
+        open: { count: open.reduce((a, x) => a + x.count, 0), value: open.reduce((a, x) => a + x.value, 0) },
+        won: { count: won.count, value: won.value },
+        lost: { count: lost.count, value: lost.value },
+        winRate: won.count + lost.count > 0 ? Math.round((won.count / (won.count + lost.count)) * 100) : 0,
+        byOwner: [...owners.entries()].map(([ownerId, v]) => ({ ownerId, ...v })),
+      },
+    });
+  });
+
   // ── Contact roles (champion, economic buyer… ; one primary = main POC) ────
   server.get("/:id/contact-roles", { preHandler: [requireCrmRead, aclRead] }, graphProxy);
   server.put("/:id/contact-roles", { preHandler: [requireRep, requireCrmWrite, aclWrite] }, graphProxy);

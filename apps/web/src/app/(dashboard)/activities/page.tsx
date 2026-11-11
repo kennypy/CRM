@@ -407,7 +407,11 @@ export default function ActivitiesPage() {
   const tc = useTranslations("common");
   const [activities, setActivities] = useState<Activity[]>([]);
   // cursors[0] = undefined (first page), cursors[n] = `before` cursor for page n+1
-  const [cursors, setCursors]       = useState<(string | undefined)[]>([undefined]);
+  // Kept in a ref, not state: storing the next cursor in state made the loader
+  // (which depended on it) change identity after every load, re-running the
+  // effect forever — the page re-fetched in a tight loop whenever more than
+  // one page of activities existed.
+  const cursorsRef = useRef<(string | undefined)[]>([undefined]);
   const [pageIdx, setPageIdx]       = useState(0);   // index into cursors array
   const [hasMore, setHasMore]       = useState(false);
   const [typeFilter, setTypeFilter] = useState<ActivityType | "all">("all");
@@ -421,7 +425,7 @@ export default function ActivitiesPage() {
     try {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
       if (typeFilter !== "all") params.set("type", typeFilter);
-      const cursor = cursors[pageIdx];
+      const cursor = cursorsRef.current[pageIdx];
       if (cursor) params.set("before", cursor);
       const res = await api.get(`/api/v1/activities?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -430,18 +434,14 @@ export default function ActivitiesPage() {
       setHasMore(json.pagination?.hasMore ?? false);
       // Store the nextCursor for the next page at position pageIdx+1
       if (json.pagination?.nextCursor) {
-        setCursors((prev) => {
-          const next = [...prev];
-          next[pageIdx + 1] = json.pagination.nextCursor;
-          return next;
-        });
+        cursorsRef.current[pageIdx + 1] = json.pagination.nextCursor;
       }
     } catch (e: any) {
       setError(e.message ?? t("failedToLoad"));
     } finally {
       setLoading(false);
     }
-  }, [pageIdx, cursors, typeFilter, t]);
+  }, [pageIdx, typeFilter, t]);
 
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
@@ -449,7 +449,7 @@ export default function ActivitiesPage() {
   const handleTypeFilter = (t: ActivityType | "all") => {
     setTypeFilter(t);
     setPageIdx(0);
-    setCursors([undefined]);
+    cursorsRef.current = [undefined];
   };
 
   const goNext = () => setPageIdx((i) => i + 1);

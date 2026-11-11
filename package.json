@@ -32,15 +32,16 @@
     "analyze": "npm run analyze --workspace=@nexcrm/web"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.0.0",
     "@testing-library/react": "^16.0.0",
-    "@vitest/coverage-v8": "^2.0.0",
-    "turbo": "^2.3.0",
-    "typescript": "^5.7.2",
     "@types/node": "^22.10.0",
-    "prettier": "^3.4.2",
+    "@vitest/coverage-v8": "^2.0.0",
     "eslint": "^9.17.0",
     "jsdom": "^25.0.0",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.2",
     "vitest": "^2.0.0"
   },
   "engines": {

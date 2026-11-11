@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 type DealStage =
-  | "discovery" | "proposal" | "negotiation"
+  | "lead" | "qualified" | "discovery" | "proposal" | "negotiation"
   | "closed_won" | "closed_lost";
 
 interface Deal {
@@ -42,7 +42,12 @@ interface Deal {
   updatedAt:            string;
 }
 
+// Every stage an opportunity can be in. "lead" (the default for new deals) and
+// "qualified" (the default for converted leads) were missing, so new
+// opportunities never appeared on the board.
 const STAGES: { key: DealStage; labelKey: string; color: string }[] = [
+  { key: "lead",        labelKey: "lead",        color: "border-slate-400" },
+  { key: "qualified",   labelKey: "qualified",   color: "border-indigo-400" },
   { key: "discovery",   labelKey: "discovery",   color: "border-blue-400" },
   { key: "proposal",    labelKey: "proposal",    color: "border-yellow-400" },
   { key: "negotiation", labelKey: "negotiation", color: "border-orange-400" },
@@ -51,7 +56,7 @@ const STAGES: { key: DealStage; labelKey: string; color: string }[] = [
 ];
 
 const STAGE_ORDER: DealStage[] = [
-  "discovery", "proposal", "negotiation", "closed_won", "closed_lost",
+  "lead", "qualified", "discovery", "proposal", "negotiation", "closed_won", "closed_lost",
 ];
 
 // Gap is significant when it exceeds this % of the declared forecast.

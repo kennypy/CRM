@@ -85,3 +85,5 @@ apps/mobile/android/app/build/
 # local e2e stack (scripts/dev-stack.sh)
 .stack/
 .stack.env
+test-results/
+playwright-report/

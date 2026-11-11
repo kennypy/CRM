@@ -59,7 +59,8 @@
     "apply": "Apply",
     "clear": "Clear",
     "select": "Select…",
-    "columns": "Columns"
+    "columns": "Columns",
+    "optional": "optional"
   },
   "nav": {
     "home": "Home",
@@ -212,7 +213,9 @@
     "scoreEvidence": "Click to see score evidence",
     "noDeals": "No deals",
     "rep": "Rep: {value}%",
-    "reality": "Reality: {value}%"
+    "reality": "Reality: {value}%",
+    "lead": "Pre-qualified",
+    "qualified": "Qualified"
   },
   "leads": {
     "title": "Leads",
@@ -230,7 +233,11 @@
     "convertedToContact": "Converted to contact!",
     "convertToContact": "Convert to Contact",
     "noMatch": "No leads match your search",
-    "empty": "No leads yet — connect an inbox to auto-capture"
+    "empty": "No leads yet — connect an inbox to auto-capture",
+    "hot": "Hot",
+    "warm": "Warm",
+    "cold": "Cold",
+    "notScored": "Not scored"
   },
   "activities": {
     "title": "Activity Feed",
@@ -255,7 +262,21 @@
     "notesPlaceholder": "Key points discussed, outcomes, next steps…",
     "dateTime": "Date & Time",
     "durationMinutes": "Duration (minutes)",
-    "activityLogged": "Activity logged!"
+    "activityLogged": "Activity logged!",
+    "failedToLoad": "Failed to load activities",
+    "failedToLog": "Failed to log activity",
+    "linkToOpportunity": "Link to opportunity",
+    "linkedContactOrLead": "Linked contact or lead",
+    "networkError": "Network error. Please try again.",
+    "noOpenOpportunities": "No open opportunities",
+    "page": "Page {page}",
+    "saving": "Saving…",
+    "searchContactsOrLeads": "Search contacts or leads…",
+    "shown": "shown",
+    "subjectPlaceholderCall": "e.g. Discovery call",
+    "subjectPlaceholderDefault": "e.g. Follow-up",
+    "subjectPlaceholderMeeting": "e.g. Product demo",
+    "type": "Type"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -311,7 +332,20 @@
     "assignee": "Assignee",
     "high": "High",
     "medium": "Medium",
-    "low": "Low"
+    "low": "Low",
+    "allCaughtUp": "You're all caught up",
+    "createTask": "Create task",
+    "creating": "Creating…",
+    "due": "Due",
+    "filterMine": "My tasks",
+    "filterOpen": "Open",
+    "linkToContactOrAccount": "Link to contact or account",
+    "linkToContactPlaceholder": "Search contacts or accounts…",
+    "loadingTasks": "Loading tasks…",
+    "newTask": "New task",
+    "overdueCount": "{count} overdue",
+    "taskTitle": "Task title",
+    "taskTitlePlaceholder": "e.g. Send proposal"
   },
   "sequences": {
     "title": "Sequences",
@@ -524,7 +558,8 @@
       "assignmentRules": "Lead Assignment",
       "webForms": "Web-to-Lead",
       "validationRules": "Validation Rules",
-      "webhooks": "Webhooks"
+      "webhooks": "Webhooks",
+      "company": "Company"
     },
     "personalInfo": "Personal Information",
     "firstName": "First name",

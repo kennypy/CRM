@@ -13,10 +13,12 @@ import {
 } from "lucide-react";
 
 type DealStage =
-  | "discovery" | "proposal" | "negotiation"
+  | "lead" | "qualified" | "discovery" | "proposal" | "negotiation"
   | "closed_won" | "closed_lost";
 
 const STAGE_LABELS: Record<DealStage, string> = {
+  lead:        "Pre-qualified",
+  qualified:   "Qualified",
   discovery:   "Discovery",
   proposal:    "Proposal",
   negotiation: "Negotiation",

@@ -645,15 +645,14 @@ function MirroringTab() {
   const handleTestConnection = (destId: string) => {
     setTestingConnection(destId);
     setTestResult(null);
-    setTimeout(() => {
-      setTestingConnection(null);
-      const success = Math.random() > 0.2;
-      setTestResult({
-        id: destId,
-        success,
-        message: success ? "Connection successful — bucket is accessible and writable" : "Connection failed — check bucket permissions and credentials",
-      });
-    }, 2500);
+    // There is no connection-test API yet. Say so instead of reporting a
+    // random result (this used to "succeed" 80% of the time by Math.random).
+    setTestingConnection(null);
+    setTestResult({
+      id: destId,
+      success: false,
+      message: "Connection testing is not available yet — the destination is saved but has not been verified.",
+    });
   };
 
   const handleToggleObject = (obj: string) => {

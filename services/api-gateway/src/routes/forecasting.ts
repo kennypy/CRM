@@ -8,6 +8,7 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { lookupGraphRecords } from "../lib/graph-lookup";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
@@ -53,26 +54,21 @@ export async function forecastingRoutes(server: FastifyInstance) {
     const limit = Math.min(parseInt(q.limit ?? "50", 10), 200);
 
     const { rows } = await pool.query(
-      `SELECT pf.*,
-              d.name AS deal_name,
-              d.stage AS deal_stage,
-              d.value AS deal_value,
-              d.company_name
-       FROM predictive_forecasts pf
-       LEFT JOIN LATERAL (
-         SELECT (properties->>'name') AS name,
-                (properties->>'stage') AS stage,
-                (properties->>'value')::numeric AS value,
-                (properties->>'companyName') AS company_name
-         FROM nexcrm_graph."Deal"
-         WHERE id = pf.deal_id::ag_catalog.graphid
-         LIMIT 1
-       ) d ON true
+      `SELECT pf.* FROM predictive_forecasts pf
        WHERE pf.tenant_id = $1
        ORDER BY pf.predicted_close_probability DESC
        LIMIT $2`,
       [tenantId, limit]
     );
+    // Deal details come from graph-core (see lib/graph-lookup.ts).
+    const { deals } = await lookupGraphRecords(tenantId, { dealIds: rows.map((r) => String(r.deal_id)) });
+    for (const r of rows) {
+      const d = deals.get(String(r.deal_id));
+      r.deal_name = d?.name ?? null;
+      r.deal_stage = d?.stage ?? null;
+      r.deal_value = d?.value ?? null;
+      r.company_name = d?.companyName ?? null;
+    }
 
     return reply.send({ success: true, data: rows.map(toForecast) });
   });

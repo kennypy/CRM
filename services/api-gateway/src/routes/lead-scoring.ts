@@ -8,6 +8,7 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { lookupGraphRecords } from "../lib/graph-lookup";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
@@ -53,33 +54,23 @@ export async function leadScoringRoutes(server: FastifyInstance) {
     vals.push(limit, offset);
 
     const { rows } = await pool.query(
-      `SELECT ls.*,
-              p.first_name || ' ' || p.last_name AS contact_name,
-              p.email AS contact_email,
-              p.title AS contact_title,
-              c.name AS company_name
-       FROM lead_scores ls
-       LEFT JOIN LATERAL (
-         SELECT (properties->>'firstName') AS first_name,
-                (properties->>'lastName') AS last_name,
-                (properties->>'email') AS email,
-                (properties->>'title') AS title
-         FROM nexcrm_graph."Person"
-         WHERE id = ls.contact_id::ag_catalog.graphid
-         LIMIT 1
-       ) p ON true
-       LEFT JOIN LATERAL (
-         SELECT (c.properties->>'name') AS name
-         FROM nexcrm_graph."WORKS_AT" wa
-         JOIN nexcrm_graph."Company" c ON c.id = wa.end_id
-         WHERE wa.start_id = ls.contact_id::ag_catalog.graphid
-         LIMIT 1
-       ) c ON true
+      `SELECT ls.* FROM lead_scores ls
        WHERE ${where}
        ORDER BY ls.score DESC
        LIMIT $${vals.length - 1} OFFSET $${vals.length}`,
       vals
     );
+    // Contact + company names come from graph-core. (This used to join AGE
+    // tables directly on the wrong id and with a role that has no graph
+    // access — a 500 under least-privilege DB roles, blank names otherwise.)
+    const { contacts } = await lookupGraphRecords(tenantId, { contactIds: rows.map((r) => String(r.contact_id)) });
+    for (const r of rows) {
+      const c = contacts.get(String(r.contact_id));
+      r.contact_name = c ? `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() : null;
+      r.contact_email = c?.email ?? null;
+      r.contact_title = c?.title ?? null;
+      r.company_name = c?.companyName ?? null;
+    }
 
     const { rows: countRows } = await pool.query(
       `SELECT COUNT(*)::int AS total FROM lead_scores WHERE ${where.replace(/ls\./g, "")}`,
