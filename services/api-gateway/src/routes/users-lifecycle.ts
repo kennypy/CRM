@@ -164,7 +164,9 @@ export async function deactivateUser(
 
   // Kill live access tokens immediately (same marker the auth service writes).
   await redis
-    .set(`auth:deny:user:${userId}`, String(Math.floor(Date.now() / 1000)), "EX", 60 * 60 * 24)
+    // +1: JWT iat has 1-second resolution — a token minted in the same second
+    // as the deactivation must be rejected too (same rule as the auth service).
+    .set(`auth:deny:user:${userId}`, String(Math.floor(Date.now() / 1000) + 1), "EX", 60 * 60 * 24)
     .catch((err: unknown) => request.log.warn({ err }, "deny_marker_failed"));
 
   await pool.query(

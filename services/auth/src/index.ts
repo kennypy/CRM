@@ -110,9 +110,13 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Strict rate limit on auth endpoints — prevent brute force
+  // General per-IP ceiling for the auth service. A whole office shares one
+  // public IP, and every user refreshes a token every ~15 minutes, so the old
+  // 20/min for ALL auth traffic locked out a 120-seat team on a login wave.
+  // Password guessing is limited separately and much more tightly, per
+  // IP + account, in the login/reset handlers (lib/attempt-limit.ts).
   await server.register(rateLimit, {
-    max: 20,
+    max: parseInt(process.env.AUTH_RATE_LIMIT_MAX ?? "300", 10),
     timeWindow: "1 minute",
     // Fail-fast client. skipOnError stays false: if Redis is down, auth
     // endpoints error quickly (fail closed) rather than silently losing

@@ -44,6 +44,7 @@ import {
   verifyTurnstile,
 } from "../lib/signup-guard";
 import { requestSampleSeed } from "../lib/sandbox-provision";
+import { allowAttempt } from "../lib/attempt-limit";
 import { pool } from "../db";
 import { redis } from "@nexcrm/service-common/redis";
 
@@ -393,6 +394,14 @@ export async function authRoutes(server: FastifyInstance) {
     }
 
     const { email, password, tenantSlug } = body.data;
+
+    // Brute-force guard: 10 attempts/min per IP + account (fails closed).
+    if (!(await allowAttempt("login", `${request.ip}:${tenantSlug}:${email}`, 10, 60))) {
+      return reply.status(429).send({
+        success: false,
+        error: { code: "TOO_MANY_ATTEMPTS", message: "Too many sign-in attempts. Try again in a minute." },
+      });
+    }
 
     const tenant = await findTenantBySlug(tenantSlug);
     if (!tenant) {

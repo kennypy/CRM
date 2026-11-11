@@ -47,6 +47,8 @@ export function createProxy(opts: ProxyOptions) {
 
     const headers: Record<string, string> = {
       "Content-Type":    "application/json",
+      // Real client IP for downstream per-IP limits (auth service).
+      "x-forwarded-for": request.ip,
       "x-user-id":       jwt?.sub   ?? "",
       "x-tenant-id":     tenantId,
       "x-user-role":     jwt?.role  ?? "",
