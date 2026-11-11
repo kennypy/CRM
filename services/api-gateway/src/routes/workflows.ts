@@ -221,17 +221,42 @@ export async function workflowsRoutes(server: FastifyInstance) {
   server.get("/:id/runs", { preHandler: [requireRep, requireCrmRead] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
+    const q = z.object({
+      limit: z.coerce.number().int().min(1).max(200).default(50),
+      offset: z.coerce.number().int().min(0).default(0),
+      status: z.enum(["running", "completed", "failed"]).optional(),
+    }).safeParse(request.query);
+    if (!q.success) return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR" } });
+    const { limit, offset, status } = q.data;
 
+    const vals: unknown[] = [id, tenantId];
+    let filter = "";
+    if (status) { vals.push(status); filter = ` AND wr.status = $3`; }
     const { rows } = await pool.query(
       `SELECT wr.*
        FROM workflow_runs wr
        JOIN workflow_definitions wd ON wd.id = wr.workflow_id
-       WHERE wr.workflow_id = $1 AND wd.tenant_id = $2
+       WHERE wr.workflow_id = $1 AND wd.tenant_id = $2${filter}
        ORDER BY wr.started_at DESC
-       LIMIT 50`,
+       LIMIT ${limit} OFFSET ${offset}`,
+      vals
+    );
+    // Totals per status (was a hard LIMIT 50 with no way to see the rest).
+    const { rows: counts } = await pool.query(
+      `SELECT wr.status, count(*)::int AS n
+         FROM workflow_runs wr JOIN workflow_definitions wd ON wd.id = wr.workflow_id
+        WHERE wr.workflow_id = $1 AND wd.tenant_id = $2
+        GROUP BY wr.status`,
       [id, tenantId]
     );
+    const byStatus = Object.fromEntries(counts.map((c) => [c.status, c.n]));
+    const total = status ? (byStatus[status] ?? 0) : counts.reduce((s, c) => s + c.n, 0);
 
-    return reply.send({ success: true, data: rows });
+    return reply.send({
+      success: true,
+      data: rows,
+      pagination: { total, limit, offset, hasMore: offset + rows.length < total },
+      byStatus,
+    });
   });
 }

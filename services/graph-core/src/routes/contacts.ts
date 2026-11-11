@@ -17,8 +17,9 @@ import { OwnerIdList } from "../lib/owner-filter";
 import { actorId, diffTracked, eventOrigin, recordFieldChanges } from "../lib/field-history";
 import { leadConvertRoutes } from "./lead-convert";
 import { contactMergeRoutes } from "./contact-merge";
+import { leadMatchRoutes } from "./relationships";
 
-const TRACKED_CONTACT_FIELDS = ["ownerId", "isLead", "email", "source"] as const;
+const TRACKED_CONTACT_FIELDS = ["ownerId", "isLead", "email", "source", "leadStatus"] as const;
 
 const SeniorityValues = [
   "individual_contributor", "manager", "director", "vp", "c_suite", "founder",
@@ -34,6 +35,9 @@ const CreateContactSchema = z.object({
   companyId: z.string().uuid().nullable().optional(),
   ownerId:   z.string().uuid().nullable().optional(),
   isLead:    z.boolean().optional(),
+  /** Lead workflow. "converted" is set only by the conversion endpoint. */
+  leadStatus: z.enum(["new", "working", "nurturing", "qualified", "unqualified"]).optional(),
+  disqualifyReason: z.string().max(500).nullable().optional(),
   source:    z.string().max(50).optional(),
   customFields: z.record(z.unknown()).optional(),
 });
@@ -43,6 +47,7 @@ const GetContactsQuery = z.object({
   search:    z.string().optional(),
   companyId: z.string().uuid().optional(),
   isLead:    z.enum(["true", "false"]).optional(),
+  leadStatus: z.enum(["new", "working", "nurturing", "qualified", "unqualified", "converted"]).optional(),
   ownerId:   z.string().uuid().optional(),
   /** Gateway-set under a Private sharing default (client values are stripped). */
   visibleOwnerIds: OwnerIdList.optional(),
@@ -61,6 +66,7 @@ const FETCH_ONE = `
     seniority: p.seniority, influence_score: p.influence_score,
     last_activity_at: p.last_activity_at, source: p.source,
     owner_id: p.owner_id, is_lead: p.is_lead, converted_at: p.converted_at,
+    lead_status: p.lead_status, disqualify_reason: p.disqualify_reason,
     custom_fields: p.custom_fields,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
@@ -69,6 +75,7 @@ const FETCH_ONE = `
 export async function contactsRoutes(server: FastifyInstance) {
   await leadConvertRoutes(server);
   await contactMergeRoutes(server);
+  await leadMatchRoutes(server);
 
   /**
    * GET /contacts?tenantId=&search=&companyId=&limit=
@@ -81,7 +88,7 @@ export async function contactsRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
       });
     }
-    const { tenantId, search, companyId, isLead, ownerId, visibleOwnerIds, limit, offset } = parsed.data;
+    const { tenantId, search, companyId, isLead, leadStatus, ownerId, visibleOwnerIds, limit, offset } = parsed.data;
     const params: Record<string, unknown> = { tenantId };
 
     let cyph = `MATCH (p:Person {tenant_id: $tenantId})\n`;
@@ -95,6 +102,10 @@ export async function contactsRoutes(server: FastifyInstance) {
     if (isLead === "true")  where.push("p.is_lead = true");
     if (isLead === "false") where.push("(p.is_lead IS NULL OR p.is_lead = false)");
     if (ownerId) { where.push("p.owner_id = $ownerId"); params.ownerId = ownerId; }
+    if (leadStatus) {
+      where.push(leadStatus === "new" ? "(p.lead_status = 'new' OR (p.is_lead = true AND p.lead_status IS NULL))" : "p.lead_status = $leadStatus");
+      params.leadStatus = leadStatus;
+    }
     if (visibleOwnerIds) { where.push("p.owner_id IN $visibleOwnerIds"); params.visibleOwnerIds = visibleOwnerIds; }
     if (search) {
       where.push(
@@ -120,6 +131,7 @@ export async function contactsRoutes(server: FastifyInstance) {
     seniority: p.seniority, influence_score: p.influence_score,
     last_activity_at: p.last_activity_at, source: p.source,
     owner_id: p.owner_id, is_lead: p.is_lead, converted_at: p.converted_at,
+    lead_status: p.lead_status, disqualify_reason: p.disqualify_reason,
     custom_fields: p.custom_fields,
     created_at: p.created_at, updated_at: p.updated_at,
     company_id: co.id, company_name: co.name, company_domain: co.domain
@@ -153,22 +165,34 @@ export async function contactsRoutes(server: FastifyInstance) {
     }
     const tenantId = tq.data.tenantId;
 
-    const { firstName, lastName, email, title, phone, seniority, companyId, ownerId, isLead, source, customFields } = body.data;
+    const { firstName, lastName, email, title, phone, seniority, companyId, ownerId, isLead, source, customFields, leadStatus } = body.data;
     const id  = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Email deduplication within tenant
-    const existing = await cypher(
-      `MATCH (p:Person {tenant_id: $tenantId, email: $email})
-       RETURN {id: p.id} LIMIT 1`,
+    // Duplicate rules (case-insensitive email):
+    //   contact vs existing contact → block
+    //   lead    vs existing open lead → block (it is the same inquiry)
+    //   lead    vs existing contact  → ALLOW: a known person showing new
+    //     interest is new demand; the lead is worked and then converted INTO
+    //     that contact (GET /contacts/:id/matches + convert {contactId}).
+    // Previously any match blocked, so returning customers could never come in
+    // as leads (web-to-lead returned 502 for them).
+    const existing = await cypher<{ id: string; is_lead?: boolean }>(
+      `MATCH (p:Person {tenant_id: $tenantId}) WHERE toLower(p.email) = toLower($email)
+       RETURN {id: p.id, is_lead: p.is_lead} LIMIT 20`,
       { tenantId, email }
     );
-    if (existing.length > 0) {
+    const dupContact = existing.find((p) => p.is_lead !== true);
+    const dupLead = existing.find((p) => p.is_lead === true);
+    if (isLead ? dupLead : dupContact) {
       return reply.status(409).send({
         success: false,
         error: {
-          code: "DUPLICATE_EMAIL",
-          message: `A contact with email ${email} already exists in this organisation`,
+          code: isLead ? "DUPLICATE_LEAD" : "DUPLICATE_EMAIL",
+          message: isLead
+            ? `An open lead with email ${email} already exists`
+            : `A contact with email ${email} already exists in this organisation`,
+          existingId: (isLead ? dupLead : dupContact)!.id,
         },
       });
     }
@@ -185,6 +209,7 @@ export async function contactsRoutes(server: FastifyInstance) {
         seniority:     $seniority,
         owner_id:      $ownerId,
         is_lead:       $isLead,
+        lead_status:   $leadStatus,
         source:        $source,
         custom_fields: $customFields,
         created_at:    $now,
@@ -197,6 +222,7 @@ export async function contactsRoutes(server: FastifyInstance) {
         seniority:    seniority    ?? "",
         ownerId:      ownerId      ?? "",
         isLead:       isLead       ?? false,
+        leadStatus:   isLead ? (leadStatus ?? "new") : "",
         source:       source       ?? "user",
         customFields: JSON.stringify(customFields ?? {}),
         now,
@@ -278,7 +304,8 @@ export async function contactsRoutes(server: FastifyInstance) {
          email: p.email, title: p.title, phone: p.phone,
          seniority: p.seniority, influence_score: p.influence_score,
          last_activity_at: p.last_activity_at,
-         owner_id: p.owner_id,
+         owner_id: p.owner_id, is_lead: p.is_lead, converted_at: p.converted_at,
+         lead_status: p.lead_status, disqualify_reason: p.disqualify_reason, source: p.source,
          custom_fields: p.custom_fields,
          created_at: p.created_at, updated_at: p.updated_at,
          company_id: co.id, company_name: co.name, company_domain: co.domain,
@@ -322,7 +349,7 @@ export async function contactsRoutes(server: FastifyInstance) {
 
     const beforeRows = await cypher<Record<string, unknown>>(
       `MATCH (p:Person {id: $id, tenant_id: $tenantId})
-       RETURN {ownerId: p.owner_id, isLead: p.is_lead, email: p.email, source: p.source}`,
+       RETURN {ownerId: p.owner_id, isLead: p.is_lead, email: p.email, source: p.source, leadStatus: p.lead_status}`,
       { id, tenantId },
     );
     if (!beforeRows.length) {
@@ -339,6 +366,17 @@ export async function contactsRoutes(server: FastifyInstance) {
     if (fields.phone !== undefined)     { setParts.push("p.phone      = $phone");     params.phone     = fields.phone ?? ""; }
     if (fields.seniority) { setParts.push("p.seniority  = $seniority"); params.seniority = fields.seniority; }
     if (fields.isLead !== undefined) { setParts.push("p.is_lead = $isLead"); params.isLead = fields.isLead; }
+    if (fields.leadStatus !== undefined) {
+      if ((beforeRows[0] as { isLead?: boolean }).isLead !== true) {
+        return reply.status(409).send({ success: false, error: { code: "NOT_A_LEAD", message: "Lead status applies to open leads only" } });
+      }
+      setParts.push("p.lead_status = $leadStatus");
+      params.leadStatus = fields.leadStatus;
+      if (fields.leadStatus === "unqualified") {
+        setParts.push("p.disqualify_reason = $disqualifyReason");
+        params.disqualifyReason = fields.disqualifyReason ?? "";
+      }
+    }
     if (fields.source !== undefined) { setParts.push("p.source = $source"); params.source = fields.source ?? ""; }
     if (fields.ownerId !== undefined) { setParts.push("p.owner_id = $ownerId"); params.ownerId = fields.ownerId ?? ""; }
     if (fields.customFields) { setParts.push("p.custom_fields = $customFields"); params.customFields = JSON.stringify(fields.customFields); }
@@ -434,6 +472,8 @@ function toContactResponse(row: Record<string, unknown>) {
     seniority:       row.seniority      || undefined,
     isLead:          row.is_lead === true,
     convertedAt:     (row.converted_at as string) || undefined,
+    leadStatus:      row.is_lead === true ? ((row.lead_status as string) || "new") : ((row.lead_status as string) === "converted" ? "converted" : undefined),
+    disqualifyReason: (row.disqualify_reason as string) || undefined,
     source:          (row.source as string) || "user",
     ownerId:         (row.owner_id as string) || undefined,
     influenceScore:  row.influence_score,

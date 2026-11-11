@@ -17,6 +17,7 @@ import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
 import { cypherTx, pool } from "../db/pool";
 import { actorId, recordFieldChanges } from "../lib/field-history";
+import { mergePersonGraph, repointRelational } from "./contact-merge";
 
 const OpenStages = ["lead", "qualified", "discovery", "proposal", "negotiation"] as const;
 
@@ -32,6 +33,8 @@ export const ConvertLeadSchema = z.object({
   dealStage:     z.enum(OpenStages).default("qualified"),
   currency:      z.string().length(3).optional(),
   ownerId:       z.string().uuid().optional(),
+  /** Convert INTO this existing contact (the lead is merged into it). */
+  contactId:     z.string().uuid().optional(),
 });
 
 export const FREEMAIL_DOMAINS = new Set([
@@ -65,6 +68,7 @@ interface LeadRow {
   created_at?: string;
   company_id?: string;
   custom_fields?: string;
+  lead_status?: string;
 }
 
 export async function leadConvertRoutes(server: FastifyInstance) {
@@ -107,13 +111,30 @@ export async function leadConvertRoutes(server: FastifyInstance) {
            RETURN {id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email,
                    is_lead: p.is_lead, converted_at: p.converted_at, owner_id: p.owner_id,
                    source: p.source, created_at: p.created_at, company_id: co.id,
-                   custom_fields: p.custom_fields} LIMIT 1`,
+                   custom_fields: p.custom_fields, lead_status: p.lead_status} LIMIT 1`,
           { id, tenantId },
         );
         const lead = leads[0];
         if (!lead) throw new ConvertError(404, "NOT_FOUND", "Lead not found");
         if (lead.is_lead !== true || lead.converted_at) {
           throw new ConvertError(409, "ALREADY_CONVERTED", "This record is not an open lead");
+        }
+        if (lead.lead_status === "unqualified") {
+          throw new ConvertError(422, "LEAD_UNQUALIFIED", "Unqualified leads cannot be converted — requalify first");
+        }
+
+        // Converting into an existing contact (the person already exists).
+        let existingContact: { id: string; company_id?: string; owner_id?: string } | null = null;
+        if (b.contactId) {
+          const rows = await tx.cypher<{ id: string; is_lead?: boolean; company_id?: string; owner_id?: string }>(
+            `MATCH (p:Person {id: $cid, tenant_id: $tenantId})
+             OPTIONAL MATCH (p)-[:WORKS_AT]->(co:Company)
+             RETURN {id: p.id, is_lead: p.is_lead, company_id: co.id, owner_id: p.owner_id} LIMIT 1`,
+            { cid: b.contactId, tenantId });
+          if (!rows.length || rows[0].is_lead === true || rows[0].id === id) {
+            throw new ConvertError(422, "CONTACT_NOT_FOUND", "The selected contact does not exist");
+          }
+          existingContact = rows[0];
         }
 
         const ownerId = b.ownerId ?? lead.owner_id ?? actor ?? null;
@@ -150,6 +171,9 @@ export async function leadConvertRoutes(server: FastifyInstance) {
           );
           if (rows.length) { companyId = rows[0].id; companyName = rows[0].name; }
         }
+        if (!companyId && existingContact?.company_id && !b.companyName) {
+          companyId = existingContact.company_id;
+        }
         if (!companyId && lead.company_id && !b.companyName) {
           companyId = lead.company_id;
         }
@@ -165,6 +189,7 @@ export async function leadConvertRoutes(server: FastifyInstance) {
             `CREATE (c:Company {
                id: $cid, tenant_id: $tenantId, name: $name, domain: $domain,
                owner_id: $ownerId, created_by: $actor, source: 'lead_conversion',
+               account_status: 'prospect', churned_at: '', churn_reason: '',
                custom_fields: '{}', created_at: $now, updated_at: $now
              }) RETURN {id: c.id}`,
             { cid: companyId, tenantId, name: b.companyName, domain: domain ?? "",
@@ -173,17 +198,28 @@ export async function leadConvertRoutes(server: FastifyInstance) {
         }
 
         // ── Convert the person ──────────────────────────────────────────────
+        // personId = the resulting contact: the lead itself, or the existing
+        // contact the lead is merged into.
+        const personId = existingContact?.id ?? id;
+        if (existingContact) {
+          await mergePersonGraph(tx, tenantId, personId, [id]);
+          await repointRelational(tx, tenantId, personId, [id], { keepLeadTracking: true });
+          await tx.cypher(`MATCH (p:Person {id: $id, tenant_id: $tenantId}) DETACH DELETE p`, { id, tenantId });
+        } else {
+          await tx.cypher(
+            `MATCH (p:Person {id: $id, tenant_id: $tenantId})
+             SET p.is_lead = false, p.lead_status = 'converted', p.converted_at = $now,
+                 p.updated_at = $now, p.owner_id = $ownerId
+             RETURN {id: p.id}`,
+            { id, tenantId, now, ownerId: ownerId ?? "" },
+          );
+        }
         await tx.cypher(
-          `MATCH (p:Person {id: $id, tenant_id: $tenantId})
-           SET p.is_lead = false, p.converted_at = $now, p.updated_at = $now, p.owner_id = $ownerId
-           RETURN {id: p.id}`,
-          { id, tenantId, now, ownerId: ownerId ?? "" },
-        );
-        await tx.cypher(
-          `MATCH (p:Person {id: $id, tenant_id: $tenantId}), (c:Company {id: $cid, tenant_id: $tenantId})
-           MERGE (p)-[:WORKS_AT]->(c)
+          `MATCH (p:Person {id: $pid, tenant_id: $tenantId}), (c:Company {id: $cid, tenant_id: $tenantId})
+           WHERE NOT EXISTS((p)-[:WORKS_AT]->(c))
+           CREATE (p)-[:WORKS_AT {is_current: true, created_at: $now}]->(c)
            RETURN {ok: true}`,
-          { id, tenantId, cid: companyId },
+          { pid: personId, tenantId, cid: companyId, now },
         );
 
         // ── Optional opportunity ────────────────────────────────────────────
@@ -213,22 +249,24 @@ export async function leadConvertRoutes(server: FastifyInstance) {
           );
           // Contact role on the opportunity.
           await tx.cypher(
-            `MATCH (p:Person {id: $id, tenant_id: $tenantId}), (d:Deal {id: $did, tenant_id: $tenantId})
-             MERGE (p)-[:INFLUENCES {role: 'primary_contact', is_primary: true, influence_score: 0.8,
+            `MATCH (p:Person {id: $pid, tenant_id: $tenantId}), (d:Deal {id: $did, tenant_id: $tenantId})
+             MERGE (p)-[:INFLUENCES {role: 'primary_contact', is_primary: true, influence_score: 80,
                                      sentiment: 'neutral', created_at: $now}]->(d)
+             SET d.main_poc = $pid
              RETURN {ok: true}`,
-            { id, did: dealId, tenantId, now },
+            { pid: personId, did: dealId, tenantId, now },
           );
         }
 
         const conv = await tx.sql<{ id: string }>(
           `INSERT INTO public.lead_conversions
              (tenant_id, contact_id, company_id, company_created, deal_id, lead_source,
-              owner_id, converted_by, lead_created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              owner_id, converted_by, lead_created_at, merged_into_contact_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING id`,
           [tenantId, id, companyId, companyCreated, dealId, lead.source ?? null,
-           ownerId, actor, lead.created_at && !Number.isNaN(Date.parse(lead.created_at)) ? lead.created_at : null],
+           ownerId, actor, lead.created_at && !Number.isNaN(Date.parse(lead.created_at)) ? lead.created_at : null,
+           existingContact?.id ?? null],
         );
         // Make sure the lead is in the registry (leads created before 061).
         await tx.sql(
@@ -240,7 +278,10 @@ export async function leadConvertRoutes(server: FastifyInstance) {
         );
 
         return {
-          contactId: id,
+          contactId: personId,
+          leadId: id,
+          mergedIntoExistingContact: !!existingContact,
+          previousLeadStatus: lead.lead_status || "new",
           companyId,
           companyCreated,
           dealId,
@@ -252,8 +293,11 @@ export async function leadConvertRoutes(server: FastifyInstance) {
       });
 
       // Post-commit, non-fatal side effects.
-      await recordFieldChanges(tenantId, "contact", id, [
+      await recordFieldChanges(tenantId, "contact", result.contactId, result.mergedIntoExistingContact ? [
+        { field: "mergedLead", oldValue: null, newValue: id },
+      ] : [
         { field: "isLead", oldValue: true, newValue: false },
+        { field: "leadStatus", oldValue: result.previousLeadStatus, newValue: "converted" },
         ...(result.ownerId !== result.previousOwnerId
           ? [{ field: "ownerId", oldValue: result.previousOwnerId, newValue: result.ownerId }] : []),
       ], actor);
@@ -270,11 +314,13 @@ export async function leadConvertRoutes(server: FastifyInstance) {
         await pool.query(
           `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
            VALUES ($1, $2, 'user', $3, $4, $5)`,
-          [tenantId, type, entity, entityId, JSON.stringify({ conversionId: result.conversionId, companyId: result.companyId, dealId: result.dealId, contactId: id })],
+          [tenantId, type, entity, type === "lead.converted" ? result.contactId : entityId,
+           JSON.stringify({ conversionId: result.conversionId, companyId: result.companyId, dealId: result.dealId,
+                            contactId: result.contactId, leadId: id, mergedIntoExistingContact: result.mergedIntoExistingContact })],
         ).catch((err) => console.error("[lead-convert] event write failed:", err.message));
       }
 
-      const { previousOwnerId: _p, stage: _s, ownerId: _o, ...data } = result;
+      const { previousOwnerId: _p, stage: _s, ownerId: _o, previousLeadStatus: _l, ...data } = result;
       return reply.status(201).send({ success: true, data });
     } catch (err) {
       if (err instanceof ConvertError) {

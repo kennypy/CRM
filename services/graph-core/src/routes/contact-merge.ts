@@ -49,7 +49,10 @@ async function safe(tx: TxRunner, name: string, sql: string, values: unknown[], 
   }
 }
 
-export async function repointRelational(tx: TxRunner, tenantId: string, primary: string, secs: string[]) {
+export async function repointRelational(
+  tx: TxRunner, tenantId: string, primary: string, secs: string[],
+  opts: { keepLeadTracking?: boolean } = {},
+) {
   const T = [tenantId, primary, secs];
   // Tables without unique constraints on the contact column.
   const simple: [string, string, string?][] = [
@@ -94,12 +97,47 @@ export async function repointRelational(tx: TxRunner, tenantId: string, primary:
     { sql: `DELETE FROM public.entity_list_members WHERE entity_id = ANY($1::text[])`, values: [secs] });
   // Scores are recomputed for the survivor; duplicates' registry rows go.
   await tx.sql(`DELETE FROM public.lead_scores WHERE tenant_id = $1 AND contact_id = ANY($2::text[])`, [tenantId, secs]);
+  // Lead → existing contact conversion keeps the lead's funnel records (the
+  // conversion is reported against the lead id).
+  if (opts.keepLeadTracking) return;
   await tx.sql(`DELETE FROM public.lead_registry WHERE tenant_id = $1 AND contact_id::text = ANY($2::text[])`, [tenantId, secs]);
   // Keep conversion history; re-point only when the primary has none.
   await safe(tx, `m${i++}`,
     `UPDATE public.lead_conversions SET contact_id = $2 WHERE tenant_id = $1 AND contact_id::text = ANY($3::text[])
        AND NOT EXISTS (SELECT 1 FROM public.lead_conversions WHERE tenant_id = $1 AND contact_id = $2)`, T,
     { sql: `SELECT 1`, values: [] });
+}
+
+/**
+ * Re-point every relationship of `secs` onto `primary` (both directions, with
+ * properties, skipping edges the primary already has) and fill the primary's
+ * blank fields from them. Does not delete the duplicates.
+ */
+export async function mergePersonGraph(tx: TxRunner, tenantId: string, primaryId: string, secondaryIds: string[]) {
+  for (const label of EDGE_LABELS) {
+    await tx.cypher(
+      `MATCH (s:Person {tenant_id: $tenantId})-[r:${label}]->(x) WHERE s.id IN $secs
+       MATCH (p:Person {id: $pid, tenant_id: $tenantId})
+       WHERE x.id <> $pid AND NOT EXISTS((p)-[:${label}]->(x))
+       CREATE (p)-[r2:${label}]->(x) SET r2 = properties(r)
+       RETURN {n: 1}`,
+      { tenantId, secs: secondaryIds, pid: primaryId });
+    await tx.cypher(
+      `MATCH (x)-[r:${label}]->(s:Person {tenant_id: $tenantId}) WHERE s.id IN $secs
+       MATCH (p:Person {id: $pid, tenant_id: $tenantId})
+       WHERE x.id <> $pid AND NOT EXISTS((x)-[:${label}]->(p))
+       CREATE (x)-[r2:${label}]->(p) SET r2 = properties(r)
+       RETURN {n: 1}`,
+      { tenantId, secs: secondaryIds, pid: primaryId });
+  }
+  for (const sid of secondaryIds) {
+    const sets = FILL_FIELDS.map((f) =>
+      `p.${f} = CASE WHEN p.${f} IS NULL OR p.${f} = '' THEN s.${f} ELSE p.${f} END`).join(", ");
+    await tx.cypher(
+      `MATCH (p:Person {id: $pid, tenant_id: $tenantId}), (s:Person {id: $sid, tenant_id: $tenantId})
+       SET ${sets}, p.updated_at = $now RETURN {ok: true}`,
+      { pid: primaryId, sid, tenantId, now: new Date().toISOString() });
+  }
 }
 
 export async function contactMergeRoutes(server: FastifyInstance) {
@@ -129,7 +167,8 @@ export async function contactMergeRoutes(server: FastifyInstance) {
           throw new MergeError(422, "MIXED_RECORD_TYPES", "Leads and contacts cannot be merged together — convert the lead first");
         }
 
-        for (const label of EDGE_LABELS) {
+        await mergePersonGraph(tx, tenantId, primaryId, secondaryIds);
+        for (const label of [] as string[]) {
           // Outgoing (s)-[r]->(x) and incoming (x)-[r]->(s), skipping edges the primary already has.
           await tx.cypher(
             `MATCH (s:Person {tenant_id: $tenantId})-[r:${label}]->(x) WHERE s.id IN $secs
@@ -147,8 +186,7 @@ export async function contactMergeRoutes(server: FastifyInstance) {
             { tenantId, secs: secondaryIds, pid: primaryId });
         }
 
-        // Fill blank primary fields from duplicates (first non-blank wins).
-        for (const sid of secondaryIds) {
+        for (const sid of [] as string[]) {
           const sets = FILL_FIELDS.map((f) =>
             `p.${f} = CASE WHEN p.${f} IS NULL OR p.${f} = '' THEN s.${f} ELSE p.${f} END`).join(", ");
           await tx.cypher(

@@ -79,6 +79,10 @@ export async function dealsRoutes(server: FastifyInstance) {
   server.delete("/:id", { preHandler: [requireManager, requireCrmWrite, aclDelete, holdGuard] }, graphProxy);
 
   // ── Field history ─────────────────────────────────────────────────────────
+  // ── Contact roles (champion, economic buyer… ; one primary = main POC) ────
+  server.get("/:id/contact-roles", { preHandler: [requireCrmRead, aclRead] }, graphProxy);
+  server.put("/:id/contact-roles", { preHandler: [requireRep, requireCrmWrite, aclWrite] }, graphProxy);
+
   server.get("/:id/history", { preHandler: [requireCrmRead, aclRead] }, async (request, reply) => {
     const p = IdParam.safeParse(request.params);
     if (!p.success) return bad(reply, "Invalid id");

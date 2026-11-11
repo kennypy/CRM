@@ -422,18 +422,43 @@ export async function campaignsRoutes(server: FastifyInstance) {
     });
   });
 
+  // ── GET /api/v1/campaigns/memberships/:contactId — campaign history ─────
+  server.get("/memberships/:contactId", { preHandler: [requireCrmRead] }, async (request, reply) => {
+    const { contactId } = request.params as { contactId: string };
+    const { tenantId } = request.user;
+    if (!/^[0-9a-f-]{36}$/i.test(contactId)) {
+      return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR" } });
+    }
+    const { rows } = await pool.query(
+      `SELECT c.id, c.name, c.type, c.status, cc.status AS member_status, cc.enrolled_at, cc.responded_at
+         FROM campaign_contacts cc JOIN campaigns c ON c.id = cc.campaign_id
+        WHERE cc.tenant_id = $1 AND cc.contact_id = $2
+        ORDER BY cc.enrolled_at DESC`,
+      [tenantId, contactId],
+    );
+    return reply.send({
+      success: true,
+      data: rows.map((r) => ({
+        campaignId: r.id, name: r.name, type: r.type, status: r.status,
+        memberStatus: r.member_status, enrolledAt: r.enrolled_at, respondedAt: r.responded_at,
+      })),
+    });
+  });
+
   // ── POST /api/v1/campaigns/:id/contacts ─────────────────────────────────
   server.post("/:id/contacts", { preHandler: [requireRep, requireCrmWrite] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { tenantId } = request.user;
-    const { contactIds } = request.body as { contactIds: string[] };
-
-    if (!contactIds?.length) {
+    const parsedBody = z.object({ contactIds: z.array(z.string().uuid()).min(1).max(1000) }).safeParse(request.body);
+    if (!parsedBody.success) {
       return reply.status(400).send({
         success: false,
-        error: { code: "VALIDATION_ERROR", message: "contactIds array required" },
+        error: { code: "VALIDATION_ERROR", message: "contactIds: 1–1000 contact ids required" },
       });
     }
+    const contactIds = [...new Set(parsedBody.data.contactIds)];
+    const { rows: own } = await pool.query(`SELECT 1 FROM campaigns WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+    if (!own.length) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND" } });
 
     // Batch upsert
     const values = contactIds.map((_, i) =>

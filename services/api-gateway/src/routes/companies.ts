@@ -30,6 +30,8 @@ export async function companiesRoutes(server: FastifyInstance) {
   server.get("/:id", { preHandler: [requireCrmRead, aclRead] }, proxy);
   server.get("/by-domain/:domain",      { preHandler: [requireCrmRead] }, proxy);
   server.get("/:id/detail", { preHandler: [requireCrmRead, aclRead] }, proxy);
+  // People at the account, their roles across its opportunities, and its champion.
+  server.get("/:id/stakeholders", { preHandler: [requireCrmRead, aclRead] }, proxy);
 
   // Write: rep+
   server.post("/",     { preHandler: [requireRep, requireCrmWrite, blockRO, rules] },     proxy);

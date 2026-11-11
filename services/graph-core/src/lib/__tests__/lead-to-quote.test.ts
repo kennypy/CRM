@@ -42,3 +42,27 @@ describe("lead conversion input", () => {
     expect(ConvertLeadSchema.safeParse({ companyDomain: "not a domain" }).success).toBe(false);
   });
 });
+
+import { ContactRolesBody } from "../../routes/relationships";
+
+describe("opportunity contact roles", () => {
+  const a = "a0000000-0000-0000-0000-000000000001", b = "a0000000-0000-0000-0000-000000000002";
+  it("allows one main POC plus a separate champion", () => {
+    expect(ContactRolesBody.safeParse({ roles: [
+      { contactId: a, role: "champion", isPrimary: false },
+      { contactId: b, role: "economic_buyer", isPrimary: true },
+    ] }).success).toBe(true);
+  });
+  it("rejects two main POCs and duplicate contacts", () => {
+    expect(ContactRolesBody.safeParse({ roles: [
+      { contactId: a, role: "champion", isPrimary: true },
+      { contactId: b, role: "influencer", isPrimary: true },
+    ] }).success).toBe(false);
+    expect(ContactRolesBody.safeParse({ roles: [
+      { contactId: a, role: "champion" }, { contactId: a, role: "influencer" },
+    ] }).success).toBe(false);
+  });
+  it("rejects unknown roles", () => {
+    expect(ContactRolesBody.safeParse({ roles: [{ contactId: a, role: "friend" }] }).success).toBe(false);
+  });
+});

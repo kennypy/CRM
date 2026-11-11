@@ -159,7 +159,8 @@ async function bootstrap() {
   });
 
   await server.register(rateLimit, {
-    max: 200,
+    // Per user per minute. Bulk/integration users may need more (env).
+    max: parseInt(process.env.GATEWAY_RATE_LIMIT_MAX ?? "200", 10),
     timeWindow: "1 minute",
     // Fail-fast client + skipOnError: a Redis outage degrades to "no rate
     // limiting" instead of hanging every request (the shared client queues

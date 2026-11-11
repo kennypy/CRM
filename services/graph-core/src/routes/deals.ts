@@ -14,6 +14,7 @@ import { pool, cypher } from "../db/pool";
 import { computeRealityScore } from "../lib/reality-score";
 import { actorId, diffTracked, eventOrigin, recordFieldChanges } from "../lib/field-history";
 import { OwnerIdList } from "../lib/owner-filter";
+import { dealContactRoleRoutes } from "./relationships";
 
 /** Deal fields captured in field_history on every change. */
 const TRACKED_DEAL_FIELDS = [
@@ -78,6 +79,8 @@ function dealReturnMap() {
 }
 
 export async function dealsRoutes(server: FastifyInstance) {
+  await dealContactRoleRoutes(server);
+
   server.get("/", async (request, reply) => {
     const parsed = GetDealsQuery.safeParse(request.query);
     if (!parsed.success) {
@@ -420,6 +423,28 @@ export async function dealsRoutes(server: FastifyInstance) {
     }
 
     await recordFieldChanges(tenantId, "deal", id, historyChanges, actorId(request));
+
+    // Account lifecycle: winning an opportunity makes its account a customer
+    // (prospect → customer, and a churned account that buys again is won back).
+    if (stageChanged && f.stage === "closed_won") {
+      const promoted = await cypher<{ id: string; before: string | null }>(
+        `MATCH (c:Company {tenant_id: $tenantId})-[:INVOLVED_IN]->(d:Deal {id: $id, tenant_id: $tenantId})
+         WHERE c.account_status IS NULL OR c.account_status <> 'customer'
+         WITH c, c.account_status AS before
+         SET c.account_status = 'customer', c.churned_at = '', c.churn_reason = '', c.updated_at = $now
+         RETURN {id: c.id, before: before}`,
+        { id, tenantId, now: params.now },
+      ).catch(() => [] as { id: string; before: string | null }[]);
+      for (const c of promoted) {
+        const change = [{ field: "accountStatus", oldValue: c.before ?? "prospect", newValue: "customer" }];
+        await recordFieldChanges(tenantId, "company", c.id, change, actorId(request));
+        await pool.query(
+          `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
+           VALUES ($1, 'company.updated', 'user', 'company', $2, $3)`,
+          [tenantId, c.id, JSON.stringify({ accountStatus: "customer", changes: change, dealId: id, _origin: eventOrigin(request) })],
+        ).catch(() => undefined);
+      }
+    }
 
     const evType = stageChanged
       ? f.stage === "closed_won" ? "deal.closed_won"

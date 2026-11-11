@@ -36,7 +36,10 @@ is what matters.
 | Lead assignment rules, web-to-lead, lead conversion | **Has** | Added in the Lead-to-Quote release |
 | Opportunity stages, products, price books, quotes, quote PDF, quote↔opp sync | **Has** | |
 | Multi-step approval processes | **Has** | Quotes only. Generic approval processes on any object: **Missing** |
-| Opportunity teams, splits, contact roles | **Has** | Splits are not yet in forecast rollups |
+| Opportunity teams, splits, contact roles (champion, economic buyer… ; one main POC) | **Has** | Contact-role API + account champion (`/companies/:id/stakeholders`). Splits not yet in forecast rollups |
+| Account lifecycle (prospect → customer → churned, win-back) | **Has** | Won deal auto-promotes the account; churn date/reason; history-tracked |
+| Lead status (new / working / nurturing / qualified / unqualified → converted) | **Has** | Unqualified leads cannot convert |
+| Lead-to-existing-contact conversion + duplicate rules | **Has** | `/leads/:id/matches`; contact dupes blocked, lead dupes blocked, lead-matches-contact allowed and merged on convert |
 | Collaborative forecasting (categories, overrides, multi-currency) | **Has** | |
 | Pipeline inspection / deal insights | **Partial** | Reality Score, anomalies, stalled-deal detection |
 | Territory management (ETM 2.0 rules, hierarchies, assignment) | **Partial** | Basic territories module |
@@ -44,7 +47,7 @@ is what matters.
 | Sales engagement / cadences | **Has** | Sequences |
 | Dialer / CTI | **Partial** | Twilio + iframe dialers |
 | Conversation intelligence (call recording + AI) | **Partial** | Zoom transcripts → AI summaries. Fixed this release (§8) |
-| Duplicate/matching rules on manual create | **Partial** | Web-to-lead dedupe, admin dedup, **contact merge (fixed §8)** |
+| Duplicate/matching rules on manual create | **Partial** | Email-based rules (see above), admin dedup, contact merge; no fuzzy/name matching rules |
 | Mobile app with offline | **Partial** | Flutter app exists; the L2Q screens and offline mode are not verified |
 | Sales Programs / enablement | **Missing** | Coaching module only |
 | Revenue Cloud (CPQ bundles, billing, RLM) | **Missing** | Quotes are CPQ-lite |

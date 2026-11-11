@@ -18,7 +18,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireAdmin, requireRep } from "../middleware/rbac";
 import { requireCrmRead, requireCrmWrite } from "../middleware/scope";
-import { checkRecordAccess } from "../middleware/record-access";
+import { checkRecordAccess, hasRecordAccess } from "../middleware/record-access";
 import { moduleAccessGate } from "../middleware/module-access";
 import { internalFetch, internalIdentityHeaders } from "../lib/internal-fetch";
 import { GRAPH_CORE_URL } from "../lib/service-urls";
@@ -40,6 +40,8 @@ const ConvertSchema = z.object({
   dealStage:     z.enum(["lead", "qualified", "discovery", "proposal", "negotiation"]).default("qualified"),
   currency:      z.string().length(3).optional(),
   ownerId:       z.string().uuid().optional(),
+  /** Merge the lead into this existing contact instead of creating a new one. */
+  contactId:     z.string().uuid().optional(),
 });
 
 const RuleSchema = z.object({
@@ -127,6 +129,13 @@ export async function leadsRoutes(server: FastifyInstance) {
       const ok = await assertAssignee(tenantId, "user", b.ownerId);
       if (!ok) return bad(reply, "Owner is not an active user", "INVALID_OWNER", 422);
     }
+    // Merging into an existing contact modifies that contact: need write on it.
+    if (b.contactId && !(await hasRecordAccess(tenantId, request.user.sub, request.user.role, "contact", b.contactId, "write"))) {
+      return reply.status(403).send({ success: false, error: { code: "RECORD_ACCESS_DENIED", message: "No write access to the selected contact" } });
+    }
+    if (b.companyId && !(await hasRecordAccess(tenantId, request.user.sub, request.user.role, "company", b.companyId, "read"))) {
+      return reply.status(403).send({ success: false, error: { code: "RECORD_ACCESS_DENIED", message: "No access to the selected account" } });
+    }
 
     // Validation rules apply to the records conversion creates.
     if (b.createDeal) {
@@ -151,6 +160,12 @@ export async function leadsRoutes(server: FastifyInstance) {
   });
 
   // ── Assign one lead now ───────────────────────────────────────────────────
+  // ── Duplicate / account matching for a lead (drives the convert dialog) ───
+  server.get("/:id/matches", { preHandler: [requireCrmRead, checkRecordAccess("contact", "read")] }, async (request, reply) => {
+    (request.raw as { url?: string }).url = request.url.replace("/api/v1/leads/", "/api/v1/contacts/");
+    return contactsProxy(request, reply);
+  });
+
   server.post("/:id/assign", { preHandler: [requireRep, requireCrmWrite, aclWrite] }, async (request, reply) => {
     const p = IdParam.safeParse(request.params);
     if (!p.success) return bad(reply, "Invalid lead id");

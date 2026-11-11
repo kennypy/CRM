@@ -20,6 +20,7 @@ import { servicePool } from "../db";
 import { internalFetch } from "../lib/internal-fetch";
 import { GRAPH_CORE_URL } from "../lib/service-urls";
 import { leadFactsFromContact, pickAssignee, setLeadOwner } from "../lib/lead-assignment";
+import { notifyUser } from "../lib/notify";
 
 const SubmissionSchema = z.object({
   firstName: z.string().trim().min(1).max(100),
@@ -56,14 +57,18 @@ function done(reply: FastifyReply, retURL: string | undefined, allowed: string[]
   return reply.status(status).send({ success: true, data: { received: true } });
 }
 
-async function findPersonByEmail(tenantId: string, email: string): Promise<boolean> {
+interface PersonMatch { id: string; isLead: boolean; ownerId?: string }
+
+async function findPersonByEmail(tenantId: string, email: string): Promise<PersonMatch[]> {
   const res = await internalFetch(
-    `${GRAPH_CORE_URL}/contacts?tenantId=${encodeURIComponent(tenantId)}&search=${encodeURIComponent(email)}&limit=20`,
+    `${GRAPH_CORE_URL}/contacts?tenantId=${encodeURIComponent(tenantId)}&search=${encodeURIComponent(email)}&limit=50`,
     { headers: { "x-tenant-id": tenantId }, signal: AbortSignal.timeout(5000) },
   );
-  if (!res.ok) return false;
-  const body = (await res.json()) as { data?: { email?: string }[] };
-  return (body.data ?? []).some((c) => (c.email ?? "").toLowerCase() === email.toLowerCase());
+  if (!res.ok) return [];
+  const body = (await res.json()) as { data?: { id: string; email?: string; isLead?: boolean; ownerId?: string }[] };
+  return (body.data ?? [])
+    .filter((c) => (c.email ?? "").toLowerCase() === email.toLowerCase())
+    .map((c) => ({ id: c.id, isLead: c.isLead === true, ownerId: c.ownerId }));
 }
 
 export async function webToLeadRoutes(server: FastifyInstance) {
@@ -130,10 +135,24 @@ export async function webToLeadRoutes(server: FastifyInstance) {
         `UPDATE web_to_lead_forms SET submissions = submissions + 1 WHERE id = $1`, [form.id],
       ).catch(() => undefined);
 
-      if (await findPersonByEmail(tenantId, s.email).catch(() => false)) {
-        request.log.info({ formId: form.id }, "web_to_lead.duplicate");
+      const matches = await findPersonByEmail(tenantId, s.email).catch(() => [] as PersonMatch[]);
+      const openLead = matches.find((m) => m.isLead);
+      if (openLead) {
+        // True duplicate: same person already an open lead. Don't create a
+        // second lead — tell its owner they came back instead (this inbound
+        // signal used to be dropped silently).
+        request.log.info({ formId: form.id }, "web_to_lead.duplicate_lead");
+        if (openLead.ownerId) {
+          await notifyUser({
+            tenantId, userId: openLead.ownerId, type: "lead_resubmitted",
+            title: `${s.firstName} ${s.lastName} submitted a web form again`,
+            actionUrl: `/leads?focus=${openLead.id}`, entityType: "contact", entityId: openLead.id, channels: "both",
+          }).catch(() => undefined);
+        }
         return done(reply, s.retURL, allowed);
       }
+      // An existing CONTACT inquiring again is new demand: create the lead (so
+      // it is worked and converted INTO that contact — see /leads/:id/matches).
 
       const create = await internalFetch(
         `${GRAPH_CORE_URL}/contacts?tenantId=${encodeURIComponent(tenantId)}`,
