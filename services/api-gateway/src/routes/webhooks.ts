@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { FastifyInstance } from "fastify";
-import { pool } from "../db";
+import { pool, servicePool } from "../db";
+import { enrichRecordingEvent, urlValidationResponse } from "../lib/zoom";
 import { redis } from "@nexcrm/service-common/redis";
 
 // ── Stripe signature verification ─────────────────────────────────────────────
@@ -231,13 +232,43 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ success: false, error: "Invalid Zoom signature" });
     }
 
+    const zbody = (request.body ?? {}) as Record<string, any>;
+    // Zoom refuses to enable an endpoint that doesn't answer this challenge.
+    if (zbody.event === "endpoint.url_validation" && typeof zbody.payload?.plainToken === "string") {
+      return reply.send(urlValidationResponse(zbody.payload.plainToken, secret));
+    }
+
+    // recording.completed carries a transcript download URL, not text: fetch it
+    // so the summariser has a transcript (previously every summary was empty).
+    let outBody = rawBody.toString("utf8");
+    try {
+      if (await enrichRecordingEvent(zbody, async (email) => {
+        const { rows } = await servicePool.query(
+          `SELECT tenant_id FROM users WHERE lower(email) = lower($1) AND deleted_at IS NULL LIMIT 2`, [email]);
+        return rows.length === 1 ? rows[0].tenant_id : null; // ambiguous across tenants → don't guess
+      })) {
+        outBody = JSON.stringify(zbody);
+      }
+    } catch (err: any) {
+      fastify.log.warn({ err: err.message }, "zoom.webhook.transcript_fetch_failed");
+    }
+    const zobj = zbody.payload?.object ?? {};
+    if (zbody.event === "recording.completed" && (zobj.uuid || zobj.id)) {
+      // Same key as /integrations/zoom/sync so a meeting is summarised once.
+      const hostTenant = await servicePool.query(
+        `SELECT tenant_id FROM users WHERE lower(email) = lower($1) AND deleted_at IS NULL LIMIT 1`, [zobj.host_email ?? ""],
+      ).then((r) => r.rows[0]?.tenant_id ?? "unknown").catch(() => "unknown");
+      const seen = await redis.set(`zoom:seen:${hostTenant}:${zobj.uuid ?? zobj.id}`, "1", "EX", 60 * 60 * 24 * 90, "NX").catch(() => "OK");
+      if (seen !== "OK") return reply.send({ success: true, duplicate: true });
+    }
+
     // Publish to Redis Stream for async meeting summary processing
     try {
       await redis.xadd(
         "nexcrm:zoom_events",
         "*",
-        "payload", rawBody.toString("utf8"),
-        "event_type", (request.body as any)?.event ?? "unknown"
+        "payload", outBody,
+        "event_type", zbody.event ?? "unknown"
       );
     } catch (err: any) {
       fastify.log.error({ err: err.message }, "zoom.webhook.redis_publish_error");

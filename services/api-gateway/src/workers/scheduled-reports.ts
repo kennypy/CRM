@@ -92,7 +92,8 @@ async function processSubscriptions() {
 
       // Execute the report
       const spec = typeof sub.spec === "string" ? JSON.parse(sub.spec) : sub.spec;
-      const result = await executeQuery(spec, sub.tenant_id);
+      // Run as the subscriber so the email only contains records they may see.
+      const result = await executeQuery(spec, sub.tenant_id, { userId: sub.user_id });
 
       // Save snapshot
       await pool.query(

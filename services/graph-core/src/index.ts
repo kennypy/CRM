@@ -74,7 +74,9 @@ async function bootstrap() {
   // the tenant param is service-token-authenticated, so a forged value only
   // shifts the bucket. Generous default, tunable per deployment.
   await server.register(rateLimit, {
-    max: parseInt(process.env.GRAPH_CORE_RATE_LIMIT_MAX ?? "600", 10),
+    // Per TENANT, not per user: 600/min (the old default) is ~5 req/min per rep
+    // for a 120-seat org and starved normal use plus automation.
+    max: parseInt(process.env.GRAPH_CORE_RATE_LIMIT_MAX ?? "12000", 10),
     timeWindow: "1 minute",
     // Fail-fast client + skipOnError: a Redis outage must not hang graph reads.
     redis: requestRedis(),
@@ -98,6 +100,12 @@ async function bootstrap() {
 
   // Sanitize error messages in production to avoid leaking internal details
   server.setErrorHandler((err: unknown, request, reply) => {
+    // Rate limiting is not a server error: return 429 so callers back off
+    // (it was surfacing as 500 INTERNAL_ERROR).
+    const status = (err as { statusCode?: number })?.statusCode;
+    if (status === 429) {
+      return reply.status(429).send({ success: false, error: { code: "RATE_LIMITED", message: "Too many requests" } });
+    }
     request.log.error({ err, url: request.url }, "unhandled_error");
     const message = process.env.NODE_ENV === "production"
       ? "Internal server error"

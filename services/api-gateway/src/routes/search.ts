@@ -11,6 +11,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { internalFetch, internalIdentityHeaders } from "../lib/internal-fetch";
+import { visibleOwnerIdsForList } from "../lib/visibility";
 import { requireCrmRead } from "../middleware/scope";
 import { GRAPH_CORE_URL } from "../lib/service-urls";
 
@@ -46,14 +47,24 @@ export async function searchRoutes(server: FastifyInstance) {
 
     const headers = internalIdentityHeaders(request);
     const enc = encodeURIComponent(term);
-    const base = `${GRAPH_CORE_URL}/api/v1`;
+    // graph-core mounts at /contacts etc. — the previous "/api/v1" prefix 404'd
+    // and fetchJson swallowed it, so global search never returned anything.
+    const base = GRAPH_CORE_URL;
+
+    // Sharing model: under a Private default, only records the caller may see.
+    const { sub, role } = request.user;
+    const vis = async (entity: string) => {
+      const owners = await visibleOwnerIdsForList(tenantId, sub, role, entity);
+      return owners ? `&visibleOwnerIds=${owners.join(",")}` : "";
+    };
+    const [vc, vco, vd] = await Promise.all([vis("contact"), vis("company"), vis("deal")]);
 
     // Fan out concurrently. Contacts endpoint returns contacts + leads together;
     // we request a larger slice so both groups have room after the split.
     const [people, companies, deals] = await Promise.all([
-      fetchJson(`${base}/contacts?tenantId=${tenantId}&search=${enc}&limit=${perType * 2}`, headers),
-      fetchJson(`${base}/companies?tenantId=${tenantId}&search=${enc}&limit=${perType}`, headers),
-      fetchJson(`${base}/deals?tenantId=${tenantId}&search=${enc}&limit=${perType}`, headers),
+      fetchJson(`${base}/contacts?tenantId=${tenantId}&search=${enc}&limit=${perType * 2}${vc}`, headers),
+      fetchJson(`${base}/companies?tenantId=${tenantId}&search=${enc}&limit=${perType}${vco}`, headers),
+      fetchJson(`${base}/deals?tenantId=${tenantId}&search=${enc}&limit=${perType}${vd}`, headers),
     ]);
 
     const results: SearchResult[] = [];

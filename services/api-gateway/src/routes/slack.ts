@@ -64,6 +64,7 @@ export async function slackRoutes(server: FastifyInstance) {
     const state = await createOAuthState(request.user.tenantId, request.user.sub);
 
     const url = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+    if ((request.query as { format?: string }).format === "json") return reply.send({ success: true, data: { url } });
     return reply.redirect(url);
   });
 

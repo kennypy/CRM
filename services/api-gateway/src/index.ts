@@ -96,6 +96,7 @@ import { approvalsRoutes }               from "./routes/approvals";
 import { validationRulesRoutes }         from "./routes/validation-rules";
 import { standardReportsRoutes }         from "./routes/standard-reports";
 import { usersLifecycleRoutes }          from "./routes/users-lifecycle";
+import { timelineRoutes }                from "./routes/timeline";
 import { redis, requestRedis }         from "@nexcrm/service-common/redis";
 import { setTenantContext, pool, servicePool, platformPool } from "./db";
 import { NoSchemaIntrospectionCustomRule } from "graphql";
@@ -327,6 +328,7 @@ async function bootstrap() {
   await server.register(validationRulesRoutes,   { prefix: "/api/v1/validation-rules" });
   await server.register(standardReportsRoutes,   { prefix: "/api/v1/reports/standard" });
   await server.register(usersLifecycleRoutes,    { prefix: "/api/v1/users" });
+  await server.register(timelineRoutes,          { prefix: "/api/v1/timeline" });
 
   // ── GraphQL (Mercurius) ───────────────────────────────────────────────────
   // Protected by the authMiddleware preHandler hook registered above.

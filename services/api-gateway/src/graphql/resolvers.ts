@@ -42,6 +42,11 @@ import {
   maskResponseData,
 } from "../middleware/field-access";
 import { ROLE_RANK } from "../middleware/rbac";
+import { hasRecordAccess } from "../middleware/record-access";
+import { visibleOwnerIdsForList } from "../lib/visibility";
+import { checkValidationRules, type RuleEntity } from "../lib/validation-rules";
+import { entityHold } from "../lib/legal-hold";
+import { pool } from "../db";
 
 type GQLContext = MercuriusContext;
 
@@ -79,6 +84,41 @@ async function assertWritableFields(
   }
 }
 
+// ── Sharing model + data-quality parity with the REST routes ──────────────────
+// GraphQL used to bypass record ACLs, list visibility, validation rules and
+// legal holds that the REST endpoints enforce.
+
+async function assertAccess(ctx: GQLContext, entity: string, id: string, access: "read" | "write" | "delete") {
+  if (!(await hasRecordAccess(ctx.tenantId, ctx.userId, ctx.role, entity, id, access))) {
+    throw new Error(`RECORD_ACCESS_DENIED: no ${access} access to this ${entity}`);
+  }
+}
+
+async function canRead(ctx: GQLContext, entity: string, id: string) {
+  return hasRecordAccess(ctx.tenantId, ctx.userId, ctx.role, entity, id, "read");
+}
+
+async function applyVisibility(ctx: GQLContext, entity: string, params: URLSearchParams) {
+  const owners = await visibleOwnerIdsForList(ctx.tenantId, ctx.userId, ctx.role, entity);
+  if (owners) params.set("visibleOwnerIds", owners.join(","));
+}
+
+async function assertRules(ctx: GQLContext, entity: RuleEntity, input: Record<string, unknown>, id?: string) {
+  let record = input;
+  let previous: Record<string, unknown> | undefined;
+  if (id) {
+    const cur = await gcFetch(`/${entity === "company" ? "companies" : `${entity}s`}/${id}`, ctx.tenantId);
+    if (cur?.success) { previous = cur.data; record = { ...cur.data, ...input }; }
+  }
+  const failures = await checkValidationRules(ctx.tenantId, entity, record, previous);
+  if (failures.length) throw new Error(`VALIDATION_RULE: ${failures[0].message}`);
+}
+
+async function assertNoHold(ctx: GQLContext, entity: string, id: string) {
+  const hold = await entityHold(pool, ctx.tenantId, entity, id);
+  if (hold) throw new Error(`LEGAL_HOLD: record is under the legal hold "${hold}"`);
+}
+
 /** Apply field-level masking to a graph-core payload (no-op for admins). */
 async function mask<T>(ctx: GQLContext, entity: string, data: T): Promise<T> {
   if (!ctx.role || ADMIN_ROLES.has(ctx.role)) return data;
@@ -91,14 +131,15 @@ async function gcFetch(
   path: string,
   tenantId: string,
   method: "GET" | "POST" | "PATCH" | "DELETE" = "GET",
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  userId?: string,
 ): Promise<any> {
   const separator = path.includes("?") ? "&" : "?";
   const url = `${GRAPH_CORE}${path}${separator}tenantId=${encodeURIComponent(tenantId)}`;
 
   const res = await internalFetch(url, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-tenant-id": tenantId, ...(userId ? { "x-user-id": userId } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -134,6 +175,7 @@ const Query = {
     { id }: { id: string },
     ctx: GQLContext
   ) {
+    if (!(await canRead(ctx, "contact", id))) return null;
     const json = await gcFetch(`/contacts/${id}`, ctx.tenantId);
     return json.success ? mask(ctx, "contact", json.data) : null;
   },
@@ -148,6 +190,7 @@ const Query = {
     if (filter?.companyId) params.set("companyId", filter.companyId);
     if (limit)             params.set("limit",     String(limit));
 
+    await applyVisibility(ctx, "contact", params);
     const qs = params.toString();
     const json = await gcFetch(`/contacts${qs ? `?${qs}` : ""}`, ctx.tenantId);
     return json.success
@@ -161,6 +204,7 @@ const Query = {
     { id }: { id: string },
     ctx: GQLContext
   ) {
+    if (!(await canRead(ctx, "company", id))) return null;
     const json = await gcFetch(`/companies/${id}`, ctx.tenantId);
     return json.success ? mask(ctx, "company", json.data) : null;
   },
@@ -174,6 +218,7 @@ const Query = {
     if (search) params.set("search", search);
     if (limit)  params.set("limit",  String(limit));
 
+    await applyVisibility(ctx, "company", params);
     const qs = params.toString();
     const json = await gcFetch(`/companies${qs ? `?${qs}` : ""}`, ctx.tenantId);
     return json.success
@@ -187,6 +232,7 @@ const Query = {
     { id }: { id: string },
     ctx: GQLContext
   ) {
+    if (!(await canRead(ctx, "deal", id))) return null;
     const json = await gcFetch(`/deals/${id}`, ctx.tenantId);
     return json.success ? mask(ctx, "deal", json.data) : null;
   },
@@ -201,6 +247,7 @@ const Query = {
     if (filter?.atRisk != null) params.set("atRisk", String(filter.atRisk));
     if (limit)                 params.set("limit",  String(limit));
 
+    await applyVisibility(ctx, "deal", params);
     const qs = params.toString();
     const json = await gcFetch(`/deals${qs ? `?${qs}` : ""}`, ctx.tenantId);
     return json.success
@@ -213,6 +260,7 @@ const Query = {
     { id }: { id: string },
     ctx: GQLContext
   ) {
+    if (!(await canRead(ctx, "deal", id))) return null;
     const json = await gcFetch(`/deals/${id}/reality-score`, ctx.tenantId);
     return json.success ? json.data : null;
   },
@@ -255,7 +303,8 @@ const Mutation = {
   ) {
     assertMinRole(ctx, "rep");
     await assertWritableFields(ctx, "contact", input);
-    const json = await gcFetch("/contacts", ctx.tenantId, "POST", input);
+    await assertRules(ctx, "contact", input);
+    const json = await gcFetch("/contacts", ctx.tenantId, "POST", input, ctx.userId);
     return json.success ? json.data : null;
   },
 
@@ -266,7 +315,9 @@ const Mutation = {
   ) {
     assertMinRole(ctx, "rep");
     await assertWritableFields(ctx, "contact", input);
-    const json = await gcFetch(`/contacts/${id}`, ctx.tenantId, "PATCH", input);
+    await assertAccess(ctx, "contact", id, "write");
+    await assertRules(ctx, "contact", input, id);
+    const json = await gcFetch(`/contacts/${id}`, ctx.tenantId, "PATCH", input, ctx.userId);
     return json.success ? json.data : null;
   },
 
@@ -276,7 +327,9 @@ const Mutation = {
     ctx: GQLContext
   ) {
     assertMinRole(ctx, "manager");
-    await gcFetch(`/contacts/${id}`, ctx.tenantId, "DELETE");
+    await assertAccess(ctx, "contact", id, "delete");
+    await assertNoHold(ctx, "contact", id);
+    await gcFetch(`/contacts/${id}`, ctx.tenantId, "DELETE", undefined, ctx.userId);
     return true;
   },
 
@@ -288,7 +341,8 @@ const Mutation = {
   ) {
     assertMinRole(ctx, "rep");
     await assertWritableFields(ctx, "deal", input);
-    const json = await gcFetch("/deals", ctx.tenantId, "POST", input);
+    await assertRules(ctx, "deal", input);
+    const json = await gcFetch("/deals", ctx.tenantId, "POST", input, ctx.userId);
     return json.success ? json.data : null;
   },
 
@@ -299,7 +353,9 @@ const Mutation = {
   ) {
     assertMinRole(ctx, "rep");
     await assertWritableFields(ctx, "deal", input);
-    const json = await gcFetch(`/deals/${id}`, ctx.tenantId, "PATCH", input);
+    await assertAccess(ctx, "deal", id, "write");
+    await assertRules(ctx, "deal", input, id);
+    const json = await gcFetch(`/deals/${id}`, ctx.tenantId, "PATCH", input, ctx.userId);
     return json.success ? json.data : null;
   },
 
@@ -309,7 +365,9 @@ const Mutation = {
     ctx: GQLContext
   ) {
     assertMinRole(ctx, "manager");
-    await gcFetch(`/deals/${id}`, ctx.tenantId, "DELETE");
+    await assertAccess(ctx, "deal", id, "delete");
+    await assertNoHold(ctx, "deal", id);
+    await gcFetch(`/deals/${id}`, ctx.tenantId, "DELETE", undefined, ctx.userId);
     return true;
   },
 
