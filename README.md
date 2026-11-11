@@ -137,6 +137,8 @@ Services will be available at:
 | [CURRENCY.md](docs/CURRENCY.md) | Multi-currency model, exchange rates, base-currency rollups |
 | [LEAD_TO_QUOTE.md](docs/LEAD_TO_QUOTE.md) | Lead-to-Quote capability matrix, API, and known gaps |
 | [OPERATIONS.md](docs/OPERATIONS.md) | SLO (99%), alerts, runbooks, backup/restore, HA deployment, sizing |
+| [SALESFORCE_GAP_ANALYSIS.md](docs/SALESFORCE_GAP_ANALYSIS.md) | NexCRM vs every Salesforce cloud + Tableau; connectivity audit |
+| [research/salesforce-inventory.md](docs/research/salesforce-inventory.md) | Sourced Salesforce/Tableau feature inventory (2026) |
 
 ---
 
