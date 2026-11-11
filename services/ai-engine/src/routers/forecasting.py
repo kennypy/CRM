@@ -46,16 +46,19 @@ async def get_forecast(
         # Win rate
         wins = await conn.fetchval(
             """SELECT COUNT(*) FROM crm_events
-               WHERE tenant_id = $1 AND event_type = 'deal.stage_changed'
-                 AND payload->>'stage' ILIKE '%won%'
+               WHERE tenant_id = $1
+                 AND (event_type = 'deal.closed_won'
+                      OR (event_type = 'deal.stage_changed' AND payload->>'stage' ILIKE '%won%'))
                  AND created_at > NOW() - INTERVAL '90 days'""",
             tenant_id,
         ) or 0
 
         total_closed = await conn.fetchval(
             """SELECT COUNT(*) FROM crm_events
-               WHERE tenant_id = $1 AND event_type = 'deal.stage_changed'
-                 AND (payload->>'stage' ILIKE '%won%' OR payload->>'stage' ILIKE '%lost%')
+               WHERE tenant_id = $1
+                 AND (event_type IN ('deal.closed_won', 'deal.closed_lost')
+                      OR (event_type = 'deal.stage_changed'
+                          AND (payload->>'stage' ILIKE '%won%' OR payload->>'stage' ILIKE '%lost%')))
                  AND created_at > NOW() - INTERVAL '90 days'""",
             tenant_id,
         ) or 1
@@ -67,8 +70,9 @@ async def get_forecast(
                JOIN crm_events e2 ON e1.entity_id = e2.entity_id AND e1.tenant_id = e2.tenant_id
                WHERE e1.tenant_id = $1
                  AND e1.event_type = 'deal.created'
-                 AND e2.event_type = 'deal.stage_changed'
-                 AND (e2.payload->>'stage' ILIKE '%won%' OR e2.payload->>'stage' ILIKE '%lost%')
+                 AND (e2.event_type IN ('deal.closed_won', 'deal.closed_lost')
+                      OR (e2.event_type = 'deal.stage_changed'
+                          AND (e2.payload->>'stage' ILIKE '%won%' OR e2.payload->>'stage' ILIKE '%lost%')))
                  AND e2.created_at > NOW() - INTERVAL '90 days'""",
             tenant_id,
         )
@@ -77,8 +81,9 @@ async def get_forecast(
         recent_revenue = await conn.fetchval(
             """SELECT COALESCE(SUM((payload->>'value')::numeric), 0)
                FROM crm_events
-               WHERE tenant_id = $1 AND event_type = 'deal.stage_changed'
-                 AND payload->>'stage' ILIKE '%won%'
+               WHERE tenant_id = $1
+                 AND (event_type = 'deal.closed_won'
+                      OR (event_type = 'deal.stage_changed' AND payload->>'stage' ILIKE '%won%'))
                  AND created_at > NOW() - INTERVAL '30 days'""",
             tenant_id,
         ) or 0

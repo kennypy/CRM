@@ -33,7 +33,16 @@ export async function aiRoutes(server: FastifyInstance) {
     // requireAiWrite is a no-op for JWT users; add a real role floor so
     // read_only users can't drive the (LLM-cost-bearing) NL command endpoint.
     preHandler: [requireRep, requireAiWrite],
-  }, createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
+    // The engine serves POST /nl/command with {command, context}. This used to
+    // forward to /nl, which the engine does not serve — every command was a 404.
+  }, createProxy({
+    baseUrl: AI_ENGINE,
+    path: () => "/nl/command",
+    mapBody: (b) => {
+      const o = (b ?? {}) as Record<string, unknown>;
+      return { command: String(o.command ?? o.input ?? ""), context: (o.context as object) ?? null };
+    },
+  }));
 
   // Review queue — reads from Postgres directly (fast, no extra hop)
   server.get("/review-queue", { preHandler: [requireAiRead] }, async (request, reply) => {
@@ -89,15 +98,17 @@ export async function aiRoutes(server: FastifyInstance) {
   });
 
   // ── Enrichment endpoints ─────────────────────────────────────────────────
+  // Engine routers are mounted under a prefix AND declare the segment again
+  // (/enrich/enrich/…, /forecast/forecast) — map explicitly.
   server.post("/enrich/:entityType/:entityId", { preHandler: [requireRep, requireAiWrite] },
-    createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
+    createProxy({ baseUrl: AI_ENGINE, path: (p) => `/enrich/enrich/${encodeURIComponent(p.entityType)}/${encodeURIComponent(p.entityId)}` }));
 
   server.post("/enrich/batch", { preHandler: [requireRep, requireAiWrite] },
-    createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
+    createProxy({ baseUrl: AI_ENGINE, path: () => "/enrich/enrich/batch" }));
 
   // ── Forecasting endpoint ────────────────────────────────────────────────
   server.get("/forecast", { preHandler: [requireRep, requireAiRead] },
-    createProxy({ baseUrl: AI_ENGINE, stripPrefix: "/api/v1/ai" }));
+    createProxy({ baseUrl: AI_ENGINE, path: () => "/forecast/forecast" }));
 
   // Provenance / explain endpoint — why did AI write this field?
   server.get("/explain/:entityType/:entityId/:field", { preHandler: [requireAiRead] }, async (request, reply) => {

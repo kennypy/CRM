@@ -251,7 +251,7 @@ export async function leadConvertRoutes(server: FastifyInstance) {
           await tx.cypher(
             `MATCH (p:Person {id: $pid, tenant_id: $tenantId}), (d:Deal {id: $did, tenant_id: $tenantId})
              MERGE (p)-[:INFLUENCES {role: 'primary_contact', is_primary: true, influence_score: 80,
-                                     sentiment: 'neutral', created_at: $now}]->(d)
+                                     sentiment: 0, created_at: $now}]->(d)
              SET d.main_poc = $pid
              RETURN {ok: true}`,
             { pid: personId, did: dealId, tenantId, now },

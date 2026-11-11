@@ -2,7 +2,12 @@
 # Boot the NexCRM Node services (and optionally the web app) against an existing
 # Postgres (with Apache AGE) + Redis, for end-to-end tests and local checks.
 #
-#   scripts/dev-stack.sh start [--web]   migrate, start services, wait for health
+#   scripts/dev-stack.sh start [--web] [--py]
+#                                        migrate, start services, wait for health
+#                                        --web  also the Next.js app
+#                                        --py   also the Python AI engine (5001)
+#                                               and ingestion (5002); uvicorn is
+#                                               taken from \$PY_BIN (default: PATH)
 #   scripts/dev-stack.sh stop            stop everything this script started
 #   scripts/dev-stack.sh env             print the env file path in use
 #
@@ -37,6 +42,16 @@ RUN_WORKERS=true
 WEBHOOKS_ALLOW_PRIVATE_HOST=true
 GATEWAY_RATE_LIMIT_MAX=5000
 TRUST_PROXY=true
+AI_ENGINE_URL=http://localhost:5001
+INGESTION_URL=http://localhost:5002
+# Dummy provider settings so the OAuth-start and webhook-signature paths can be
+# exercised (tests/api-e2e/integrations.mjs). They cannot reach a real provider.
+GOOGLE_CLIENT_ID=e2e-google-client
+MICROSOFT_CLIENT_ID=e2e-microsoft-client
+SLACK_CLIENT_ID=e2e-slack-client
+ZOOM_CLIENT_ID=e2e-zoom-client
+SLACK_SIGNING_SECRET=$(openssl rand -hex 16)
+ZOOM_WEBHOOK_SECRET_TOKEN=$(openssl rand -hex 16)
 EOF
 }
 
@@ -71,10 +86,17 @@ case "${1:-}" in
     wait_http "http://localhost:${GRAPH_CORE_PORT}/health/live" graph-core
     wait_http "http://localhost:${AUTH_PORT}/health/live" auth
     wait_http "http://localhost:${PORT}/health/live" gateway
-    if [ "${2:-}" = "--web" ]; then
+    case " $* " in *" --py "*)
+      UVICORN="${PY_BIN:+$PY_BIN/}uvicorn"
+      start_one ai-engine services/ai-engine "$UVICORN" src.main:app --port 5001
+      start_one ingestion services/ingestion "$UVICORN" src.main:app --port 5002
+      wait_http "http://localhost:5001/health" ai-engine
+      wait_http "http://localhost:5002/health" ingestion
+    ;; esac
+    case " $* " in *" --web "*)
       start_one web apps/web npx next dev -p "${WEB_PORT:-3000}"
       wait_http "http://localhost:${WEB_PORT:-3000}/login" web
-    fi
+    ;; esac
     echo "[stack] up (logs: $RUN_DIR)"
     ;;
   stop)
@@ -100,5 +122,5 @@ case "${1:-}" in
     echo "[stack] stopped"
     ;;
   env) echo "$ENV_FILE" ;;
-  *) echo "usage: $0 start [--web] | stop | env" >&2; exit 64 ;;
+  *) echo "usage: $0 start [--web] [--py] | stop | env" >&2; exit 64 ;;
 esac

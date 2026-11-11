@@ -20,6 +20,10 @@ export const PUBLIC_PATHS = new Set([
   "/webhooks/zoom",
   "/webhooks/slack",
   "/webhooks/stripe",
+  // Provider push notifications; authenticated by the ingestion service.
+  "/ingestion/gmail/push",
+  "/ingestion/outlook/notifications",
+  "/ingestion/gcal/notifications",
   "/api/v1/outreach/email/unsubscribe",
   "/api/v1/outreach/calls/webhooks/twilio/status",
   "/api/v1/integrations/slack/interactions",

@@ -86,7 +86,7 @@ export async function dealContactRoleRoutes(server: FastifyInstance) {
         await tx.cypher(
           `MATCH (c:Person {id: $cid, tenant_id: $tenantId}), (d:Deal {id: $id, tenant_id: $tenantId})
            CREATE (c)-[:INFLUENCES {role: $role, is_primary: $primary, influence_score: $score,
-                                     sentiment: 'neutral', created_at: $now}]->(d)
+                                     sentiment: 0, created_at: $now}]->(d)
            RETURN {ok: true}`,
           { cid: r.contactId, id, tenantId, role: r.role, primary: r.isPrimary,
             score: r.influenceScore ?? (r.role === "champion" ? 85 : 50), now });

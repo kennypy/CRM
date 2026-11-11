@@ -3,11 +3,20 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-scripts/dev-stack.sh start || exit 1
+# The integrations suite needs the Python services; they start when uvicorn is
+# available (set PY_BIN to a virtualenv's bin directory, or have it on PATH).
+SUITES="lead-to-quote connectivity auth"
+PY_FLAG=""
+if [ -x "${PY_BIN:+$PY_BIN/}uvicorn" ] || command -v "${PY_BIN:+$PY_BIN/}uvicorn" > /dev/null 2>&1; then
+  PY_FLAG="--py"; SUITES="$SUITES integrations"
+else
+  echo "uvicorn not found — skipping the integrations suite (AI engine + ingestion)"
+fi
+scripts/dev-stack.sh start $PY_FLAG || exit 1
 set -a; . "$(scripts/dev-stack.sh env)"; set +a
 export GATEWAY_URL="http://localhost:${PORT}"
 rc=0
-for suite in lead-to-quote connectivity auth; do
+for suite in $SUITES; do
   echo "──── $suite"
   node "tests/api-e2e/$suite.mjs" > "$ROOT/.stack/$suite.out" 2>&1; s=$?
   grep -E "FAIL|passed" "$ROOT/.stack/$suite.out" || tail -n 20 "$ROOT/.stack/$suite.out"

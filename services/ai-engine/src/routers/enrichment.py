@@ -3,6 +3,7 @@ Data enrichment router — enriches contacts and companies with external data.
 Uses company domain/website to look up public data and AI to infer additional fields.
 """
 
+import json
 import httpx
 import structlog
 from fastapi import APIRouter, HTTPException, Header
@@ -30,6 +31,15 @@ class BatchEnrichRequest(BaseModel):
     tenant_id: str | None = None
     entity_type: str
     entity_ids: list[str]
+
+
+def _graph_headers(tenant_id: str) -> dict[str, str]:
+    """graph-core only accepts calls carrying the internal service token. These
+    calls used to omit it, so every enrichment failed with "Entity not found"."""
+    headers = {"x-tenant-id": tenant_id, "Content-Type": "application/json"}
+    if settings.INTERNAL_SERVICE_SECRET:
+        headers["x-service-token"] = settings.INTERNAL_SERVICE_SECRET
+    return headers
 
 
 @router.post("/enrich/{entity_type}/{entity_id}")
@@ -66,7 +76,7 @@ async def enrich_entity(
             resp = await client.get(
                 f"{settings.GRAPH_CORE_URL}/{endpoint}/{entity_id}",
                 params={"tenantId": tenant_id},
-                headers={"x-tenant-id": tenant_id},
+                headers=_graph_headers(tenant_id),
             )
             if resp.status_code != 200:
                 raise HTTPException(status_code=404, detail="Entity not found")
@@ -98,7 +108,7 @@ async def enrich_entity(
                 await client.patch(
                     f"{settings.GRAPH_CORE_URL}/{endpoint}/{entity_id}",
                     params={"tenantId": tenant_id},
-                    headers={"x-tenant-id": tenant_id, "Content-Type": "application/json"},
+                    headers=_graph_headers(tenant_id),
                     json=enriched_data,
                 )
 
@@ -108,7 +118,7 @@ async def enrich_entity(
                 """UPDATE enrichment_jobs
                    SET status = 'completed', result_data = $1, confidence = $2, completed_at = NOW()
                    WHERE id = $3""",
-                enriched_data, confidence, job_id,
+                json.dumps(enriched_data), confidence, job_id,
             )
 
         return {

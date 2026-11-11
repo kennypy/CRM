@@ -21,6 +21,7 @@ import { aiRoutes } from "./routes/ai";
 import { graphRoutes } from "./routes/graph";
 import { webhookRoutes } from "./routes/webhooks";
 import { integrationsRoutes } from "./routes/integrations";
+import { ingestionWebhookRoutes } from "./routes/ingestion-webhooks";
 import { tenantRoutes } from "./routes/tenant";
 import { capabilitiesRoutes } from "./routes/capabilities";
 import { tasksRoutes }     from "./routes/tasks";
@@ -207,6 +208,7 @@ async function bootstrap() {
   // ── Public routes ─────────────────────────────────────────────────────────
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(webhookRoutes, { prefix: "/webhooks" });
+  await server.register(ingestionWebhookRoutes, { prefix: "/ingestion" });
   // Registered as a separate plugin so the raw-body content-type parser is
   // scoped only to this route — the Stripe/Slack/Zoom plugin already has its
   // own parser, and other JSON routes get standard parsing.

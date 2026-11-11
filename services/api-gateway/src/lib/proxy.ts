@@ -12,6 +12,13 @@ export interface ProxyOptions {
   baseUrl: string;
   /** Strip this prefix from the URL before forwarding (default: none) */
   stripPrefix?: string;
+  /**
+   * Upstream path, when it is not simply the request path minus `stripPrefix`.
+   * Receives the request's path params; the original query string is kept.
+   */
+  path?: (params: Record<string, string>) => string;
+  /** Reshape the request body before forwarding. */
+  mapBody?: (body: unknown) => unknown;
   /** Additional headers to inject */
   headers?: Record<string, string>;
   /**
@@ -28,9 +35,12 @@ export function createProxy(opts: ProxyOptions) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const jwt = request.user;
 
-    const url = opts.stripPrefix
-      ? request.url.replace(opts.stripPrefix, "")
-      : request.url;
+    const qs = request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : "";
+    const url = opts.path
+      ? opts.path((request.params ?? {}) as Record<string, string>) + qs
+      : opts.stripPrefix
+        ? request.url.replace(opts.stripPrefix, "")
+        : request.url;
 
     // tenantId MUST come from the verified JWT — never from client-supplied headers.
     // Accepting x-tenant-id from the client would allow tenant-isolation bypass.
@@ -69,7 +79,7 @@ export function createProxy(opts: ProxyOptions) {
       const resp = await fetch(downstream, {
         method: request.method,
         headers,
-        body: hasBody ? JSON.stringify(request.body) : undefined,
+        body: hasBody ? JSON.stringify(opts.mapBody ? opts.mapBody(request.body) : (request.body ?? {})) : undefined,
       });
 
       // For streaming responses (SSE from ai-engine), pipe directly
@@ -79,13 +89,25 @@ export function createProxy(opts: ProxyOptions) {
         reply.raw.setHeader("Connection", "keep-alive");
 
         const reader = resp.body!.getReader();
-        const pump = async () => {
-          const { done, value } = await reader.read();
-          if (done) { reply.raw.end(); return; }
-          reply.raw.write(value);
-          return pump();
-        };
-        return pump();
+        // Take over the socket (Fastify must not also try to send), and end the
+        // stream cleanly if the upstream dies mid-way instead of throwing a 500
+        // after headers were already written.
+        for (const [k, v] of Object.entries(reply.getHeaders())) {
+          if (v !== undefined && !reply.raw.hasHeader(k)) reply.raw.setHeader(k, v as string | string[] | number);
+        }
+        reply.hijack();
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            reply.raw.write(value);
+          }
+        } catch (err) {
+          request.log.warn({ err }, "proxy.stream_aborted");
+          reply.raw.write(`data: ${JSON.stringify({ type: "error", content: "AI service temporarily unavailable" })}\n\n`);
+        }
+        reply.raw.end();
+        return;
       }
 
       const body = await resp.text();

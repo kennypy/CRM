@@ -99,6 +99,9 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
   // Gmail OAuth flow
   fastify.get("/gmail/connect", async (request, reply) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
+    // Without a client id the consent URL is "client_id=undefined" and the user
+    // lands on a provider error page — say it is not set up instead.
+    if (!clientId) return reply.status(503).send({ success: false, error: { code: "NOT_CONFIGURED", message: "Google OAuth client is not configured" } });
     const redirectUri = process.env.GMAIL_OAUTH_REDIRECT
       ?? `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/gmail/callback`;
     const scope = encodeURIComponent(
@@ -164,6 +167,9 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
   // Outlook OAuth flow
   fastify.get("/outlook/connect", async (request, reply) => {
     const clientId = process.env.MICROSOFT_CLIENT_ID;
+    // Without a client id the consent URL is "client_id=undefined" and the user
+    // lands on a provider error page — say it is not set up instead.
+    if (!clientId) return reply.status(503).send({ success: false, error: { code: "NOT_CONFIGURED", message: "Microsoft OAuth client is not configured" } });
     const redirectUri = process.env.OUTLOOK_OAUTH_REDIRECT
       ?? `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/outlook/callback`;
     const scope = encodeURIComponent(

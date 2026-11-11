@@ -50,6 +50,11 @@ class NLRequest(BaseModel):
 @router.post("/command")
 async def process_nl_command(request: NLRequest):
     async def generate() -> AsyncIterator[str]:
+        if not settings.ANTHROPIC_API_KEY:
+            # No key configured: say so instead of dying mid-stream (which the
+            # gateway surfaced as an opaque 500 "terminated").
+            yield f'data: {json.dumps({"type": "error", "code": "AI_NOT_CONFIGURED", "content": "The AI assistant is not configured for this workspace."})}\n\n'
+            return
         try:
             async with client.messages.stream(
                 model=settings.AI_MODEL,
@@ -78,6 +83,9 @@ async def process_nl_command(request: NLRequest):
 
         except anthropic.APIError as e:
             log.error("nl_command.api_error", error=str(e))
+            yield f'data: {json.dumps({"type": "error", "content": "AI service temporarily unavailable"})}\n\n'
+        except Exception as e:  # noqa: BLE001 — a stream must end cleanly
+            log.error("nl_command.failed", error=str(e))
             yield f'data: {json.dumps({"type": "error", "content": "AI service temporarily unavailable"})}\n\n'
 
     return StreamingResponse(

@@ -453,7 +453,14 @@ export async function dealsRoutes(server: FastifyInstance) {
       : "deal.updated";
 
     const previousStage = (beforeRows[0] as { stage?: string }).stage ?? null;
-    const evPayload = { ...f, previousStage, changes: historyChanges, _origin: eventOrigin(request) };
+    // Stage events carry the opportunity's value/currency even when they did not
+    // change, so consumers (won revenue, forecasting) need no second lookup.
+    const before = beforeRows[0] as { value?: unknown; currency?: unknown };
+    const stageContext = stageChanged
+      ? { value: Number((f as { value?: unknown }).value ?? before.value ?? 0) || 0,
+          currency: (f as { currency?: unknown }).currency ?? before.currency ?? null }
+      : {};
+    const evPayload = { ...f, ...stageContext, previousStage, changes: historyChanges, _origin: eventOrigin(request) };
     // A stage change is still an update: publish deal.updated too so
     // "any update" subscribers see every edit.
     const evTypes = evType === "deal.updated" ? [evType] : [evType, "deal.updated"];

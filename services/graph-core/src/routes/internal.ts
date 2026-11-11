@@ -135,6 +135,24 @@ export async function internalRoutes(server: FastifyInstance) {
     return reply.send({ success: true, data: { contacts, deals } });
   });
 
+  /**
+   * GET /internal/scoring-inputs?tenantId= — the open leads and open
+   * opportunities the gateway scores in bulk ("Score all" / "Compute forecasts").
+   */
+  server.get("/scoring-inputs", async (request, reply) => {
+    const q = z.object({ tenantId: z.string().uuid() }).safeParse(request.query);
+    if (!q.success) return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR" } });
+    const leads = await cypher<Record<string, unknown>>(
+      `MATCH (p:Person {tenant_id: $tenantId}) WHERE p.is_lead = true RETURN {id: p.id}`,
+      { tenantId: q.data.tenantId });
+    const deals = await cypher<Record<string, unknown>>(
+      `MATCH (d:Deal {tenant_id: $tenantId}) WHERE d.stage <> 'closed_won' AND d.stage <> 'closed_lost'
+       RETURN {id: d.id, stage: d.stage, value: d.value, closeDate: d.close_date,
+               declaredProbability: d.declared_probability, updatedAt: d.updated_at, createdAt: d.created_at}`,
+      { tenantId: q.data.tenantId });
+    return reply.send({ success: true, data: { leadIds: leads.map((l) => l.id), deals } });
+  });
+
   /** GET /internal/fill-rates?tenantId= — how many records have each key field filled. */
   server.get("/fill-rates", async (request, reply) => {
     const q = z.object({ tenantId: z.string().uuid() }).safeParse(request.query);
