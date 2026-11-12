@@ -26,13 +26,16 @@ BEGIN
 
   FOREACH v IN ARRAY ARRAY['Person', 'Company', 'Deal', 'Activity'] LOOP
     IF NOT EXISTS (SELECT 1 FROM ag_catalog.ag_label WHERE graph = gid AND name = v) THEN
-      PERFORM ag_catalog.create_vlabel('nexcrm_graph', v);
+      -- Label passed as a literal: the argument type differs between AGE releases
+      -- (name in 1.5, cstring in 1.6), and a text variable matches neither on 1.6,
+      -- which made this migration fail on every fresh 1.6 database.
+      EXECUTE format('SELECT ag_catalog.create_vlabel(%L, %L)', 'nexcrm_graph', v);
     END IF;
   END LOOP;
 
   FOREACH e IN ARRAY ARRAY['WORKS_AT', 'INVOLVED_IN', 'INFLUENCES', 'RELATED_TO', 'PARTICIPATED_IN'] LOOP
     IF NOT EXISTS (SELECT 1 FROM ag_catalog.ag_label WHERE graph = gid AND name = e) THEN
-      PERFORM ag_catalog.create_elabel('nexcrm_graph', e);
+      EXECUTE format('SELECT ag_catalog.create_elabel(%L, %L)', 'nexcrm_graph', e);
     END IF;
   END LOOP;
 
