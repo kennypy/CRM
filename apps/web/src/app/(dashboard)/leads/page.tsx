@@ -8,10 +8,12 @@ import { ColumnPicker, useColumnPrefs, type ColDef } from "@nexcrm/ui-components
 import { TagInput } from "@/components/ui/tag-input";
 import { OwnerPicker } from "@/components/ui/owner-picker";
 import { AddToCampaignModal } from "@/components/marketing/add-to-campaign-modal";
+import { ConvertLeadModal } from "@/components/leads/convert-lead-modal";
+import { readApiError, type AssignLeadResult } from "@/lib/l2q";
 import {
   TrendingUp, Search, RefreshCw, AlertCircle, Plus,
   ChevronLeft, ChevronRight, Flame, Minus, Snowflake,
-  ArrowRight, Building2, Mail, X, User, CheckCircle2,
+  ArrowRight, Building2, Mail, X, CheckCircle2,
   Tag, UserCircle, Activity, Megaphone,
 } from "lucide-react";
 
@@ -47,20 +49,14 @@ interface Lead {
   email: string;
   title?: string;
   company?: { id: string; name: string };
-  score: number;
-  tier: "hot" | "warm" | "cold";
+  /** Real AI lead score (lead_scores); null until the lead has been scored. */
+  score: number | null;
+  tier: "hot" | "warm" | "cold" | null;
   source: string;
   lifecycleStage: string;
   ownerId?: string;
   lastActivityAt?: string;
   createdAt: string;
-}
-
-// Deterministic score from ID — no Math.random() in render
-function hashScore(id: string): number {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
-  return 20 + (h % 61); // 20–80
 }
 
 function scoreTier(score: number): "hot" | "warm" | "cold" {
@@ -69,7 +65,8 @@ function scoreTier(score: number): "hot" | "warm" | "cold" {
   return "cold";
 }
 
-function TierBadge({ tier, t }: { tier: string; t: (key: string) => string }) {
+function TierBadge({ tier, t }: { tier: string | null; t: (key: string) => string }) {
+  if (!tier) return <span className="text-xs text-muted-foreground">{t("notScored")}</span>;
   const cfg: Record<string, { labelKey: string; icon: React.FC<{ className?: string }>; cls: string }> = {
     hot:  { labelKey: "hot",  icon: Flame,     cls: "bg-red-100 text-red-700" },
     warm: { labelKey: "warm", icon: Minus,     cls: "bg-yellow-100 text-yellow-700" },
@@ -84,7 +81,8 @@ function TierBadge({ tier, t }: { tier: string; t: (key: string) => string }) {
   );
 }
 
-function ScoreBar({ score }: { score: number }) {
+function ScoreBar({ score }: { score: number | null }) {
+  if (score === null) return <span className="text-xs text-muted-foreground">—</span>;
   const color = score >= 70 ? "bg-red-500" : score >= 40 ? "bg-yellow-500" : "bg-blue-400";
   return (
     <div className="flex items-center gap-2">
@@ -191,76 +189,6 @@ function AddLeadModal({ onClose, onCreated, t, tc }: { onClose: () => void; onCr
   );
 }
 
-// ── Convert Lead Modal ─────────────────────────────────────────────────────────
-
-function ConvertLeadModal({ lead, onClose, onConverted, t, tc }: {
-  lead: Lead; onClose: () => void; onConverted: () => void; t: (key: string) => string; tc: (key: string) => string;
-}) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
-  const handleConvert = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.patch(`/api/v1/contacts/${lead.id}`, { isLead: false, source: "converted" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data?.error?.message ?? "Failed to convert lead");
-        return;
-      }
-      setDone(true);
-      setTimeout(() => { onConverted(); onClose(); }, 1200);
-    } catch {
-      setError(tc("networkError"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-sm rounded-2xl border bg-card shadow-2xl p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-            <User className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="font-semibold">{t("convertLead")}</h2>
-            <p className="text-sm text-muted-foreground">{lead.firstName} {lead.lastName}</p>
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground mb-6">
-          {t("convertDescription")}
-        </p>
-        {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            <AlertCircle className="h-4 w-4 shrink-0" />{error}
-          </div>
-        )}
-        {done && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-            <CheckCircle2 className="h-4 w-4" /> {t("convertedToContact")}
-          </div>
-        )}
-        <div className="flex gap-3">
-          <button onClick={onClose}
-            className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-            {tc("cancel")}
-          </button>
-          <button onClick={handleConvert} disabled={loading || done}
-            className={cn("flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground",
-              (loading || done) ? "opacity-60 cursor-not-allowed" : "hover:opacity-90")}>
-            {loading ? t("creating") : t("convertToContact")}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50;
@@ -270,6 +198,7 @@ export default function LeadsPage() {
   const tc = useTranslations("common");
   const tl = useTranslations("lifecycle");
   const tb = useTranslations("bulk");
+  const ta = useTranslations("leadAssignment");
   const { visible, toggle } = useColumnPrefs("nexcrm_cols_leads", COL_DEFS);
   const [leads, setLeads]           = useState<Lead[]>([]);
   const [total, setTotal]           = useState(0);
@@ -284,6 +213,8 @@ export default function LeadsPage() {
   const [converting, setConverting] = useState<Lead | null>(null);
   const [selected, setSelected]     = useState<Set<string>>(new Set());
   const [showAddCampaign, setShowAddCampaign] = useState(false);
+  const [assigning, setAssigning]   = useState<Set<string>>(new Set());
+  const [notice, setNotice]         = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleSelect = (id: string) => {
@@ -301,6 +232,24 @@ export default function LeadsPage() {
     if (!confirm(`Delete ${selected.size} leads?`)) return;
     await Promise.all([...selected].map((id) => api.delete(`/api/v1/contacts/${id}`)));
     setSelected(new Set());
+    fetchLeads();
+  };
+
+  const runAssignment = async (ids: string[]) => {
+    setAssigning((prev) => new Set([...prev, ...ids]));
+    setNotice(null);
+    let assigned = 0, unmatched = 0, failed = 0;
+    for (const id of ids) {
+      try {
+        const res = await api.post(`/api/v1/leads/${id}/assign`, {});
+        if (!res.ok) { failed++; if (ids.length === 1) setError((await readApiError(res, ta("failed"))).message); continue; }
+        const json = await res.json();
+        const data = json.data as AssignLeadResult;
+        if (data?.assignedTo) assigned++; else unmatched++;
+      } catch { failed++; }
+    }
+    setAssigning((prev) => { const next = new Set(prev); ids.forEach((i) => next.delete(i)); return next; });
+    setNotice(ta("summary", { assigned, unmatched, failed }));
     fetchLeads();
   };
 
@@ -325,13 +274,22 @@ export default function LeadsPage() {
       const res = await api.get(`/api/v1/contacts?${params}&isLead=true`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      // Real scores from the lead-scoring engine. This page used to invent a
+      // score from a hash of the record id (and a Hot/Warm/Cold tier from that)
+      // whenever a lead had not been scored — reps were shown random numbers.
+      const scores = new Map<string, { score: number; tier: string }>();
+      try {
+        const sr = await api.get("/api/v1/lead-scoring?limit=200");
+        if (sr.ok) for (const x of (await sr.json()).data ?? []) scores.set(x.contactId, { score: Math.round(x.score), tier: x.tier });
+      } catch { /* scores are optional */ }
       const raw: Lead[] = (json.data ?? []).map((c: any) => {
-        const score = c.engagementScore ?? hashScore(c.id);
+        const real = scores.get(c.id);
+        const score = real ? real.score : null;
         return {
           id: c.id, firstName: c.firstName, lastName: c.lastName, email: c.email,
           title: c.title, company: c.company,
           score,
-          tier: scoreTier(score),
+          tier: score === null ? null : (["hot", "warm", "cold"].includes(real!.tier) ? real!.tier as Lead["tier"] : scoreTier(score)),
           source: c.source ?? "auto",
           lifecycleStage: c.lifecycleStage ?? "lead",
           ownerId: c.ownerId,
@@ -385,9 +343,7 @@ export default function LeadsPage() {
         <ConvertLeadModal
           lead={converting}
           onClose={() => setConverting(null)}
-          onConverted={fetchLeads}
-          t={t}
-          tc={tc}
+          onConverted={() => fetchLeads()}
         />
       )}
 
@@ -446,12 +402,23 @@ export default function LeadsPage() {
           <button onClick={() => setShowAddCampaign(true)} className="flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/20">
             <Megaphone className="h-3.5 w-3.5" /> Add to campaign
           </button>
+          <button onClick={() => runAssignment([...selected])} disabled={assigning.size > 0}
+            className="flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50">
+            <UserCircle className="h-3.5 w-3.5" /> {ta("runAssignment")}
+          </button>
           <button onClick={handleBulkDelete} className="rounded-md bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200">
             {tb("deleteSelected")}
           </button>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
             {tb("clearSelection")}
           </button>
+        </div>
+      )}
+
+      {notice && (
+        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+          <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{notice}</span>
+          <button onClick={() => setNotice(null)}><X className="h-4 w-4" /></button>
         </div>
       )}
 
@@ -556,12 +523,22 @@ export default function LeadsPage() {
                   )}
                   {visible.has("actions") && (
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => setConverting(lead)}
-                        className="flex items-center gap-1 text-xs text-primary hover:underline"
-                      >
-                        {t("convert")} <ArrowRight className="h-3 w-3" />
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setConverting(lead)}
+                          className="flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          {t("convert")} <ArrowRight className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => runAssignment([lead.id])}
+                          disabled={assigning.has(lead.id)}
+                          title={ta("runAssignmentHint")}
+                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                        >
+                          <UserCircle className="h-3 w-3" /> {assigning.has(lead.id) ? ta("assigning") : ta("assign")}
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>

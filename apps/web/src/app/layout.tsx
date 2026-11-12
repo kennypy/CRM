@@ -39,8 +39,8 @@ export default async function RootLayout({
         <NextIntlClientProvider messages={messages} locale={locale}>
           <Providers>{children}</Providers>
         </NextIntlClientProvider>
-        <Analytics />
-        <SpeedInsights />
+        {process.env.VERCEL === "1" && <Analytics />}
+        {process.env.VERCEL === "1" && <SpeedInsights />}
       </body>
     </html>
   );

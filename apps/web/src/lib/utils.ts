@@ -27,6 +27,11 @@ export function formatCurrency(
     style:                "currency",
     currency,
     notation:             compact ? "compact" : "standard",
+    // Explicit minimum: a currency's default minimum (2 for USD) conflicts with
+    // the maximum below, and Node and browsers resolve that conflict differently
+    // ("$0.0" on the server vs "$0" in Chrome) — a hydration error on every page
+    // that server-renders a compact amount.
+    minimumFractionDigits: 0,
     maximumFractionDigits: compact ? 1 : 0,
   }).format(value);
 }

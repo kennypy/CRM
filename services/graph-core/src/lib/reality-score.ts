@@ -253,7 +253,9 @@ export async function computeRealityScore(
   );
   const stakeholders = stkhRows.map((r) => ({
     role:      r.role ?? "unknown",
-    sentiment: parseFloat(String(r.sentiment ?? 0)),
+    // Sentiment must be numeric (-1..1). Tolerate legacy non-numeric values
+    // ("neutral") instead of poisoning the whole score with NaN.
+    sentiment: Number.isFinite(parseFloat(String(r.sentiment ?? 0))) ? parseFloat(String(r.sentiment ?? 0)) : 0,
   }));
 
   // 4. Activities via RELATED_TO — Fix 7: fetch direction field

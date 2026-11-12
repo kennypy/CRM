@@ -1,0 +1,190 @@
+# NexCRM Helm values — production-shaped defaults for ~120 active users.
+#
+# Stateful dependencies are NOT bundled:
+#   - Postgres 16 + Apache AGE + pgvector → CloudNativePG (examples/cnpg-cluster.yaml)
+#     or Azure Database for PostgreSQL Flexible Server (supports AGE).
+#     AWS RDS / GCP Cloud SQL do NOT support Apache AGE.
+#   - Redis 7 → managed (ElastiCache / Memorystore / Azure Cache) or Sentinel.
+# All credentials come from an existing Secret (global.existingSecret); this
+# chart never renders secret values.
+
+global:
+  imageRegistry: ghcr.io/kennypy/crm
+  imageTag: ""            # defaults to .Chart.AppVersion; CI sets sha-<git sha>
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # Secret holding JWT_SECRET, INTERNAL_SERVICE_SECRET, OAUTH_ENCRYPTION_KEY,
+  # DATABASE_URL*, REDIS_URL, ANTHROPIC_API_KEY, etc. Created out-of-band
+  # (External Secrets Operator / sealed-secrets / Vault). Required.
+  existingSecret: nexcrm-secrets
+  # Non-secret env shared by every workload (rendered into a ConfigMap).
+  env:
+    NODE_ENV: production
+    LOG_LEVEL: info
+    TRUST_PROXY: "true"
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability:4318
+    SHUTDOWN_DRAIN_DELAY_MS: "5000"
+    SHUTDOWN_TIMEOUT_MS: "25000"
+  # Spread replicas across zones (hard) and nodes (soft).
+  topologySpread:
+    zoneKey: topology.kubernetes.io/zone
+    zoneWhenUnsatisfiable: ScheduleAnyway   # DoNotSchedule if you have >=2 zones guaranteed
+    nodeWhenUnsatisfiable: ScheduleAnyway
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    seccompProfile: { type: RuntimeDefault }
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities: { drop: [ALL] }
+  terminationGracePeriodSeconds: 30
+  pdb:
+    minAvailable: 1
+  hpa:
+    enabled: true
+    targetCPUUtilizationPercentage: 70
+
+# In-cluster service URLs injected into every workload.
+serviceUrls:
+  AUTH_SERVICE_URL: http://nexcrm-auth:4001
+  GRAPH_CORE_URL: http://nexcrm-graph-core:4002
+  OUTREACH_URL: http://nexcrm-outreach:4003
+  AI_ENGINE_URL: http://nexcrm-ai-engine:5001
+  API_GATEWAY_URL: http://nexcrm-api-gateway:4000
+
+# HTTP services. Each gets Deployment + Service + PDB + HPA.
+services:
+  api-gateway:
+    enabled: true
+    image: api-gateway
+    port: 4000
+    replicas: 2
+    maxReplicas: 6
+    # API-only replicas; background workers run in workers.gateway-worker.
+    env: { RUN_WORKERS: "false", PORT: "4000" }
+    probes: { live: /health/live, ready: /health/ready }
+    resources:
+      requests: { cpu: 250m, memory: 384Mi }
+      limits: { cpu: "1", memory: 768Mi }
+  auth:
+    enabled: true
+    image: auth
+    port: 4001
+    replicas: 2
+    maxReplicas: 4
+    env: { AUTH_PORT: "4001" }
+    probes: { live: /health/live, ready: /health/ready }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  graph-core:
+    enabled: true
+    image: graph-core
+    port: 4002
+    replicas: 2
+    maxReplicas: 6
+    env: { GRAPH_CORE_PORT: "4002" }
+    probes: { live: /health/live, ready: /health/ready }
+    resources:
+      requests: { cpu: 250m, memory: 384Mi }
+      limits: { cpu: "1", memory: 768Mi }
+  outreach:
+    enabled: true
+    image: outreach
+    port: 4003
+    replicas: 2
+    maxReplicas: 4
+    env: { OUTREACH_PORT: "4003" }
+    probes: { live: /health/live, ready: /health/ready }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  ai-engine:
+    enabled: true
+    image: ai-engine
+    port: 5001
+    replicas: 2
+    maxReplicas: 4
+    env: {}
+    # Python services expose only /health today (no dependency checks).
+    probes: { live: /health, ready: /health }
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+  ingestion:
+    enabled: true
+    image: ingestion
+    port: 5002
+    replicas: 2
+    maxReplicas: 4
+    env: {}
+    probes: { live: /health, ready: /health }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  web:
+    enabled: true
+    image: web
+    port: 3000
+    replicas: 2
+    maxReplicas: 6
+    env: { PORT: "3000", COOKIE_SECURE: "true" }
+    # apps/web has no health route yet → TCP probes.
+    probes: { tcp: true }
+    resources:
+      requests: { cpu: 200m, memory: 384Mi }
+      limits: { cpu: "1", memory: 768Mi }
+
+# Background workers (no Service, no HPA). Each still gets a PDB.
+workers:
+  # Same image as the gateway with RUN_WORKERS=true. BullMQ queues hand each job
+  # to one consumer; the workflow-engine and scheduled-reports pollers hold a
+  # Redis leader lock — so 2 replicas are safe and give failover.
+  gateway-worker:
+    enabled: true
+    image: api-gateway
+    replicas: 2
+    port: 4000         # the process still serves /health/* for probes
+    env: { RUN_WORKERS: "true", PORT: "4000" }
+    probes: { live: /health/live, ready: /health/ready }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  ai-worker:
+    enabled: true
+    image: ai-engine
+    replicas: 2
+    command: ["python", "-m", "src.worker"]
+    env: {}
+    resources:
+      requests: { cpu: 100m, memory: 384Mi }
+      limits: { cpu: "1", memory: 1Gi }
+  ingestion-worker:
+    enabled: true
+    image: ingestion
+    replicas: 2
+    command: ["python", "-m", "src.worker"]
+    env: {}
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+# Runs infra/db/migrations before each upgrade (Helm pre-upgrade hook).
+migrations:
+  enabled: false   # enable once a migration image exists (see docs/OPERATIONS.md#deploy)
+  image: migrations
+  command: ["sh", "-c", "for f in /migrations/*.sql; do psql \"$DATABASE_URL_OWNER\" -v ON_ERROR_STOP=1 -f \"$f\"; done"]
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"   # AI SSE streams
+  tls:
+    secretName: nexcrm-tls
+  hosts:
+    web: app.example.com
+    api: api.example.com

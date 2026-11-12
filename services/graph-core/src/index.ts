@@ -1,5 +1,8 @@
 import "./telemetry";
-import { setTenantContext } from "./db/pool";
+import { setTenantContext, pool, servicePool } from "./db/pool";
+import {
+  registerHealthRoutes, installGracefulShutdown, isHealthPath, pgCheck, redisCheck,
+} from "@nexcrm/service-common/lifecycle";
 import * as path from "path";
 import * as dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
@@ -9,7 +12,7 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
-import { redis } from "@nexcrm/service-common/redis";
+import { redis, requestRedis } from "@nexcrm/service-common/redis";
 import { contactsRoutes } from "./routes/contacts";
 import { companiesRoutes } from "./routes/companies";
 import { dealsRoutes } from "./routes/deals";
@@ -71,10 +74,14 @@ async function bootstrap() {
   // the tenant param is service-token-authenticated, so a forged value only
   // shifts the bucket. Generous default, tunable per deployment.
   await server.register(rateLimit, {
-    max: parseInt(process.env.GRAPH_CORE_RATE_LIMIT_MAX ?? "600", 10),
+    // Per TENANT, not per user: 600/min (the old default) is ~5 req/min per rep
+    // for a 120-seat org and starved normal use plus automation.
+    max: parseInt(process.env.GRAPH_CORE_RATE_LIMIT_MAX ?? "12000", 10),
     timeWindow: "1 minute",
-    redis,
-    allowList: (req) => req.url.split("?")[0] === "/health",
+    // Fail-fast client + skipOnError: a Redis outage must not hang graph reads.
+    redis: requestRedis(),
+    skipOnError: true,
+    allowList: (req) => isHealthPath(req.url),
     keyGenerator: (req) => {
       const q = (req.query ?? {}) as Record<string, unknown>;
       const tenant =
@@ -93,6 +100,12 @@ async function bootstrap() {
 
   // Sanitize error messages in production to avoid leaking internal details
   server.setErrorHandler((err: unknown, request, reply) => {
+    // Rate limiting is not a server error: return 429 so callers back off
+    // (it was surfacing as 500 INTERNAL_ERROR).
+    const status = (err as { statusCode?: number })?.statusCode;
+    if (status === 429) {
+      return reply.status(429).send({ success: false, error: { code: "RATE_LIMITED", message: "Too many requests" } });
+    }
     request.log.error({ err, url: request.url }, "unhandled_error");
     const message = process.env.NODE_ENV === "production"
       ? "Internal server error"
@@ -169,12 +182,11 @@ async function bootstrap() {
     setTenantContext(claim ?? fallback);
   });
 
-  // Health
-  server.get("/health", async () => ({
-    status: "ok",
+  // Health — /health (legacy), /health/live, /health/ready
+  const health = registerHealthRoutes(server, {
     service: "graph-core",
-    timestamp: new Date().toISOString(),
-  }));
+    checks: [pgCheck(servicePool), redisCheck(requestRedis())],
+  });
 
   await server.register(contactsRoutes,   { prefix: "/contacts" });
   await server.register(companiesRoutes,  { prefix: "/companies" });
@@ -188,6 +200,12 @@ async function bootstrap() {
   const host = process.env.HOST ?? "0.0.0.0";
   await server.listen({ port, host });
   server.log.info(`Graph-core service listening on ${host}:${port}`);
+
+  installGracefulShutdown(server, {
+    service: "graph-core",
+    health,
+    onClose: [() => pool.end(), () => servicePool.end(), () => redis.quit(), () => requestRedis().quit()],
+  });
 }
 
 bootstrap().catch((err) => {

@@ -124,7 +124,8 @@ async def process_zoom_event(event_data: dict) -> None:
             await client.post(
                 f"{settings.GRAPH_CORE_URL}/activities",
                 params={"tenantId": tenant_id},
-                headers={"x-tenant-id": tenant_id, "x-user-id": user_id},
+                headers={"x-tenant-id": tenant_id, "x-user-id": user_id,
+                         "x-service-token": settings.INTERNAL_SERVICE_SECRET},
                 json={
                     "type": "meeting",
                     "title": f"Meeting: {topic}",

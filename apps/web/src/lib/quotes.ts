@@ -55,6 +55,9 @@ export interface Quote {
   createdAt: string;
   updatedAt: string;
   items: QuoteItem[];
+  /** True when this quote is the deal's synced quote (deal amount follows quote total). */
+  syncedToDeal?: boolean;
+  priceBookId?: string | null;
 }
 
 export interface Product {

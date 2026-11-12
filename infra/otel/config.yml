@@ -31,6 +31,10 @@ exporters:
     endpoint: http://prometheus:9090/api/v1/write
     tls:
       insecure: true
+    # Copy resource attributes (service.name → service_name, deployment.environment)
+    # onto every series so dashboards and SLO rules can group per service.
+    resource_to_telemetry_conversion:
+      enabled: true
   loki:
     endpoint: http://loki:3100/loki/api/v1/push
 

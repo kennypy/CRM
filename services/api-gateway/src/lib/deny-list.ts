@@ -12,7 +12,7 @@
  * A token is denied when its `iat` predates the marker.
  */
 
-import { redis } from "@nexcrm/service-common/redis";
+import { requestRedis } from "@nexcrm/service-common/redis";
 
 const DENY_KEY_PREFIX = "auth:deny:user:";
 
@@ -31,7 +31,9 @@ export async function isTokenDenied(
   iat: number | undefined,
 ): Promise<boolean> {
   try {
-    const marker = await redis.get(denyKey(userId));
+    // Fail-fast client: a Redis outage must error (→ fail open) rather than
+    // hang every authenticated request on the BullMQ-style infinite retry queue.
+    const marker = await requestRedis().get(denyKey(userId));
     if (marker === null) return false;
     // No iat claim → cannot prove the token predates the revocation. Fail closed.
     if (typeof iat !== "number") return true;

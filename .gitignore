@@ -81,3 +81,9 @@ apps/mobile/android/app/build/
 *.ipa
 *.dSYM.zip
 *.dSYM
+
+# local e2e stack (scripts/dev-stack.sh)
+.stack/
+.stack.env
+test-results/
+playwright-report/

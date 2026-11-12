@@ -10,7 +10,15 @@ import type { FastifyInstance } from "fastify";
 import { enforceSandboxGraphCeiling } from "../lib/sandbox-limits";
 import { z } from "zod";
 import { IdParam, TenantQuery } from "../lib/validation";
+import { OwnerIdList, cached, uuidListLiteral } from "../lib/owner-filter";
+
+const COUNT_TTL_MS = Number(process.env.LIST_COUNT_TTL_MS ?? 15_000);
+import { companyStakeholderRoutes } from "./relationships";
+import { actorId, diffTracked, eventOrigin, recordFieldChanges } from "../lib/field-history";
 import { pool, cypher } from "../db/pool";
+
+export const ACCOUNT_STATUSES = ["prospect", "customer", "churned", "partner"] as const;
+const TRACKED_COMPANY_FIELDS = ["accountStatus", "ownerId", "tier", "name", "domain"] as const;
 
 const CreateCompanySchema = z.object({
   name:      z.string().min(1).max(200),
@@ -21,17 +29,27 @@ const CreateCompanySchema = z.object({
   website:   z.string().url().max(2048).optional(),
   country:   z.string().max(100).optional(),
   ownerId:   z.string().uuid().nullable().optional(),
+  /** Account lifecycle: prospect → customer → churned (or partner). */
+  accountStatus: z.enum(ACCOUNT_STATUSES).optional(),
+  churnReason:   z.string().max(500).nullable().optional(),
   customFields: z.record(z.unknown()).optional(),
 });
 
 const GetCompaniesQuery = z.object({
   tenantId: z.string().min(1),
   search:   z.string().optional(),
-  limit:    z.coerce.number().int().min(1).max(100).default(20),
+  ownerId:  z.string().uuid().optional(),
+  accountStatus: z.enum(ACCOUNT_STATUSES).optional(),
+  /** Gateway-set under a Private sharing default (client values are stripped). */
+  visibleOwnerIds: OwnerIdList.optional(),
+  limit:    z.coerce.number().int().min(1).max(200).default(20),
+  offset:   z.coerce.number().int().min(0).max(1_000_000).default(0),
 });
 
 
 export async function companiesRoutes(server: FastifyInstance) {
+  await companyStakeholderRoutes(server);
+
   server.get("/", async (request, reply) => {
     const parsed = GetCompaniesQuery.safeParse(request.query);
     if (!parsed.success) {
@@ -40,18 +58,41 @@ export async function companiesRoutes(server: FastifyInstance) {
         error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message },
       });
     }
-    const { tenantId, search, limit } = parsed.data;
+    const { tenantId, search, ownerId, accountStatus, visibleOwnerIds, limit, offset } = parsed.data;
     const params: Record<string, unknown> = { tenantId };
 
     let cyph = `MATCH (c:Company {tenant_id: $tenantId})\n`;
+    const where: string[] = [];
     if (search) {
-      cyph += `  WHERE (c.name CONTAINS $search OR c.domain CONTAINS $search)\n`;
+      where.push("(toLower(c.name) CONTAINS toLower($search) OR toLower(c.domain) CONTAINS toLower($search))");
       params.search = search;
     }
+    if (ownerId) { where.push("c.owner_id = $ownerId"); params.ownerId = ownerId; }
+    if (accountStatus) {
+      // Accounts created before lifecycle tracking have no status: treat as prospect.
+      where.push(accountStatus === "prospect"
+        ? "(c.account_status = 'prospect' OR c.account_status IS NULL)"
+        : "c.account_status = $accountStatus");
+      params.accountStatus = accountStatus;
+    }
+    if (visibleOwnerIds) where.push(visibleOwnerIds.length ? `c.owner_id IN ${uuidListLiteral(visibleOwnerIds)}` : "false");
+    if (where.length) cyph += `  WHERE ${where.join(" AND ")}\n`;
+
+    const countRows = await cached(`co:${cyph}:${JSON.stringify(params)}`, COUNT_TTL_MS, () =>
+      cypher<{ n: number }>(`${cyph}  WITH count(c) AS n RETURN {n: n}`, params).catch(() => [] as { n: number }[]));
+    const total = countRows[0]?.n != null ? Number(countRows[0].n) : undefined;
 
     // Aggregate in WITH before RETURN (required to mix node props + aggregates in map)
-    cyph += `  OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
+    // Page FIRST, then join related records for just that page. Joining before
+    // ORDER BY/LIMIT made every list request traverse the relationships of every
+    // matching record in the workspace (seconds at 50k+ records).
+    cyph += `  WITH c
+  ORDER BY c.name, c.id
+  SKIP ${offset}
+  LIMIT ${limit}
+  OPTIONAL MATCH (c)<-[:INVOLVED_IN]-(d:Deal)
   WITH c, count(d) AS open_deals, sum(d.value) AS open_deal_value
+  ORDER BY c.name, c.id
   RETURN {
     id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
     industry: c.industry, headcount: c.headcount, tier: c.tier,
@@ -59,17 +100,19 @@ export async function companiesRoutes(server: FastifyInstance) {
     sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
     sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
     created_by: c.created_by, owner_id: c.owner_id, custom_fields: c.custom_fields,
+         account_status: c.account_status, churned_at: c.churned_at, churn_reason: c.churn_reason,
     open_deals: open_deals, open_deal_value: open_deal_value,
     created_at: c.created_at, updated_at: c.updated_at
-  }
-  ORDER BY c.name
-  LIMIT ${limit}`;     // validated integer — safe literal
+  }`;     // offset/limit are validated integers — safe literals
 
     const rows = await cypher(cyph, params);
     return reply.send({
       success: true,
       data: rows.map(toCompanyResponse),
-      pagination: { total: rows.length, limit, hasMore: rows.length === limit },
+      pagination: {
+        total, limit, offset,
+        hasMore: total != null ? offset + rows.length < total : rows.length === limit,
+      },
     });
   });
 
@@ -89,7 +132,7 @@ export async function companiesRoutes(server: FastifyInstance) {
 
     const id  = crypto.randomUUID();
     const now = new Date().toISOString();
-    const { name, domain, industry, headcount, tier, website, country, ownerId, customFields } = body.data;
+    const { name, domain, industry, headcount, tier, website, country, ownerId, customFields, accountStatus, churnReason } = body.data;
 
     // Dedup by domain within tenant
     const existing = await cypher(
@@ -116,6 +159,9 @@ export async function companiesRoutes(server: FastifyInstance) {
         website:       $website,
         country:       $country,
         owner_id:      $ownerId,
+        account_status: $accountStatus,
+        churn_reason:  $churnReason,
+        churned_at:    $churnedAt,
         custom_fields: $customFields,
         source:        'user',
         created_at:    $now,
@@ -129,10 +175,16 @@ export async function companiesRoutes(server: FastifyInstance) {
         website:      website      ?? "",
         country:      country      ?? "",
         ownerId:      ownerId      ?? "",
+        accountStatus: accountStatus ?? "prospect",
+        churnReason:  accountStatus === "churned" ? (churnReason ?? "") : "",
+        churnedAt:    accountStatus === "churned" ? now : "",
         customFields: JSON.stringify(customFields ?? {}),
         now,
       }
     );
+    await recordFieldChanges(tenantId, "company", id, [
+      { field: "accountStatus", oldValue: null, newValue: accountStatus ?? "prospect" },
+    ], actorId(request));
 
     await pool.query(
       `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
@@ -146,6 +198,7 @@ export async function companiesRoutes(server: FastifyInstance) {
          id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
          industry: c.industry, headcount: c.headcount, tier: c.tier,
          website: c.website, country: c.country, owner_id: c.owner_id, custom_fields: c.custom_fields,
+         account_status: c.account_status, churned_at: c.churned_at, churn_reason: c.churn_reason,
          open_deals: 0, open_deal_value: 0,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -174,6 +227,7 @@ export async function companiesRoutes(server: FastifyInstance) {
          sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
          sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
          created_by: c.created_by, owner_id: c.owner_id, custom_fields: c.custom_fields,
+         account_status: c.account_status, churned_at: c.churned_at, churn_reason: c.churn_reason,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -204,6 +258,30 @@ export async function companiesRoutes(server: FastifyInstance) {
     const params: Record<string, unknown> = { id, tenantId, now: new Date().toISOString() };
     const setParts = ["c.updated_at = $now"];
 
+    const beforeRows = await cypher<Record<string, unknown>>(
+      `MATCH (c:Company {id: $id, tenant_id: $tenantId})
+       RETURN {accountStatus: c.account_status, ownerId: c.owner_id, tier: c.tier, name: c.name, domain: c.domain}`,
+      { id, tenantId },
+    );
+    if (!beforeRows.length) {
+      return reply.status(404).send({ success: false, error: { code: "NOT_FOUND", message: "Company not found" } });
+    }
+    const before = { ...beforeRows[0], accountStatus: beforeRows[0].accountStatus ?? "prospect" };
+    const historyChanges = diffTracked(before, f as Record<string, unknown>, TRACKED_COMPANY_FIELDS);
+    if (f.accountStatus !== undefined) {
+      setParts.push("c.account_status = $accountStatus");
+      params.accountStatus = f.accountStatus;
+      if (f.accountStatus === "churned" && before.accountStatus !== "churned") {
+        setParts.push("c.churned_at = $now", "c.churn_reason = $churnReason");
+        params.churnReason = f.churnReason ?? "";
+      } else if (f.accountStatus !== "churned") {
+        setParts.push("c.churned_at = ''", "c.churn_reason = ''");
+      }
+    } else if (f.churnReason !== undefined) {
+      setParts.push("c.churn_reason = $churnReason");
+      params.churnReason = f.churnReason ?? "";
+    }
+
     if (f.name)      { setParts.push("c.name      = $name");      params.name      = f.name; }
     // `domain` was accepted by the schema but never written (silent no-op, same
     // class as the deals ownerId bug). Use !== undefined so it can be set/cleared.
@@ -231,11 +309,19 @@ export async function companiesRoutes(server: FastifyInstance) {
          id: c.id, tenant_id: c.tenant_id, name: c.name, domain: c.domain,
          industry: c.industry, headcount: c.headcount, tier: c.tier,
          website: c.website, country: c.country, owner_id: c.owner_id, custom_fields: c.custom_fields,
+         account_status: c.account_status, churned_at: c.churned_at, churn_reason: c.churn_reason,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
       { id, tenantId }
     );
+    // company.updated was never published (account automations could not fire).
+    await pool.query(
+      `INSERT INTO crm_events (tenant_id, event_type, source, entity_type, entity_id, payload)
+       VALUES ($1, 'company.updated', 'user', 'company', $2, $3)`,
+      [tenantId, id, JSON.stringify({ ...f, changes: historyChanges, _origin: eventOrigin(request) })],
+    ).catch((err) => { console.error("[companies] event write failed:", err.message); });
+    await recordFieldChanges(tenantId, "company", id, historyChanges, actorId(request));
     return reply.send({ success: true, data: toCompanyResponse(updated[0]) });
   });
 
@@ -312,6 +398,7 @@ export async function companiesRoutes(server: FastifyInstance) {
          sub_region: c.sub_region, region: c.region, linkedin_url: c.linkedin_url,
          sub_industry: c.sub_industry, revenue: c.revenue, segment: c.segment,
          created_by: c.created_by, owner_id: c.owner_id, custom_fields: c.custom_fields,
+         account_status: c.account_status, churned_at: c.churned_at, churn_reason: c.churn_reason,
          open_deals: open_deals, open_deal_value: open_deal_value,
          created_at: c.created_at, updated_at: c.updated_at
        } LIMIT 1`,
@@ -395,6 +482,9 @@ function toCompanyResponse(row: Record<string, unknown>) {
     website:        row.website        || undefined,
     country:        row.country        || undefined,
     ownerId:        (row.owner_id as string) || undefined,
+    accountStatus:  (row.account_status as string) || "prospect",
+    churnedAt:      (row.churned_at as string) || undefined,
+    churnReason:    (row.churn_reason as string) || undefined,
     subRegion:      row.sub_region     || undefined,
     region:         row.region         || undefined,
     linkedinUrl:    row.linkedin_url   || undefined,

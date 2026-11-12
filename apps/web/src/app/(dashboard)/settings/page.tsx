@@ -12,7 +12,7 @@ import {
   Plus, Trash2, Mail, CheckCircle2, AlertCircle, X,
   Globe, Lock, Key, Monitor, LogOut, Building2, Phone, Sun, Moon,
   FileText, Package, ChevronDown, Columns3, Box, LockKeyhole, UsersRound, Upload,
-  Copy, Check, CalendarClock, Layers,
+  Copy, Check, CalendarClock, Layers, Route, FormInput, ShieldAlert, BookOpen, Webhook,
 } from "lucide-react";
 import type { StoredUser } from "@/lib/auth";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -25,6 +25,12 @@ import { TeamsTab } from "@/components/settings/teams-tab";
 import { NavigationTab } from "@/components/settings/navigation-tab";
 import { ExchangeRatesCard } from "@/components/settings/exchange-rates-card";
 import { ProductsImportModal } from "@/components/settings/products-import-modal";
+import { AssignmentRulesTab } from "@/components/settings/assignment-rules-tab";
+import { WebFormsTab } from "@/components/settings/web-forms-tab";
+import { ValidationRulesTab } from "@/components/settings/validation-rules-tab";
+import { IntegrationsTab } from "@/components/settings/integrations-tab";
+import { PriceBooksTab } from "@/components/settings/price-books-tab";
+import { WebhooksTab } from "@/components/settings/webhooks-tab";
 import { previewEnabled } from "@/lib/feature-flags";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -52,15 +58,6 @@ interface Capability { key: string; label: string; }
 type ModuleAccess = "none" | "read" | "write";
 interface PermModule { key: string; label: string; }
 
-
-const INTEGRATIONS = [
-  { id: "gmail",   name: "Gmail",           icon: "📧", status: "connected", account: "admin@nexcrm.dev", desc: "Email ingestion active"          },
-  { id: "gcal",    name: "Google Calendar", icon: "📅", status: "connected", account: "admin@nexcrm.dev", desc: "Meetings auto-captured"          },
-  { id: "outlook", name: "Outlook / MS365", icon: "📬", status: "available", account: null,               desc: "Connect to ingest Outlook mail"  },
-  { id: "slack",   name: "Slack",           icon: "💬", status: "available", account: null,               desc: "Deal alerts & notifications"     },
-  { id: "zoom",    name: "Zoom",            icon: "🎥", status: "available", account: null,               desc: "Auto-transcribe meetings"         },
-  { id: "stripe",  name: "Stripe",          icon: "💳", status: "available", account: null,               desc: "Revenue data sync"               },
-];
 
 function useRoleLabels(): Record<string, string> {
   const tr = useTranslations("roles");
@@ -98,7 +95,7 @@ function detectedTimezone(): string {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
 }
 
-type Tab = "profile" | "general" | "users" | "teams" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions" | "navigation";
+type Tab = "profile" | "general" | "users" | "teams" | "integrations" | "billing" | "security" | "communications" | "quoting" | "products" | "custom-fields" | "custom-objects" | "permissions" | "navigation" | "assignment-rules" | "web-forms" | "validation-rules" | "price-books" | "webhooks";
 
 // ── Theme Selector ─────────────────────────────────────────────────────────────
 
@@ -1546,93 +1543,6 @@ function ProductsTab() {
 
 // ── Tab: Integrations ──────────────────────────────────────────────────────────
 
-function IntegrationsTab() {
-  const { capabilities } = useInstanceCapabilities();
-  const ingestionAvailable = capabilities.activity_ingestion !== false;
-  const [integrations,   setIntegrations]   = useState(INTEGRATIONS);
-  const [disconnecting,  setDisconnecting]  = useState<string | null>(null);
-  const [connectingId,   setConnectingId]   = useState<string | null>(null);
-  const [connectResult,  setConnectResult]  = useState<{id: string; success: boolean} | null>(null);
-
-  const demoAccounts: Record<string, string> = {
-    slack: "acme-workspace",
-    zoom: "admin@acme.com",
-    outlook: "admin@acme.com",
-    stripe: "acct_acme_prod",
-  };
-
-  const connect = (id: string) => {
-    setConnectingId(id);
-    setTimeout(() => {
-      setIntegrations((prev) =>
-        prev.map((i) => i.id === id ? { ...i, status: "connected", account: demoAccounts[id] ?? "demo-account" } : i)
-      );
-      setConnectingId(null);
-      setConnectResult({ id, success: true });
-      setTimeout(() => setConnectResult(null), 3000);
-    }, 2000);
-  };
-
-  const disconnect = async (id: string) => {
-    setDisconnecting(id);
-    try {
-      await api.delete(`/api/v1/integrations/${id}`);
-    } catch { /* fall through — update locally anyway */ }
-    setIntegrations((prev) => prev.map((i) => i.id === id ? { ...i, status: "available", account: null } : i));
-    setDisconnecting(null);
-  };
-
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      {!ingestionAvailable && (
-        <div className="sm:col-span-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-          Email &amp; calendar ingestion isn&apos;t available on this instance — the
-          ingestion service isn&apos;t deployed here. Integrations below are shown for
-          reference but can&apos;t be connected.
-        </div>
-      )}
-      {integrations.map((intg) => (
-        <div key={intg.id} className="rounded-xl border bg-card p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">{intg.icon}</span>
-              <div>
-                <p className="font-medium text-sm">{intg.name}</p>
-                <p className="text-xs text-muted-foreground">{intg.desc}</p>
-                {intg.status === "connected" && intg.account && (
-                  <p className="mt-0.5 text-xs text-muted-foreground/70">{intg.account}</p>
-                )}
-              </div>
-            </div>
-            {intg.status === "connected" ? (
-              <div className="flex flex-col items-end gap-1.5 shrink-0">
-                <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
-                  <CheckCircle2 className="h-3 w-3" /> Connected
-                </span>
-                <button onClick={() => disconnect(intg.id)} disabled={disconnecting === intg.id}
-                  className="text-xs text-muted-foreground hover:text-red-600 transition-colors disabled:opacity-50">
-                  {disconnecting === intg.id ? "Disconnecting…" : "Disconnect"}
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col items-end gap-1.5 shrink-0">
-                <button onClick={() => connect(intg.id)} disabled={connectingId === intg.id || !ingestionAvailable}
-                  title={!ingestionAvailable ? "The ingestion service isn't deployed on this instance" : undefined}
-                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed">
-                  {connectingId === intg.id ? "Connecting…" : ingestionAvailable ? "Connect" : "Unavailable"}
-                </button>
-                {connectResult?.id === intg.id && connectResult.success && (
-                  <span className="text-xs text-green-600 font-medium">Connected successfully!</span>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── Tab: Billing ───────────────────────────────────────────────────────────────
 
 function BillingTab() {
@@ -2788,6 +2698,11 @@ function useTabs() {
     { id: "integrations" as Tab,     label: t("tabs.integrations"),   icon: Plug,      adminOnly: true },
     { id: "quoting" as Tab,          label: t("tabs.quoting"),        icon: FileText,  adminOnly: true },
     { id: "products" as Tab,         label: t("tabs.products"),       icon: Package,   adminOnly: true },
+    { id: "price-books" as Tab,      label: t("tabs.priceBooks"),     icon: BookOpen,  adminOnly: true },
+    { id: "assignment-rules" as Tab, label: t("tabs.assignmentRules"), icon: Route,    adminOnly: true },
+    { id: "web-forms" as Tab,        label: t("tabs.webForms"),       icon: FormInput, adminOnly: true },
+    { id: "validation-rules" as Tab, label: t("tabs.validationRules"), icon: ShieldAlert, adminOnly: true },
+    { id: "webhooks" as Tab,         label: t("tabs.webhooks"),       icon: Webhook,   adminOnly: true },
     { id: "communications" as Tab,   label: t("tabs.communications"), icon: Phone,     adminOnly: true },
     { id: "billing" as Tab,          label: t("tabs.billing"),        icon: CreditCard, adminOnly: true },
     { id: "custom-fields" as Tab,    label: t("tabs.customFields"),   icon: Columns3,   adminOnly: true },
@@ -2800,7 +2715,7 @@ function useTabs() {
 const VALID_TAB_IDS: Set<string> = new Set([
   "profile", "security", "general", "users", "teams", "integrations", "quoting",
   "products", "communications", "billing", "custom-fields", "custom-objects", "permissions",
-  "navigation",
+  "navigation", "assignment-rules", "web-forms", "validation-rules", "price-books", "webhooks",
 ]);
 
 function SettingsInner() {
@@ -2881,6 +2796,11 @@ function SettingsInner() {
         {tab === "custom-objects" && <CustomObjectsTab />}
         {tab === "permissions"    && <PermissionsTab />}
         {tab === "navigation"     && <NavigationTab />}
+        {tab === "price-books"      && <PriceBooksTab />}
+        {tab === "assignment-rules" && <AssignmentRulesTab />}
+        {tab === "web-forms"        && <WebFormsTab />}
+        {tab === "validation-rules" && <ValidationRulesTab />}
+        {tab === "webhooks"         && <WebhooksTab />}
       </div>
     </div>
   );

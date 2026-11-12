@@ -10,49 +10,39 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db";
 import { requireRep, requireAdmin } from "../middleware/rbac";
-import { createProxy } from "../lib/proxy";
-
-const INGESTION_URL = process.env.INGESTION_URL ?? "http://localhost:5002";
+import { createOAuthState, consumeOAuthState } from "../lib/oauth-state";
+import { exchangeZoomCode, listRecentRecordingEvents, storeZoomTokens, zoomRedirectUri } from "../lib/zoom";
+import { redis } from "@nexcrm/service-common/redis";
 
 export async function zoomRoutes(server: FastifyInstance) {
   // ── OAuth connect ───────────────────────────────────────────────────────
   server.get("/connect", { preHandler: [requireAdmin] }, async (request, reply) => {
     const clientId = process.env.ZOOM_CLIENT_ID;
-    const redirectUri = encodeURIComponent(
-      process.env.ZOOM_OAUTH_REDIRECT ?? `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/zoom/callback`
-    );
-    const url = `https://zoom.us/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code`;
+    if (!clientId) return reply.status(503).send({ success: false, error: { code: "NOT_CONFIGURED", message: "Zoom client ID not configured" } });
+    const state = await createOAuthState(request.user.tenantId, request.user.sub);
+    const url = `https://zoom.us/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(zoomRedirectUri())}&response_type=code&state=${state}`;
+    if ((request.query as { format?: string }).format === "json") return reply.send({ success: true, data: { url } });
     return reply.redirect(url);
   });
 
   // ── OAuth callback ──────────────────────────────────────────────────────
   server.get("/callback", async (request, reply) => {
-    const { code } = request.query as { code?: string };
-    if (!code) {
-      return reply.redirect("/settings/integrations?error=zoom_no_code");
+    const { code, state } = request.query as { code?: string; state?: string };
+    if (!code) return reply.redirect("/settings?tab=integrations&zoom=error&reason=missing_code");
+    // CSRF: the state is bound to the tenant/user that started the flow.
+    const bound = await consumeOAuthState(state);
+    if (!bound) return reply.redirect("/settings?tab=integrations&zoom=error&reason=invalid_state");
+    try {
+      // Exchange the code (it was previously stored AS the access token) and
+      // store the tokens encrypted with the tenant key.
+      const tokens = await exchangeZoomCode(code);
+      await storeZoomTokens(bound.tenantId, bound.userId, tokens);
+      server.log.info({ tenantId: bound.tenantId }, "zoom.oauth.connected");
+      return reply.redirect("/settings?tab=integrations&zoom=connected");
+    } catch (err) {
+      server.log.error({ err: (err as Error).message }, "zoom.oauth.error");
+      return reply.redirect("/settings?tab=integrations&zoom=error");
     }
-
-    const { tenantId, sub: userId } = request.user;
-
-    // Store integration record
-    await pool.query(
-      `INSERT INTO integrations (tenant_id, user_id, provider, status, config)
-       VALUES ($1, $2, 'zoom', 'active', $3)
-       ON CONFLICT (tenant_id, user_id, provider)
-         DO UPDATE SET status = 'active', config = $3, updated_at = NOW()`,
-      [tenantId, userId, JSON.stringify({ auth_code: code, connected_at: new Date().toISOString() })]
-    );
-
-    // Store OAuth token
-    await pool.query(
-      `INSERT INTO oauth_tokens (tenant_id, user_id, provider, access_token, scopes)
-       VALUES ($1, $2, 'zoom', $3, $4)
-       ON CONFLICT (tenant_id, user_id, provider)
-         DO UPDATE SET access_token = $3, updated_at = NOW()`,
-      [tenantId, userId, code, ["recording:read", "meeting:read"]]
-    );
-
-    return reply.redirect("/settings/integrations?connected=zoom");
   });
 
   // ── List transcripts ────────────────────────────────────────────────────
@@ -91,7 +81,25 @@ export async function zoomRoutes(server: FastifyInstance) {
   });
 
   // ── Sync trigger — tells ingestion to pull recent recordings ────────────
-  server.post("/sync", { preHandler: [requireAdmin] },
-    createProxy({ baseUrl: INGESTION_URL, stripPrefix: "/api/v1/integrations/zoom" })
-  );
+  // Pulls recent cloud-recording transcripts with the tenant's Zoom token and
+  // feeds them into the same stream the webhook uses (ai-engine summarises
+  // them into meeting activities). Previously proxied to a route that never
+  // existed in the ingestion service.
+  server.post("/sync", { preHandler: [requireAdmin] }, async (request, reply) => {
+    const { tenantId } = request.user;
+    let events: Record<string, any>[];
+    try {
+      events = await listRecentRecordingEvents(tenantId);
+    } catch (err) {
+      return reply.status(409).send({ success: false, error: { code: "ZOOM_SYNC_FAILED", message: (err as Error).message } });
+    }
+    let queued = 0;
+    for (const e of events) {
+      const key = `zoom:seen:${tenantId}:${e.payload.object.uuid ?? e.payload.object.id}`;
+      if ((await redis.set(key, "1", "EX", 60 * 60 * 24 * 90, "NX")) !== "OK") continue;
+      await redis.xadd("nexcrm:zoom_events", "*", "payload", JSON.stringify(e), "event_type", e.event);
+      queued++;
+    }
+    return reply.send({ success: true, data: { found: events.length, queued } });
+  });
 }

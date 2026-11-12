@@ -1,0 +1,138 @@
+# NexCRM SLO recording rules — api-gateway availability.
+#
+# SLO: 99% of gateway API requests succeed (non-5xx) over a rolling 30 days,
+#      AND the gateway readiness probe succeeds 99% of the time.
+#      Error budget: 1% = 7h18m of full outage per 30 days.
+#
+# The request metric name depends on the OTel HTTP semconv version in use:
+#   old (instrumentation-http default): http_server_duration_milliseconds_* + http_status_code
+#   new (OTEL_SEMCONV_STABILITY_OPT_IN=http): http_server_request_duration_seconds_* + http_response_status_code
+# Both are unioned with `or` so the rules work either way. Health probes are
+# excluded so kubelet traffic doesn't inflate the denominator.
+#
+# Request-based SLIs are blind when the gateway is completely down (no requests
+# are recorded at all) — that's why the synthetic probe SLI below exists and
+# the ServiceDown alert pages independently.
+
+groups:
+  - name: nexcrm-slo-recording
+    interval: 30s
+    rules:
+      - record: nexcrm:gateway_requests:rate5m
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*"}[5m]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*"}[5m]))
+      - record: nexcrm:gateway_errors:rate5m
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*",http_status_code=~"5.."}[5m]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*",http_response_status_code=~"5.."}[5m]))
+          or
+          vector(0)
+      - record: nexcrm:gateway_error_ratio:rate5m
+        expr: |
+          nexcrm:gateway_errors:rate5m / clamp_min(nexcrm:gateway_requests:rate5m, 1e-9)
+      - record: nexcrm:gateway_requests:rate30m
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*"}[30m]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*"}[30m]))
+      - record: nexcrm:gateway_errors:rate30m
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*",http_status_code=~"5.."}[30m]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*",http_response_status_code=~"5.."}[30m]))
+          or
+          vector(0)
+      - record: nexcrm:gateway_error_ratio:rate30m
+        expr: |
+          nexcrm:gateway_errors:rate30m / clamp_min(nexcrm:gateway_requests:rate30m, 1e-9)
+      - record: nexcrm:gateway_requests:rate1h
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*"}[1h]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*"}[1h]))
+      - record: nexcrm:gateway_errors:rate1h
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*",http_status_code=~"5.."}[1h]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*",http_response_status_code=~"5.."}[1h]))
+          or
+          vector(0)
+      - record: nexcrm:gateway_error_ratio:rate1h
+        expr: |
+          nexcrm:gateway_errors:rate1h / clamp_min(nexcrm:gateway_requests:rate1h, 1e-9)
+      - record: nexcrm:gateway_requests:rate6h
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*"}[6h]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*"}[6h]))
+      - record: nexcrm:gateway_errors:rate6h
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*",http_status_code=~"5.."}[6h]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*",http_response_status_code=~"5.."}[6h]))
+          or
+          vector(0)
+      - record: nexcrm:gateway_error_ratio:rate6h
+        expr: |
+          nexcrm:gateway_errors:rate6h / clamp_min(nexcrm:gateway_requests:rate6h, 1e-9)
+      - record: nexcrm:gateway_requests:rate1d
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*"}[1d]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*"}[1d]))
+      - record: nexcrm:gateway_errors:rate1d
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*",http_status_code=~"5.."}[1d]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*",http_response_status_code=~"5.."}[1d]))
+          or
+          vector(0)
+      - record: nexcrm:gateway_error_ratio:rate1d
+        expr: |
+          nexcrm:gateway_errors:rate1d / clamp_min(nexcrm:gateway_requests:rate1d, 1e-9)
+      - record: nexcrm:gateway_requests:rate3d
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*"}[3d]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*"}[3d]))
+      - record: nexcrm:gateway_errors:rate3d
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*",http_status_code=~"5.."}[3d]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*",http_response_status_code=~"5.."}[3d]))
+          or
+          vector(0)
+      - record: nexcrm:gateway_error_ratio:rate3d
+        expr: |
+          nexcrm:gateway_errors:rate3d / clamp_min(nexcrm:gateway_requests:rate3d, 1e-9)
+      - record: nexcrm:gateway_requests:rate30d
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*"}[30d]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*"}[30d]))
+      - record: nexcrm:gateway_errors:rate30d
+        expr: |
+          sum(rate(http_server_duration_milliseconds_count{service_name="api-gateway",http_route!~"/health.*",http_status_code=~"5.."}[30d]))
+          or
+          sum(rate(http_server_request_duration_seconds_count{service_name="api-gateway",http_route!~"/health.*",http_response_status_code=~"5.."}[30d]))
+          or
+          vector(0)
+      - record: nexcrm:gateway_error_ratio:rate30d
+        expr: |
+          nexcrm:gateway_errors:rate30d / clamp_min(nexcrm:gateway_requests:rate30d, 1e-9)
+      # Synthetic availability (blackbox probe of /health/ready), per target.
+      - record: nexcrm:probe_availability:ratio_30d
+        expr: avg_over_time(probe_success{job="blackbox-health"}[30d])
+      - record: nexcrm:probe_availability:ratio_1h
+        expr: avg_over_time(probe_success{job="blackbox-health"}[1h])
+      # Error budget remaining (1 = untouched, 0 = exhausted, <0 = SLO breached).
+      - record: nexcrm:gateway_error_budget_remaining:ratio_30d
+        expr: 1 - (nexcrm:gateway_error_ratio:rate30d / 0.01)
+      - record: nexcrm:gateway_p95_latency_seconds:5m
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{service_name="api-gateway",http_route!~"/health.*"}[5m]))) / 1000
+          or
+          histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="api-gateway",http_route!~"/health.*"}[5m])))

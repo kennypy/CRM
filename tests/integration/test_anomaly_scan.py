@@ -42,7 +42,7 @@ async def main():
     await seed_event(pool, tenant, "deal", healthy, "deal.stage_changed", 2, "negotiation")
     await seed_event(pool, tenant, "company", dark, "activity.email", 40)
 
-    r = await anom.scan(tenant_id=tenant)
+    r = await anom.scan(tenant_id=tenant, x_tenant_id=tenant)
     check("scan returns success", r.get("success") is True)
     check("scan created >=3 alerts", r["data"]["alerts_created"] >= 3)
     rows = await pool.fetch("SELECT alert_type, entity_id FROM anomaly_alerts WHERE tenant_id=$1::uuid", tenant)
@@ -52,7 +52,7 @@ async def main():
     check("at_risk_account detected", "at_risk_account" in types)
     check("healthy deal NOT flagged", all(row["entity_id"] != healthy for row in rows))
 
-    r2 = await anom.scan(tenant_id=tenant)
+    r2 = await anom.scan(tenant_id=tenant, x_tenant_id=tenant)
     check("rescan is idempotent (0 new)", r2["data"]["alerts_created"] == 0)
     total = await pool.fetchval("SELECT COUNT(*) FROM anomaly_alerts WHERE tenant_id=$1::uuid", tenant)
     check("no duplicate alerts after rescan", total == r["data"]["alerts_created"])

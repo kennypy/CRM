@@ -12,7 +12,9 @@ import { moduleAccessGate } from "../middleware/module-access";
 export async function tasksRoutes(server: FastifyInstance) {
   // Custom-role permission grid (Settings → Users → Profiles)
   server.addHook("preHandler", moduleAccessGate("tasks"));
-  const proxy = createProxy({ baseUrl: GRAPH_CORE, stripPrefix: "/api/v1/tasks" });
+  // graph-core serves /tasks — stripping "/api/v1/tasks" sent every call to "/"
+  // (404), so the Tasks API never worked through the gateway.
+  const proxy = createProxy({ baseUrl: GRAPH_CORE, stripPrefix: "/api/v1" });
 
   server.get("/",    { preHandler: [requireCrmRead] }, proxy);
   server.post("/",   { preHandler: [requireRep, requireCrmWrite] }, proxy);

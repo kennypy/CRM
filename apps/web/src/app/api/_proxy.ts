@@ -40,6 +40,13 @@ export async function tryRefresh(
   }
 }
 
+const BINARY_TYPES = ["application/pdf", "application/octet-stream", "application/zip", "image/"];
+
+export function isBinaryContentType(contentType: string): boolean {
+  const ct = contentType.toLowerCase();
+  return BINARY_TYPES.some((t) => ct.startsWith(t));
+}
+
 /** Build a NextResponse from the upstream response, optionally setting new
  * token cookies. Pipes text/event-stream bodies through untouched (AI command
  * bar streaming). */
@@ -61,6 +68,14 @@ export async function buildResponse(
         "Connection":    "keep-alive",
       },
     });
+  } else if (isBinaryContentType(contentType)) {
+    // Binary payloads (quote PDFs, file downloads) must not round-trip through
+    // text(): UTF-8 decoding corrupts any byte sequence that isn't valid text.
+    const body = await upstream.arrayBuffer();
+    const headers: Record<string, string> = { "Content-Type": contentType };
+    const disposition = upstream.headers.get("content-disposition");
+    if (disposition) headers["Content-Disposition"] = disposition;
+    resp = new NextResponse(body, { status: upstream.status, headers });
   } else {
     const body = await upstream.text();
     resp = new NextResponse(body, {

@@ -52,24 +52,13 @@ export default function NotificationsPage() {
       if (filter === "unread") params.set("unreadOnly", "true");
       params.set("limit", "100");
       const res = await api.get(`/api/v1/notifications?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setNotifications(json.data?.notifications ?? []);
     } catch {
-      // Demo data
-      setNotifications([
-        { id: "n1", type: "ai_review", title: "7 extractions need review", body: "AI confidence 75-90% on new emails from Acme Corp and TechStart", priority: "normal", read_at: null, created_at: new Date(Date.now() - 120000).toISOString(), action_url: "/review" },
-        { id: "n2", type: "deal_alert", title: "Acme Corp — deal stalling", body: "No activity in 8 days, reality score dropped 15 points to 57", priority: "high", read_at: null, created_at: new Date(Date.now() - 3600000).toISOString(), action_url: "/pipeline" },
-        { id: "n3", type: "task_due", title: "Follow-up with TechStart due", body: "Send proposal revision — due today at 5:00 PM", priority: "high", read_at: null, created_at: new Date(Date.now() - 10800000).toISOString(), action_url: "/tasks" },
-        { id: "n4", type: "deal_stage", title: "Globex moved to Negotiation", body: "Stage updated by Sarah Kim — deal value $380,000", priority: "normal", read_at: new Date(Date.now() - 14400000).toISOString(), created_at: new Date(Date.now() - 18000000).toISOString(), action_url: "/pipeline" },
-        { id: "n5", type: "ai_insight", title: "Budget confirmed — Acme Corp", body: "Auto-detected budget of $450K in latest email thread with CFO", priority: "normal", read_at: new Date(Date.now() - 86400000).toISOString(), created_at: new Date(Date.now() - 86400000).toISOString() },
-        { id: "n6", type: "sequence", title: "Sequence 'Q1 Outbound' completed", body: "42 contacts completed, 8 replied (19%), 3 meetings booked", priority: "normal", read_at: null, created_at: new Date(Date.now() - 7200000).toISOString(), action_url: "/sequences" },
-        { id: "n7", type: "call_recording", title: "Call recording transcribed", body: "Your 5m 40s call with John Smith (Acme Corp) has been transcribed and scored", priority: "low", read_at: null, created_at: new Date(Date.now() - 5400000).toISOString(), action_url: "/calling" },
-        { id: "n8", type: "forecast", title: "Forecast submission due tomorrow", body: "Q1 2026 forecast deadline is March 9 — your commit is $570K vs $500K quota", priority: "high", read_at: null, created_at: new Date(Date.now() - 1800000).toISOString(), action_url: "/forecasting" },
-        { id: "n9", type: "email", title: "Reply from Lisa Park", body: "Re: Platform Demo Follow-up — 'Thanks, we'd like to move forward with...'", priority: "normal", read_at: null, created_at: new Date(Date.now() - 900000).toISOString() },
-        { id: "n10", type: "meeting", title: "Meeting in 30 minutes", body: "QBR with Umbrella Co — Join link ready", priority: "high", read_at: null, created_at: new Date(Date.now() - 600000).toISOString() },
-        { id: "n11", type: "security", title: "New login from new device", body: "Chrome on macOS — San Francisco, CA", priority: "normal", read_at: null, created_at: new Date(Date.now() - 43200000).toISOString() },
-        { id: "n12", type: "ai_review", title: "3 new contacts auto-created", body: "From yesterday's email threads — review for accuracy", priority: "low", read_at: new Date().toISOString(), created_at: new Date(Date.now() - 172800000).toISOString(), action_url: "/review" },
-      ]);
+      // Never invent notifications: show an empty list (this used to fall
+      // back to a dozen fabricated ones, e.g. "New login from new device").
+      setNotifications([]);
     } finally {
       setLoading(false);
     }

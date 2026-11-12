@@ -16,6 +16,8 @@ import { createHash } from "crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { pool } from "../db";
 import type { DBUser } from "../users";
+import { revokeAllTokens } from "../tokens";
+import { denyUserTokens } from "../lib/deny-list";
 
 type ScimUserRow = DBUser & { deleted_at: string | null; created_at: string; updated_at: string };
 
@@ -125,7 +127,14 @@ async function applyChanges(tenantId: string, userId: string, changes: UserChang
      RETURNING *`,
     [userId, tenantId, changes.email ?? null, changes.firstName ?? null, changes.lastName ?? null, changes.active ?? null],
   );
+  // Deprovisioning must end live sessions, not just block the next login.
+  if (rows[0] && changes.active === false) await endSessions(userId);
   return rows[0] ?? null;
+}
+
+async function endSessions(userId: string): Promise<void> {
+  await revokeAllTokens(userId);
+  await denyUserTokens(userId);
 }
 
 export async function scimRoutes(server: FastifyInstance) {
@@ -279,6 +288,7 @@ export async function scimRoutes(server: FastifyInstance) {
       [request.params.id, tenantOf(request)],
     );
     if (!rows[0]) return scimError(reply, 404, "User not found");
+    await endSessions(request.params.id);
     return reply.status(204).send();
   });
 }

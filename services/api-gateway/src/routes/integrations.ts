@@ -36,9 +36,72 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
     });
   });
 
+  // GET /api/v1/integrations/status — real connection state for the Settings tab.
+  // Mailboxes are per user; Slack and Zoom are per workspace.
+  fastify.get("/status", async (request, reply) => {
+    const { tenantId, sub: userId } = request.user;
+    const { rows: mine } = await pool.query(
+      `SELECT provider, updated_at FROM oauth_tokens WHERE tenant_id = $1 AND user_id = $2`, [tenantId, userId]);
+    const { rows: zoom } = await pool.query(
+      `SELECT updated_at FROM oauth_tokens WHERE tenant_id = $1 AND provider = 'zoom' ORDER BY updated_at DESC LIMIT 1`, [tenantId]);
+    const { rows: slack } = await pool.query(
+      `SELECT team_name, updated_at FROM slack_workspaces WHERE tenant_id = $1 LIMIT 1`, [tenantId]).catch(() => ({ rows: [] as any[] }));
+    const byProvider = new Map(mine.map((r: any) => [r.provider, r.updated_at]));
+    const configured = (k: string) => Boolean(process.env[k]);
+    return reply.send({
+      success: true,
+      data: [
+        { id: "gmail",   scope: "user",      connected: byProvider.has("google"),    since: byProvider.get("google") ?? null, configured: configured("GOOGLE_CLIENT_ID") },
+        { id: "outlook", scope: "user",      connected: byProvider.has("microsoft"), since: byProvider.get("microsoft") ?? null, configured: configured("MICROSOFT_CLIENT_ID") },
+        { id: "slack",   scope: "workspace", connected: slack.length > 0, account: slack[0]?.team_name ?? null, since: slack[0]?.updated_at ?? null, configured: configured("SLACK_CLIENT_ID") },
+        { id: "zoom",    scope: "workspace", connected: zoom.length > 0, since: zoom[0]?.updated_at ?? null, configured: configured("ZOOM_CLIENT_ID") },
+      ],
+    });
+  });
+
+  // DELETE /api/v1/integrations/:id — disconnect for real. The Settings tab
+  // called this for a long time but no route existed, so "Disconnect" left
+  // tokens live and ingestion running.
+  fastify.delete("/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { tenantId, sub, role } = request.user;
+    const isAdmin = role === "admin" || role === "super_admin";
+    const target = (request.query as { userId?: string }).userId;
+    if (target && !isAdmin) return reply.status(403).send({ success: false, error: { code: "FORBIDDEN" } });
+    const userId = target ?? sub;
+    const mailbox: Record<string, { token: string; integration: string }> = {
+      gmail: { token: "google", integration: "gmail" },
+      outlook: { token: "microsoft", integration: "outlook" },
+    };
+    if (mailbox[id]) {
+      const { rowCount } = await servicePool.query(
+        `DELETE FROM oauth_tokens WHERE tenant_id = $1 AND user_id = $2 AND provider = $3`, [tenantId, userId, mailbox[id].token]);
+      await servicePool.query(
+        `UPDATE integrations SET status = 'disconnected', updated_at = NOW()
+          WHERE tenant_id = $1 AND user_id = $2 AND provider = $3`, [tenantId, userId, mailbox[id].integration]);
+      return reply.send({ success: true, data: { disconnected: (rowCount ?? 0) > 0 } });
+    }
+    if (id === "slack" || id === "zoom") {
+      if (!isAdmin) return reply.status(403).send({ success: false, error: { code: "FORBIDDEN", message: "Admins manage workspace integrations" } });
+      if (id === "slack") {
+        await servicePool.query(`DELETE FROM slack_user_mappings WHERE tenant_id = $1`, [tenantId]);
+        await servicePool.query(`DELETE FROM slack_workspaces WHERE tenant_id = $1`, [tenantId]);
+      } else {
+        await servicePool.query(`DELETE FROM oauth_tokens WHERE tenant_id = $1 AND provider = 'zoom'`, [tenantId]);
+        await servicePool.query(
+          `UPDATE integrations SET status = 'disconnected', updated_at = NOW() WHERE tenant_id = $1 AND provider = 'zoom'`, [tenantId]);
+      }
+      return reply.send({ success: true, data: { disconnected: true } });
+    }
+    return reply.status(404).send({ success: false, error: { code: "UNKNOWN_INTEGRATION" } });
+  });
+
   // Gmail OAuth flow
   fastify.get("/gmail/connect", async (request, reply) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
+    // Without a client id the consent URL is "client_id=undefined" and the user
+    // lands on a provider error page — say it is not set up instead.
+    if (!clientId) return reply.status(503).send({ success: false, error: { code: "NOT_CONFIGURED", message: "Google OAuth client is not configured" } });
     const redirectUri = process.env.GMAIL_OAUTH_REDIRECT
       ?? `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/gmail/callback`;
     const scope = encodeURIComponent(
@@ -46,6 +109,7 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
     );
     const state = await createOAuthState(request.user.tenantId, request.user.sub);
     const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent&state=${state}`;
+    if ((request.query as { format?: string }).format === "json") return reply.send({ success: true, data: { url } });
     return reply.redirect(url);
   });
 
@@ -103,6 +167,9 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
   // Outlook OAuth flow
   fastify.get("/outlook/connect", async (request, reply) => {
     const clientId = process.env.MICROSOFT_CLIENT_ID;
+    // Without a client id the consent URL is "client_id=undefined" and the user
+    // lands on a provider error page — say it is not set up instead.
+    if (!clientId) return reply.status(503).send({ success: false, error: { code: "NOT_CONFIGURED", message: "Microsoft OAuth client is not configured" } });
     const redirectUri = process.env.OUTLOOK_OAUTH_REDIRECT
       ?? `${process.env.APP_URL ?? "http://localhost:4000"}/api/v1/integrations/outlook/callback`;
     const scope = encodeURIComponent(
@@ -110,6 +177,7 @@ export async function integrationsRoutes(fastify: FastifyInstance) {
     );
     const state = await createOAuthState(request.user.tenantId, request.user.sub);
     const url = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&state=${state}`;
+    if ((request.query as { format?: string }).format === "json") return reply.send({ success: true, data: { url } });
     return reply.redirect(url);
   });
 

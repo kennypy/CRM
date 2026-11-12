@@ -6,6 +6,8 @@ import { isTokenDenied } from "../lib/deny-list";
 // against the real set instead of a hand-copied duplicate that can drift.
 export const PUBLIC_PATHS = new Set([
   "/health",
+  "/health/live",
+  "/health/ready",
   "/auth/login",
   "/auth/register",
   "/auth/refresh",
@@ -18,6 +20,10 @@ export const PUBLIC_PATHS = new Set([
   "/webhooks/zoom",
   "/webhooks/slack",
   "/webhooks/stripe",
+  // Provider push notifications; authenticated by the ingestion service.
+  "/ingestion/gmail/push",
+  "/ingestion/outlook/notifications",
+  "/ingestion/gcal/notifications",
   "/api/v1/outreach/email/unsubscribe",
   "/api/v1/outreach/calls/webhooks/twilio/status",
   "/api/v1/integrations/slack/interactions",
@@ -26,7 +32,7 @@ export const PUBLIC_PATHS = new Set([
 // Public path PREFIXES for routes with dynamic segments that can't be listed
 // exactly. The customer portal (/portal/:slug/...) is fully public — the tenant
 // is resolved from the slug in the URL and only published KB content is served.
-export const PUBLIC_PREFIXES = ["/portal/", "/book/"];
+export const PUBLIC_PREFIXES = ["/portal/", "/book/", "/public/"];
 
 export async function authMiddleware(
   request: FastifyRequest,

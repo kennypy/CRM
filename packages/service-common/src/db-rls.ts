@@ -20,7 +20,7 @@
  */
 
 import { AsyncLocalStorage } from "async_hooks";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 
 interface TenantStore { tenantId: string | null }
 
@@ -105,7 +105,12 @@ export function createTenantScopedPools(opts: TenantScopedDbOptions): TenantScop
   // context is present, the returned client injects `SET LOCAL app.current_tenant`
   // immediately after its `BEGIN`, so the whole transaction is RLS-scoped without
   // editing every call site.
-  (appPool as unknown as { connect: unknown }).connect = async () => {
+  //
+  // pg-pool's own `pool.query` calls `this.connect(callback)` internally, so the
+  // patched connect MUST honour the callback form — a promise-only override made
+  // every non-tenant `pool.query` hang forever (callback never invoked) as soon
+  // as DATABASE_URL_APP was configured.
+  const patchedConnect = async () => {
     const client = await rawConnect();
     const tenantId = currentTenant();
     if (!tenantId) return client;
@@ -123,6 +128,15 @@ export function createTenantScopedPools(opts: TenantScopedDbOptions): TenantScop
       return (clientQuery as (...a: unknown[]) => unknown)(text, params, cb);
     };
     return client;
+  };
+  (appPool as unknown as { connect: unknown }).connect = (cb?: unknown) => {
+    if (typeof cb !== "function") return patchedConnect();
+    const done = cb as (err: Error | undefined, client?: PoolClient, release?: (e?: unknown) => void) => void;
+    patchedConnect().then(
+      (client) => done(undefined, client, (e?: unknown) => client.release(e as Error | boolean | undefined)),
+      (err: Error) => done(err),
+    );
+    return undefined;
   };
 
   const platformPool = new Pool({ connectionString: PLATFORM_URL, ...poolOpts });

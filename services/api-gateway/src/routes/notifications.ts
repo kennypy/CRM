@@ -12,8 +12,10 @@ export async function notificationsRoutes(server: FastifyInstance) {
   server.get("/", { preHandler: [requireCrmRead] }, async (request, reply) => {
     const { tenantId, sub: userId } = request.user;
     const q = request.query as { unreadOnly?: string; limit?: string; offset?: string };
-    const limit = Math.min(parseInt(q.limit ?? "50", 10), 200);
-    const offset = parseInt(q.offset ?? "0", 10);
+    const limitRaw = parseInt(q.limit ?? "50", 10);
+    const offsetRaw = parseInt(q.offset ?? "0", 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+    const offset = Number.isFinite(offsetRaw) ? Math.min(Math.max(offsetRaw, 0), 100_000) : 0;
 
     let notifications: any[] = [];
     let unreadCount = 0;
@@ -35,19 +37,13 @@ export async function notificationsRoutes(server: FastifyInstance) {
         [tenantId, userId],
       );
       unreadCount = parseInt(count, 10);
-    } catch {
-      // Return demo notifications if table doesn't exist
-      notifications = [
-        { id: "n1", type: "ai_review", title: "7 extractions need review", body: "AI confidence 75-90% on new emails", priority: "normal", read_at: null, created_at: new Date(Date.now() - 120000).toISOString(), action_url: "/review" },
-        { id: "n2", type: "deal_alert", title: "Acme Corp — deal stalling", body: "No activity in 8 days, reality score dropped 15 points", priority: "high", read_at: null, created_at: new Date(Date.now() - 3600000).toISOString(), action_url: "/pipeline" },
-        { id: "n3", type: "task_due", title: "Follow-up with TechStart due", body: "Due today at 5:00 PM", priority: "high", read_at: null, created_at: new Date(Date.now() - 10800000).toISOString(), action_url: "/tasks" },
-        { id: "n4", type: "deal_stage", title: "Globex moved to Negotiation", body: "Stage updated by Sarah Kim", priority: "normal", read_at: new Date(Date.now() - 14400000).toISOString(), created_at: new Date(Date.now() - 18000000).toISOString(), action_url: "/pipeline" },
-        { id: "n5", type: "ai_insight", title: "Budget confirmed — Acme Corp", body: "Auto-detected in latest email thread", priority: "normal", read_at: new Date(Date.now() - 86400000).toISOString(), created_at: new Date(Date.now() - 86400000).toISOString(), action_url: "/companies/acme" },
-        { id: "n6", type: "sequence", title: "Sequence 'Q1 Outbound' completed", body: "42 contacts completed, 8 replied, 3 meetings booked", priority: "normal", read_at: null, created_at: new Date(Date.now() - 7200000).toISOString(), action_url: "/sequences" },
-        { id: "n7", type: "call_recording", title: "Call recording available", body: "Your call with John Smith (Acme Corp) has been transcribed", priority: "low", read_at: null, created_at: new Date(Date.now() - 5400000).toISOString(), action_url: "/calling" },
-        { id: "n8", type: "forecast", title: "Forecast submission due tomorrow", body: "Q1 2026 forecast deadline is March 9", priority: "high", read_at: null, created_at: new Date(Date.now() - 1800000).toISOString(), action_url: "/forecasting" },
-      ];
-      unreadCount = notifications.filter((n) => !n.read_at).length;
+    } catch (err) {
+      // Never fabricate notifications for real users — surface the failure.
+      request.log.error({ err }, "notifications_list_failed");
+      return reply.status(503).send({
+        success: false,
+        error: { code: "NOTIFICATIONS_UNAVAILABLE", message: "Notifications are temporarily unavailable" },
+      });
     }
 
     return reply.send({
@@ -102,9 +98,7 @@ export async function notificationsRoutes(server: FastifyInstance) {
       prefs = rows[0] ?? null;
     } catch { /* ok */ }
 
-    return reply.send({
-      success: true,
-      data: prefs ?? {
+    const defaults = {
         email_deal_alerts: true,
         email_task_reminders: true,
         email_ai_reviews: false,
@@ -117,8 +111,11 @@ export async function notificationsRoutes(server: FastifyInstance) {
         digest_frequency: "daily",
         quiet_hours_start: "22:00",
         quiet_hours_end: "08:00",
-      },
-    });
+    };
+    // Stored as a JSONB `settings` bag; merge over defaults so the response
+    // shape is identical whether or not the user has saved preferences.
+    const saved = (prefs as { settings?: Record<string, unknown> } | null)?.settings ?? {};
+    return reply.send({ success: true, data: { ...defaults, ...saved } });
   });
 
   // ── PATCH /preferences — update notification preferences ────────────────
@@ -131,9 +128,15 @@ export async function notificationsRoutes(server: FastifyInstance) {
         `INSERT INTO notification_preferences (tenant_id, user_id, settings)
          VALUES ($1, $2, $3)
          ON CONFLICT (tenant_id, user_id) DO UPDATE SET settings = $3, updated_at = NOW()`,
-        [tenantId, userId, JSON.stringify(body)],
+        [tenantId, userId, JSON.stringify(body ?? {})],
       );
-    } catch { /* ok */ }
+    } catch (err) {
+      request.log.error({ err }, "notification_preferences_save_failed");
+      return reply.status(503).send({
+        success: false,
+        error: { code: "PREFERENCES_UNAVAILABLE", message: "Could not save preferences" },
+      });
+    }
 
     return reply.send({ success: true });
   });

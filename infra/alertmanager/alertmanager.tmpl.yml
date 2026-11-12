@@ -1,0 +1,32 @@
+# Rendered by entrypoint.sh (substitutes ${ALERT_WEBHOOK_URL}). No secrets here.
+route:
+  receiver: default
+  group_by: [alertname, instance]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="page"]
+      receiver: oncall-page
+      repeat_interval: 1h
+    - matchers: [severity="ticket"]
+      receiver: default
+      repeat_interval: 12h
+
+inhibit_rules:
+  # If the gateway is fully down, don't also page for burn rate.
+  - source_matchers: [alertname="ServiceDown"]
+    target_matchers: [slo="gateway-availability"]
+  # Postgres/Redis down explain ServiceDown on dependents.
+  - source_matchers: [alertname=~"PostgresDown|RedisDown"]
+    target_matchers: [alertname="ServiceDown"]
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: "${ALERT_WEBHOOK_URL}"
+        send_resolved: true
+  - name: oncall-page
+    webhook_configs:
+      - url: "${ALERT_WEBHOOK_URL}"
+        send_resolved: true

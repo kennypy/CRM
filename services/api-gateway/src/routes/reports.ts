@@ -22,7 +22,8 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { pool, readPool } from "../db";
+import { pool, readPool, servicePool } from "../db";
+import { visibleOwnerIdsForList } from "../lib/visibility";
 import { requireCrmRead } from "../middleware/scope";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { getFieldPermissions } from "../middleware/field-access";
@@ -287,21 +288,39 @@ function matchesFilter(row: Record<string, unknown>, filter: unknown): boolean {
 }
 
 // ── Graph entity fetcher ──────────────────────────────────────────────────────
-async function fetchGraphSource(source: SourceId, tenantId: string): Promise<Record<string, unknown>[]> {
-  const endpoints: Record<string, string> = {
-    deals:     `/deals?tenantId=${tenantId}&limit=5000`,
-    companies: `/companies?tenantId=${tenantId}&limit=5000`,
-    contacts:  `/contacts?tenantId=${tenantId}&limit=5000`,
-  };
+/** Max graph rows a single report source will scan. */
+const GRAPH_SOURCE_ROW_CAP = 50_000;
+const GRAPH_PAGE = 200;
+
+/**
+ * Page through a graph entity list. The previous single `limit=5000` request
+ * exceeded graph-core's per-page cap (100–200), was rejected with a 400 that
+ * this function swallowed, and every report over deals/contacts/companies
+ * silently returned zero rows.
+ */
+async function fetchGraphSource(
+  source: SourceId, tenantId: string, visibleOwnerIds: string[] | null = null,
+): Promise<Record<string, unknown>[]> {
   const { internalFetch } = await import("../lib/internal-fetch");
-  const url = `${GRAPH_CORE}${endpoints[source]}`;
-  const resp = await internalFetch(url, {
-    headers: { "Content-Type": "application/json", "x-tenant-id": tenantId },
-  });
-  if (!resp.ok) return [];
-  const json = await resp.json() as { data?: Record<string, unknown>[] };
-  return json.data ?? [];
+  const vis = visibleOwnerIds ? `&visibleOwnerIds=${visibleOwnerIds.join(",")}` : "";
+  const out: Record<string, unknown>[] = [];
+  for (let offset = 0; offset < GRAPH_SOURCE_ROW_CAP; offset += GRAPH_PAGE) {
+    const resp = await internalFetch(
+      `${GRAPH_CORE}/${source}?tenantId=${encodeURIComponent(tenantId)}&limit=${GRAPH_PAGE}&offset=${offset}${vis}`,
+      { headers: { "Content-Type": "application/json", "x-tenant-id": tenantId } },
+    );
+    if (!resp.ok) throw new Error(`report source ${source} failed: ${resp.status}`);
+    const json = await resp.json() as { data?: Record<string, unknown>[]; pagination?: { hasMore?: boolean } };
+    const page = json.data ?? [];
+    out.push(...page);
+    if (!json.pagination?.hasMore || page.length < GRAPH_PAGE) break;
+  }
+  return out;
 }
+
+const SOURCE_ENTITY: Partial<Record<SourceId, string>> = { deals: "deal", companies: "company", contacts: "contact", quotes: "quote" };
+
+export interface ReportViewer { userId: string; role?: string }
 
 // ── SQL entity fetcher ────────────────────────────────────────────────────────
 async function fetchSQLSource(
@@ -341,7 +360,8 @@ async function fetchSQLSource(
     let sql = `SELECT id, quote_number, title, status, company_name, contact_name,
                       deal_id, contact_id, company_id,
                       subtotal, discount_type, discount_value, tax_rate, total,
-                      currency, notes, valid_until, created_at, updated_at
+                      currency, notes, valid_until, created_at, updated_at,
+                      COALESCE(assigned_to, created_by) AS owner_id
                FROM quotes WHERE tenant_id = $1`;
     if (periodISO) {
       vals.push(periodISO);
@@ -365,7 +385,7 @@ async function fetchSQLSource(
 }
 
 // ── Core execution engine ─────────────────────────────────────────────────────
-export async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
+export async function executeQuery(spec: QuerySpec, tenantId: string, viewer?: ReportViewer | null): Promise<{
   rows: Record<string, unknown>[];
   columns: { key: string; label: string }[];
   rowCount: number;
@@ -374,10 +394,21 @@ export async function executeQuery(spec: QuerySpec, tenantId: string): Promise<{
   const data: Record<SourceId, Record<string, unknown>[]> = {} as never;
 
   await Promise.all(spec.sources.map(async (src) => {
+    // Sharing model: reports run as the viewer and only see what they may see.
+    let role = viewer?.role;
+    if (viewer && !role) {
+      const { rows } = await servicePool.query(`SELECT role FROM users WHERE id = $1 AND tenant_id = $2`, [viewer.userId, tenantId]);
+      role = rows[0]?.role ?? "read_only";
+    }
+    const entity = SOURCE_ENTITY[src];
+    const visible = viewer && entity ? await visibleOwnerIdsForList(tenantId, viewer.userId, role!, entity) : null;
     if (GRAPH_SOURCES.includes(src)) {
-      data[src] = await fetchGraphSource(src, tenantId);
+      data[src] = await fetchGraphSource(src, tenantId, visible);
     } else {
-      data[src] = await fetchSQLSource(src, tenantId, spec);
+      const rows = await fetchSQLSource(src, tenantId, spec);
+      data[src] = src === "quotes" && visible
+        ? rows.filter((r) => visible.includes(String((r as Record<string, unknown>).owner_id ?? "")))
+        : rows;
     }
   }));
 
@@ -534,7 +565,7 @@ export async function reportsRoutes(server: FastifyInstance) {
     const { spec: safeSpec, error } = await sanitizeSpecForRole(parsed.data, tenantId, role);
     if (error) return reply.status(403).send({ success: false, error: { code: "FORBIDDEN", message: error } });
 
-    const result = await executeQuery(safeSpec!, tenantId);
+    const result = await executeQuery(safeSpec!, tenantId, { userId: request.user.sub, role });
     return reply.send({ success: true, data: result });
   });
 
@@ -666,7 +697,7 @@ export async function reportsRoutes(server: FastifyInstance) {
     const { spec: safeSpec, error } = await sanitizeSpecForRole(specParsed.data, tenantId, role);
     if (error) return reply.status(403).send({ success: false, error: { code: "FORBIDDEN", message: error } });
 
-    const result = await executeQuery(safeSpec!, tenantId);
+    const result = await executeQuery(safeSpec!, tenantId, { userId: request.user.sub, role });
     const { rows: [snap] } = await pool.query(
       `INSERT INTO report_snapshots (report_id, tenant_id, row_count, data)
        VALUES ($1,$2,$3,$4) RETURNING *`,

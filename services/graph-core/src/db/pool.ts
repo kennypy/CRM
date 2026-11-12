@@ -60,3 +60,55 @@ export async function cypher<T = Record<string, unknown>>(
     client.release();
   }
 }
+
+export interface TxRunner {
+  /** Run a Cypher statement inside the transaction. */
+  cypher<T = Record<string, unknown>>(query: string, params?: Record<string, unknown>): Promise<T[]>;
+  /** Run plain SQL inside the same transaction (graph + relational are one DB). */
+  sql<T = Record<string, unknown>>(text: string, values?: unknown[]): Promise<T[]>;
+}
+
+/**
+ * Run several Cypher + SQL statements atomically on one connection. AGE graph
+ * tables live in the same Postgres database as the relational schema, so a
+ * multi-entity operation (e.g. lead conversion) commits or rolls back as one.
+ */
+export async function cypherTx<R>(fn: (tx: TxRunner) => Promise<R>): Promise<R> {
+  const client = await servicePool.connect();
+  try {
+    try { await client.query("LOAD 'age'"); } catch { /* preloaded */ }
+    await client.query("SET search_path = ag_catalog, \"$user\", public");
+    await client.query("BEGIN");
+    const tx: TxRunner = {
+      async cypher<T>(query: string, params: Record<string, unknown> = {}) {
+        try {
+          const result = await client.query(
+            `SELECT * FROM cypher('nexcrm_graph', $$ ${query} $$, $1::agtype) AS result(v agtype)`,
+            [JSON.stringify(params)],
+          );
+          return result.rows.map((r) => JSON.parse(r.v)) as T[];
+        } catch (err: any) {
+          const enhanced = new Error(`AGE cypher failed: ${err.message}`);
+          (enhanced as any).cause = err;
+          (enhanced as any).query = query.slice(0, 200);
+          throw enhanced;
+        }
+      },
+      async sql<T>(text: string, values: unknown[] = []) {
+        // Relational tables are in `public`; qualify explicitly in callers.
+        const result = await client.query(text, values);
+        return result.rows as T[];
+      },
+    };
+    const out = await fn(tx);
+    await client.query("COMMIT");
+    return out;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    // Reset search_path before returning the connection to the pool.
+    await client.query("SET search_path TO DEFAULT").catch(() => undefined);
+    client.release();
+  }
+}

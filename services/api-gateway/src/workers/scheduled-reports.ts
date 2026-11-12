@@ -10,6 +10,8 @@ import { servicePool as pool } from "../db";
 import { executeQuery } from "../routes/reports";
 import { OUTREACH_URL } from "../lib/service-urls";
 import { internalFetch } from "../lib/internal-fetch";
+import { createLeaderLock } from "../lib/leader-lock";
+import { requestRedis } from "@nexcrm/service-common/redis";
 const CHECK_INTERVAL_MS = 60_000; // 1 minute
 
 interface Subscription {
@@ -90,7 +92,8 @@ async function processSubscriptions() {
 
       // Execute the report
       const spec = typeof sub.spec === "string" ? JSON.parse(sub.spec) : sub.spec;
-      const result = await executeQuery(spec, sub.tenant_id);
+      // Run as the subscriber so the email only contains records they may see.
+      const result = await executeQuery(spec, sub.tenant_id, { userId: sub.user_id });
 
       // Save snapshot
       await pool.query(
@@ -150,10 +153,21 @@ async function processSubscriptions() {
 }
 
 export function startScheduledReportsWorker() {
-  setInterval(() => {
-    processSubscriptions().catch((err) =>
-      console.error("[scheduled-reports] poll error:", err)
-    );
+  // Singleton across gateway replicas — otherwise each replica would deliver
+  // every due report once.
+  const leader = createLeaderLock(requestRedis(), "scheduled-reports", 3 * CHECK_INTERVAL_MS);
+  let running = false;
+  setInterval(async () => {
+    if (running) return;
+    if (!(await leader.tick())) return;
+    running = true;
+    try {
+      await processSubscriptions();
+    } catch (err) {
+      console.error("[scheduled-reports] poll error:", err);
+    } finally {
+      running = false;
+    }
   }, CHECK_INTERVAL_MS);
   console.log("[scheduled-reports] started — checking every 60s");
 }

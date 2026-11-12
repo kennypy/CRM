@@ -28,11 +28,11 @@ export function ApprovalsBell() {
     let alive = true;
     const load = async () => {
       try {
-        const res = await api.get("/api/v1/quotes?status=pending_approval");
+        // Approval requests whose *current step* is assigned to me.
+        const res = await api.get("/api/v1/approvals?scope=mine&status=pending");
+        if (!res.ok) return;
         const json = await res.json();
-        const n = (json.data ?? []).filter(
-          (q: { createdBy?: string }) => q.createdBy !== me.id,
-        ).length;
+        const n = (json.data ?? []).length;
         if (alive) setCount(n);
       } catch {
         /* non-fatal — leave count unchanged */
@@ -50,8 +50,8 @@ export function ApprovalsBell() {
 
   return (
     <Link
-      href="/quotes?status=pending_approval"
-      title="Quotes awaiting your approval"
+      href="/approvals"
+      title="Approvals awaiting you"
       className={cn(
         "relative rounded-md p-2 transition-colors hover:bg-muted",
         count > 0 ? "text-yellow-600 dark:text-yellow-400" : "text-muted-foreground hover:text-foreground",

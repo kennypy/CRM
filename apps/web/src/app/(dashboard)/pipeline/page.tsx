@@ -15,13 +15,16 @@ import { api } from "@/lib/api";
 import { EvidencePanel } from "@/components/deals/evidence-panel";
 import { DealDetailPanel } from "@/components/deals/deal-detail-panel";
 import { AddDealModal } from "@/components/modals/add-deal-modal";
+import { readApiError, type DealScope } from "@/lib/l2q";
+
+const DEAL_PAGE_SIZE = 200;
 import {
   Briefcase, RefreshCw, TrendingUp, AlertCircle, Plus,
   ChevronRight, ChevronLeft, DollarSign, AlertTriangle,
 } from "lucide-react";
 
 type DealStage =
-  | "discovery" | "proposal" | "negotiation"
+  | "lead" | "qualified" | "discovery" | "proposal" | "negotiation"
   | "closed_won" | "closed_lost";
 
 interface Deal {
@@ -39,7 +42,12 @@ interface Deal {
   updatedAt:            string;
 }
 
+// Every stage an opportunity can be in. "lead" (the default for new deals) and
+// "qualified" (the default for converted leads) were missing, so new
+// opportunities never appeared on the board.
 const STAGES: { key: DealStage; labelKey: string; color: string }[] = [
+  { key: "lead",        labelKey: "lead",        color: "border-slate-400" },
+  { key: "qualified",   labelKey: "qualified",   color: "border-indigo-400" },
   { key: "discovery",   labelKey: "discovery",   color: "border-blue-400" },
   { key: "proposal",    labelKey: "proposal",    color: "border-yellow-400" },
   { key: "negotiation", labelKey: "negotiation", color: "border-orange-400" },
@@ -48,7 +56,7 @@ const STAGES: { key: DealStage; labelKey: string; color: string }[] = [
 ];
 
 const STAGE_ORDER: DealStage[] = [
-  "discovery", "proposal", "negotiation", "closed_won", "closed_lost",
+  "lead", "qualified", "discovery", "proposal", "negotiation", "closed_won", "closed_lost",
 ];
 
 // Gap is significant when it exceeds this % of the declared forecast.
@@ -317,23 +325,67 @@ export default function PipelinePage() {
   const [evidenceDeal, setEvidenceDeal] = useState<Deal | null>(null);
   const [detailDeal,   setDetailDeal]   = useState<Deal | null>(null);
   const [showAddDeal,  setShowAddDeal]  = useState(false);
+  const [scope,        setScope]        = useState<DealScope>("mine");
+  const [hasMore,      setHasMore]      = useState(false);
+  const [total,        setTotal]        = useState<number | null>(null);
+  const [loadingMore,  setLoadingMore]  = useState(false);
+  const [actionError,  setActionError]  = useState<string | null>(null);
+  const tp = useTranslations("pipelinePaging");
+
+  // Paged load: the gateway caps a page at 200 rows; "Load more" appends the
+  // next page so a 120-rep org's full pipeline is reachable, not just the top 200.
+  const loadPage = useCallback(async (offset: number) => {
+    const params = new URLSearchParams({ limit: String(DEAL_PAGE_SIZE), offset: String(offset), scope });
+    const res = await api.get(`/api/v1/deals?${params}`);
+    if (!res.ok) throw new Error((await readApiError(res, `HTTP ${res.status}`)).message);
+    const json = await res.json();
+    const page: Deal[] = json.data ?? [];
+    const pg = json.pagination ?? {};
+    setHasMore(Boolean(pg.hasMore ?? page.length === DEAL_PAGE_SIZE));
+    setTotal(typeof pg.total === "number" ? pg.total : null);
+    return page;
+  }, [scope]);
 
   const fetchDeals = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get("/api/v1/deals?limit=200");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setDeals(json.data ?? []);
+      setDeals(await loadPage(0));
     } catch (e: any) {
       setError(e.message ?? "Failed to load deals");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadPage]);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const page = await loadPage(deals.length);
+      setDeals((prev) => {
+        const seen = new Set(prev.map((d) => d.id));
+        return [...prev, ...page.filter((d) => !seen.has(d.id))];
+      });
+    } catch (e: any) {
+      setActionError(e.message ?? "Failed to load deals");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadPage, deals.length]);
 
   useEffect(() => { fetchDeals(); }, [fetchDeals]);
+
+  /** PATCH a stage change; on rejection (e.g. 422 validation rule) revert and explain. */
+  const patchStage = useCallback(async (deal: Deal, newStage: DealStage) => {
+    try {
+      const res = await api.patch(`/api/v1/deals/${deal.id}`, { stage: newStage });
+      if (!res.ok) throw new Error((await readApiError(res, `HTTP ${res.status}`)).message);
+      setActionError(null);
+    } catch (e: any) {
+      setDeals((prev) => prev.map((d) => d.id === deal.id ? { ...d, stage: deal.stage, updatedAt: deal.updatedAt } : d));
+      setActionError(e.message ?? "Update failed");
+    }
+  }, []);
 
   const handleMove = useCallback(async (id: string, direction: "prev" | "next") => {
     const deal = deals.find((d) => d.id === id);
@@ -343,23 +395,15 @@ export default function PipelinePage() {
     if (nextIdx < 0 || nextIdx >= STAGE_ORDER.length) return;
     const newStage = STAGE_ORDER[nextIdx];
     setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: newStage, updatedAt: new Date().toISOString() } : d));
-    try {
-      await api.patch(`/api/v1/deals/${id}`, { stage: newStage });
-    } catch {
-      setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: deal.stage, updatedAt: deal.updatedAt } : d));
-    }
-  }, [deals]);
+    await patchStage(deal, newStage);
+  }, [deals, patchStage]);
 
   const handleStageChange = useCallback(async (id: string, newStage: DealStage) => {
     const deal = deals.find((d) => d.id === id);
     if (!deal || deal.stage === newStage) return;
     setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: newStage, updatedAt: new Date().toISOString() } : d));
-    try {
-      await api.patch(`/api/v1/deals/${id}`, { stage: newStage });
-    } catch {
-      setDeals((prev) => prev.map((d) => d.id === id ? { ...d, stage: deal.stage, updatedAt: deal.updatedAt } : d));
-    }
-  }, [deals]);
+    await patchStage(deal, newStage);
+  }, [deals, patchStage]);
 
   const handleDeclaredChange = useCallback(async (id: string, pct: number) => {
     setDeals((prev) => prev.map((d) => d.id === id ? { ...d, declaredProbability: pct } : d));
@@ -393,6 +437,14 @@ export default function PipelinePage() {
               Won: <strong className="text-green-700">{formatCurrency(wonValue, currency, true, locale)}</strong>
             </span>
           )}
+          <div className="flex gap-1 rounded-lg border p-1">
+            {(["mine", "team", "all"] as const).map((s) => (
+              <button key={s} onClick={() => setScope(s)}
+                className={cn("rounded-md px-2.5 py-0.5 text-xs font-medium", scope === s ? "bg-primary text-primary-foreground" : "hover:bg-muted")}>
+                {tp(`scope.${s}`)}
+              </button>
+            ))}
+          </div>
           <button onClick={fetchDeals} disabled={loading}
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50">
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
@@ -414,6 +466,25 @@ export default function PipelinePage() {
       )}
 
       <ForecastBar deals={deals} currency={currency} locale={locale} t={t} />
+
+      {actionError && (
+        <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          <span className="flex items-center gap-2"><AlertCircle className="h-4 w-4" />{actionError}</span>
+          <button onClick={() => setActionError(null)} className="text-xs hover:underline">{tc("close")}</button>
+        </div>
+      )}
+
+      {!loading && !error && (hasMore || total !== null) && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{total !== null ? tp("showingOf", { shown: deals.length, total }) : tp("showing", { shown: deals.length })}</span>
+          {hasMore && (
+            <button onClick={loadMore} disabled={loadingMore}
+              className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">
+              {loadingMore ? tp("loading") : tp("loadMore")}
+            </button>
+          )}
+        </div>
+      )}
 
       {error ? (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">

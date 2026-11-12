@@ -8,12 +8,38 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { lookupGraphRecords } from "../lib/graph-lookup";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireRep, requireManager } from "../middleware/rbac";
 import { requireAiRead, requireAiWrite } from "../middleware/scope";
-import { createProxy } from "../lib/proxy";
-import { AI_ENGINE_URL } from "../lib/service-urls";
+import { internalFetch } from "../lib/internal-fetch";
+import { AI_ENGINE_URL, GRAPH_CORE_URL } from "../lib/service-urls";
+
+const ComputeBody = z.object({ contactId: z.string().uuid() });
+const MAX_BULK = 5000;
+
+/** Ask the engine for one contact's score and store it (upsert). */
+async function scoreAndStore(tenantId: string, contactId: string): Promise<Record<string, unknown> | null> {
+  const res = await internalFetch(`${AI_ENGINE_URL}/scoring/lead-score/${contactId}`, {
+    method: "POST",
+    headers: { "x-tenant-id": tenantId },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) return null;
+  const s = (await res.json()) as { score: number; tier: string; factors: unknown[]; method?: string };
+  const { rows } = await pool.query(
+    `INSERT INTO lead_scores (tenant_id, contact_id, score, tier, factors, model_version, calculated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
+     ON CONFLICT (tenant_id, contact_id) DO UPDATE
+       SET score = EXCLUDED.score, tier = EXCLUDED.tier, factors = EXCLUDED.factors,
+           model_version = EXCLUDED.model_version, calculated_at = NOW(), updated_at = NOW()
+     RETURNING *`,
+    [tenantId, contactId, Math.max(0, Math.min(100, Math.round(s.score))), s.tier,
+      JSON.stringify(s.factors ?? []), s.method ?? "heuristic_v1"],
+  );
+  return rows[0];
+}
 
 
 function toLeadScore(row: Record<string, unknown>) {
@@ -53,33 +79,23 @@ export async function leadScoringRoutes(server: FastifyInstance) {
     vals.push(limit, offset);
 
     const { rows } = await pool.query(
-      `SELECT ls.*,
-              p.first_name || ' ' || p.last_name AS contact_name,
-              p.email AS contact_email,
-              p.title AS contact_title,
-              c.name AS company_name
-       FROM lead_scores ls
-       LEFT JOIN LATERAL (
-         SELECT (properties->>'firstName') AS first_name,
-                (properties->>'lastName') AS last_name,
-                (properties->>'email') AS email,
-                (properties->>'title') AS title
-         FROM nexcrm_graph."Person"
-         WHERE id = ls.contact_id::ag_catalog.graphid
-         LIMIT 1
-       ) p ON true
-       LEFT JOIN LATERAL (
-         SELECT (c.properties->>'name') AS name
-         FROM nexcrm_graph."WORKS_AT" wa
-         JOIN nexcrm_graph."Company" c ON c.id = wa.end_id
-         WHERE wa.start_id = ls.contact_id::ag_catalog.graphid
-         LIMIT 1
-       ) c ON true
+      `SELECT ls.* FROM lead_scores ls
        WHERE ${where}
        ORDER BY ls.score DESC
        LIMIT $${vals.length - 1} OFFSET $${vals.length}`,
       vals
     );
+    // Contact + company names come from graph-core. (This used to join AGE
+    // tables directly on the wrong id and with a role that has no graph
+    // access — a 500 under least-privilege DB roles, blank names otherwise.)
+    const { contacts } = await lookupGraphRecords(tenantId, { contactIds: rows.map((r) => String(r.contact_id)) });
+    for (const r of rows) {
+      const c = contacts.get(String(r.contact_id));
+      r.contact_name = c ? `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() : null;
+      r.contact_email = c?.email ?? null;
+      r.contact_title = c?.title ?? null;
+      r.company_name = c?.companyName ?? null;
+    }
 
     const { rows: countRows } = await pool.query(
       `SELECT COUNT(*)::int AS total FROM lead_scores WHERE ${where.replace(/ls\./g, "")}`,
@@ -111,13 +127,44 @@ export async function leadScoringRoutes(server: FastifyInstance) {
   });
 
   // ── POST /api/v1/lead-scoring/compute ───────────────────────────────────
-  // Trigger AI engine to compute/refresh score for a contact
-  server.post("/compute", { preHandler: [requireRep, requireAiWrite] },
-    createProxy({ baseUrl: AI_ENGINE_URL, stripPrefix: "/api/v1/lead-scoring" })
-  );
+  // Score one contact and SAVE the result. (This used to proxy to an engine
+  // path that does not exist, and nothing ever wrote lead_scores — the list
+  // above was permanently empty.)
+  server.post("/compute", { preHandler: [requireRep, requireAiWrite] }, async (request, reply) => {
+    const b = ComputeBody.safeParse(request.body);
+    if (!b.success) return reply.status(400).send({ success: false, error: { code: "VALIDATION_ERROR", message: "contactId is required" } });
+    const { tenantId } = request.user;
+    const { contacts } = await lookupGraphRecords(tenantId, { contactIds: [b.data.contactId] });
+    if (!contacts.has(b.data.contactId)) return reply.status(404).send({ success: false, error: { code: "NOT_FOUND", message: "Contact not found" } });
+    let row: Record<string, unknown> | null = null;
+    try { row = await scoreAndStore(tenantId, b.data.contactId); } catch (err) { request.log.error({ err }, "lead_scoring.compute_failed"); }
+    if (!row) return reply.status(503).send({ success: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "Scoring engine unavailable" } });
+    return reply.send({ success: true, data: toLeadScore(row) });
+  });
 
   // ── POST /api/v1/lead-scoring/compute-all ───────────────────────────────
-  server.post("/compute-all", { preHandler: [requireManager, requireAiWrite] },
-    createProxy({ baseUrl: AI_ENGINE_URL, stripPrefix: "/api/v1/lead-scoring" })
-  );
+  // Score every open lead in the workspace (capped), 10 at a time.
+  server.post("/compute-all", {
+    config: { rateLimit: { max: 6, timeWindow: "1 minute" } },
+    preHandler: [requireManager, requireAiWrite],
+  }, async (request, reply) => {
+    const { tenantId } = request.user;
+    const res = await internalFetch(`${GRAPH_CORE_URL}/internal/scoring-inputs?tenantId=${tenantId}`, {
+      headers: { "x-tenant-id": tenantId }, signal: AbortSignal.timeout(30_000),
+    }).catch(() => null);
+    if (!res || !res.ok) return reply.status(503).send({ success: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "Could not load leads" } });
+    const all = ((await res.json()) as { data: { leadIds: string[] } }).data.leadIds;
+    const ids = all.slice(0, MAX_BULK);
+    let scored = 0, failed = 0, next = 0;
+    await Promise.all(Array.from({ length: 10 }, async () => {
+      while (next < ids.length) {
+        const id = ids[next++];
+        try { (await scoreAndStore(tenantId, id)) ? scored++ : failed++; } catch { failed++; }
+      }
+    }));
+    if (ids.length && scored === 0) {
+      return reply.status(503).send({ success: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "Scoring engine unavailable" } });
+    }
+    return reply.send({ success: true, data: { total: all.length, scored, failed, skipped: all.length - ids.length } });
+  });
 }

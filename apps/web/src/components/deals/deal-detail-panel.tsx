@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant-context";
 import { api } from "@/lib/api";
+import { useTranslations } from "next-intl";
+import { DealHistoryTab, DealSplitsTab, DealTeamTab } from "@/components/deals/deal-related-tabs";
 import {
   X, DollarSign, Calendar, Building2, User, TrendingUp,
   Mail, Phone, MessageSquare, Loader2, AlertCircle,
@@ -11,10 +13,12 @@ import {
 } from "lucide-react";
 
 type DealStage =
-  | "discovery" | "proposal" | "negotiation"
+  | "lead" | "qualified" | "discovery" | "proposal" | "negotiation"
   | "closed_won" | "closed_lost";
 
 const STAGE_LABELS: Record<DealStage, string> = {
+  lead:        "Pre-qualified",
+  qualified:   "Qualified",
   discovery:   "Discovery",
   proposal:    "Proposal",
   negotiation: "Negotiation",
@@ -126,6 +130,8 @@ export function DealDetailPanel({
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState<string | null>(null);
   const [saving,     setSaving]     = useState(false);
+  const [tab,        setTab]        = useState<"details" | "history" | "team" | "splits">("details");
+  const tt = useTranslations("dealTabs");
 
   const fetchDetail = useCallback(async () => {
     setLoading(true);
@@ -175,15 +181,24 @@ export function DealDetailPanel({
   const patchDeal = useCallback(async (patch: Partial<DealDetail>) => {
     setSaving(true);
     try {
+      const before = detail;
       setDetail((prev) => prev ? { ...prev, ...patch } : prev);
-      await api.patch(`/api/v1/deals/${dealId}`, patch);
+      const res = await api.patch(`/api/v1/deals/${dealId}`, patch);
+      if (!res.ok) {
+        // e.g. 422 VALIDATION_RULE — roll back the optimistic update and say why.
+        const json = await res.json().catch(() => ({}));
+        setDetail(before);
+        setError(json?.error?.message ?? `Update failed (${res.status})`);
+        return;
+      }
+      setError(null);
       onDealUpdated?.(patch);
     } catch {
       // Non-critical; optimistic update stays
     } finally {
       setSaving(false);
     }
-  }, [dealId, onDealUpdated]);
+  }, [dealId, onDealUpdated, detail]);
 
   const d = detail;
   const dealCur = d?.currency ?? currency;
@@ -227,8 +242,23 @@ export function DealDetailPanel({
           </div>
         </div>
 
+        {/* Related-list tabs */}
+        <div className="flex gap-1 border-b px-4">
+          {(["details", "history", "team", "splits"] as const).map((k) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={cn("-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors",
+                tab === k ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>
+              {tt(`tabs.${k}`)}
+            </button>
+          ))}
+        </div>
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
+          {tab === "history" && <DealHistoryTab dealId={dealId} locale={locale} />}
+          {tab === "team" && <DealTeamTab dealId={dealId} />}
+          {tab === "splits" && <DealSplitsTab dealId={dealId} />}
+          {tab === "details" && (<>
           {error && (
             <div className="flex items-center gap-2 m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               <AlertCircle className="h-4 w-4 shrink-0" />{error}
@@ -455,6 +485,7 @@ export function DealDetailPanel({
               </div>
             </div>
           )}
+          </>)}
         </div>
       </div>
     </>

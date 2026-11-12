@@ -132,7 +132,16 @@ export async function startSequenceRunner(): Promise<void> {
     console.error("[sequence-worker] Worker error:", err.message);
   });
 
+  runnerWorker = worker;
   console.log("[sequence-runner] BullMQ worker started — 30s polling interval");
+}
+
+let runnerWorker: Worker | null = null;
+
+/** Graceful shutdown: let the in-flight job finish, then close queue connections. */
+export async function stopSequenceRunner(): Promise<void> {
+  await runnerWorker?.close().catch(() => {});
+  await sequenceQueue.close().catch(() => {});
 }
 
 // ── Scheduler: find due steps and enqueue them ────────────────────────────────

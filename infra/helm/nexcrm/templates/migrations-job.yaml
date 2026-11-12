@@ -1,0 +1,26 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nexcrm-migrate-{{ .Release.Revision }}
+  labels:
+    app.kubernetes.io/part-of: nexcrm
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: {{ printf "%s/%s:%s" .Values.global.imageRegistry .Values.migrations.image (default .Chart.AppVersion .Values.global.imageTag) }}
+          command:
+            {{- toYaml .Values.migrations.command | nindent 12 }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.global.existingSecret }}
+{{- end }}

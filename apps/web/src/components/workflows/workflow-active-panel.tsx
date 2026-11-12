@@ -1,308 +1,148 @@
 "use client";
 
-import { useEffect } from "react";
-import Link from "next/link";
+/**
+ * Workflow run history — real data from GET /api/v1/workflows/:id/runs.
+ * (This panel previously rendered hard-coded demo entities and runs.) Shows
+ * each run's status and per-step results so failed or skipped actions are
+ * visible instead of silently "succeeding".
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
+import { AlertCircle, CheckCircle2, Clock, Loader2, RefreshCw, X, XCircle, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  X, Zap, Briefcase, Users, Activity, ArrowRight,
-  CheckCircle2, XCircle, Clock, Play,
-} from "lucide-react";
+import { getData, errorMessage } from "@/lib/l2q";
+import type { WorkflowRun } from "@/lib/automation";
 
-interface Workflow {
-  id: string;
-  name: string;
-  description: string;
-  trigger: string;
-  actions: string[];
-  enabled: boolean;
-  lastRun?: string;
-  runCount: number;
-  category: "deal" | "contact" | "activity" | "ai";
-  createdBy?: string;
-}
-
-interface ActiveDeal {
-  type: "deal";
-  id: string;
-  name: string;
-  company: string;
-  stage: string;
-  value: string;
-  enteredAt: string;
-}
-
-interface ActiveContact {
-  type: "contact";
-  id: string;
-  name: string;
-  company: string;
-  email: string;
-  enteredAt: string;
-}
-
-interface ActiveActivity {
-  type: "activity";
-  id: string;
-  activityType: string;
-  deal: string;
-  contact: string;
-  enteredAt: string;
-}
-
-type ActiveEntity = ActiveDeal | ActiveContact | ActiveActivity;
-
-interface RunEntry {
-  id: string;
-  entityName: string;
-  status: "success" | "failed";
-  runAt: string;
-}
-
-// Demo data keyed by workflow ID
-const ACTIVE_ENTITIES: Record<string, ActiveEntity[]> = {
-  "1": [
-    { type: "deal", id: "d1", name: "Acme Corp — Enterprise Suite", company: "Acme Corp", stage: "Negotiation", value: "$280,000", enteredAt: "2h ago" },
-    { type: "deal", id: "d2", name: "Globex — Platform License", company: "Globex Corp", stage: "Negotiation", value: "$195,000", enteredAt: "5h ago" },
-  ],
-  "2": [
-    { type: "deal", id: "d3", name: "Initech — Starter Plan", company: "Initech", stage: "Proposal", value: "$42,000", enteredAt: "8 days ago" },
-    { type: "deal", id: "d4", name: "Umbrella Co — Enterprise", company: "Umbrella Co", stage: "Discovery", value: "$450,000", enteredAt: "15 days ago" },
-    { type: "deal", id: "d5", name: "Cyberdyne — Core", company: "Cyberdyne", stage: "Proposal", value: "$88,000", enteredAt: "10 days ago" },
-  ],
-  "3": [
-    { type: "contact", id: "c1", name: "Maria Garcia", company: "TechStart Inc", email: "maria@techstart.io", enteredAt: "1d ago" },
-    { type: "contact", id: "c2", name: "James Wilson", company: "Pied Piper", email: "james@piedpiper.com", enteredAt: "2d ago" },
-  ],
-  "4": [],
-  "5": [
-    { type: "deal", id: "d6", name: "Hooli — Premium", company: "Hooli", stage: "Closed Won", value: "$320,000", enteredAt: "1d ago" },
-  ],
-  "6": [
-    { type: "activity", id: "a1", activityType: "meeting", deal: "Acme Corp — Enterprise Suite", contact: "Sarah Chen", enteredAt: "30m ago" },
-    { type: "activity", id: "a2", activityType: "meeting", deal: "Globex — Platform License", contact: "Marcus Lee", enteredAt: "2h ago" },
-    { type: "activity", id: "a3", activityType: "meeting", deal: "Initech — Starter Plan", contact: "Priya Patel", enteredAt: "4h ago" },
-  ],
+const STATUS_CLS: Record<string, string> = {
+  completed: "bg-green-100 text-green-700",
+  failed: "bg-red-100 text-red-700",
+  running: "bg-blue-100 text-blue-700",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
-const RUN_HISTORY: Record<string, RunEntry[]> = {
-  "1": [
-    { id: "r1", entityName: "Acme Corp — Enterprise Suite", status: "success", runAt: "2h ago" },
-    { id: "r2", entityName: "Globex — Platform License", status: "success", runAt: "5h ago" },
-    { id: "r3", entityName: "Pied Piper — Series A", status: "failed", runAt: "1d ago" },
-    { id: "r4", entityName: "Initech — Starter Plan", status: "success", runAt: "3d ago" },
-  ],
-  "2": [
-    { id: "r1", entityName: "Umbrella Co — Enterprise", status: "success", runAt: "6h ago" },
-    { id: "r2", entityName: "Cyberdyne — Core", status: "success", runAt: "10h ago" },
-    { id: "r3", entityName: "Initech — Starter Plan", status: "success", runAt: "2d ago" },
-  ],
-  "3": [
-    { id: "r1", entityName: "Maria Garcia", status: "success", runAt: "1d ago" },
-    { id: "r2", entityName: "James Wilson", status: "success", runAt: "2d ago" },
-    { id: "r3", entityName: "Alex Kim", status: "failed", runAt: "5d ago" },
-  ],
-  "4": [
-    { id: "r1", entityName: "demo-review-123", status: "success", runAt: "3d ago" },
-  ],
-  "5": [
-    { id: "r1", entityName: "Hooli — Premium", status: "success", runAt: "1d ago" },
-    { id: "r2", entityName: "Acme Corp — Growth", status: "success", runAt: "4d ago" },
-  ],
-  "6": [
-    { id: "r1", entityName: "Acme Corp — Q4 QBR", status: "success", runAt: "30m ago" },
-    { id: "r2", entityName: "Globex kickoff", status: "success", runAt: "2h ago" },
-    { id: "r3", entityName: "Initech discovery", status: "success", runAt: "4h ago" },
-  ],
-};
+function fmt(ts: string | null): string {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? ts : d.toLocaleString();
+}
 
-const CATEGORY_ICON: Record<string, React.FC<{ className?: string }>> = {
-  deal:     Briefcase,
-  contact:  Users,
-  activity: Activity,
-  ai:       Zap,
-};
-
-const CATEGORY_CLR: Record<string, string> = {
-  deal:     "bg-blue-100 text-blue-700",
-  contact:  "bg-purple-100 text-purple-700",
-  activity: "bg-green-100 text-green-700",
-  ai:       "bg-orange-100 text-orange-700",
-};
-
-export function WorkflowActivePanel({
+export function WorkflowRunsPanel({
   workflow, onClose,
 }: {
-  workflow: Workflow;
+  workflow: { id: string; name: string; trigger: string };
   onClose: () => void;
 }) {
-  const active  = ACTIVE_ENTITIES[workflow.id] ?? [];
-  const history = RUN_HISTORY[workflow.id] ?? [];
-  const CatIcon = CATEGORY_ICON[workflow.category] ?? Zap;
+  const t = useTranslations("automation");
+  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
 
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      setRuns(await getData<WorkflowRun[]>(`/api/v1/workflows/${workflow.id}/runs`));
+    } catch (e) {
+      setError(errorMessage(e, t("runsLoadFailed")));
+    } finally {
+      setLoading(false);
+    }
+  }, [workflow.id, t]);
+
+  useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-lg flex-col border-l bg-background shadow-2xl">
-        {/* Header */}
-        <div className="border-b px-6 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className={cn("mt-0.5 rounded-lg p-2 shrink-0", CATEGORY_CLR[workflow.category])}>
-                <CatIcon className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="font-semibold text-base leading-tight">{workflow.name}</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{workflow.description}</p>
-              </div>
-            </div>
-            <button onClick={onClose} className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <X className="h-5 w-5" />
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <aside className="relative z-10 flex h-full w-full max-w-lg flex-col border-l bg-card shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="truncate font-semibold">{workflow.name}</h2>
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+              <Zap className="h-3 w-3 text-primary" /> {workflow.trigger}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button onClick={load} disabled={loading} title={t("refresh")}
+              className="rounded p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-50">
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </button>
+            <button onClick={onClose} className="rounded p-1.5 text-muted-foreground hover:bg-muted" aria-label={t("close")}>
+              <X className="h-4 w-4" />
             </button>
           </div>
+        </div>
 
-          {/* Trigger */}
-          <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs">
-            <Zap className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
-            <div>
-              <span className="font-medium text-foreground">{workflow.trigger}</span>
-              <div className="mt-1.5 space-y-1 text-muted-foreground">
-                {workflow.actions.map((action, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <ArrowRight className="h-3 w-3 shrink-0" />
-                    {action}
-                  </div>
-                ))}
-              </div>
+        <div className="flex-1 overflow-y-auto p-5">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("recentRuns")}</h3>
+          {loading && (
+            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> {t("loading")}
             </div>
-          </div>
-
-          {/* Stats row */}
-          <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Play className="h-3 w-3" /> {workflow.runCount} total runs
-            </span>
-            {workflow.lastRun && (
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3" /> Last run {workflow.lastRun}
-              </span>
-            )}
-            <span className={cn(
-              "ml-auto flex items-center gap-1 rounded-full px-2 py-0.5 font-medium",
-              workflow.enabled ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"
-            )}>
-              {workflow.enabled ? "Active" : "Disabled"}
-            </span>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto divide-y">
-          {/* Currently active */}
-          <div className="px-6 py-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold">Currently Active On</h3>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                {active.length} {active.length === 1 ? "entity" : "entities"}
-              </span>
+          )}
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50/50 p-3 text-xs text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" /> {error}
             </div>
-
-            {active.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic py-4 text-center">
-                {workflow.enabled ? "No entities currently in-flight." : "Workflow is disabled — no active runs."}
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {active.map((entity) => (
-                  <ActiveEntityRow key={entity.id} entity={entity} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Run history */}
-          <div className="px-6 py-5">
-            <h3 className="text-sm font-semibold mb-3">Recent Run History</h3>
-            {history.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No runs recorded yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {history.map((run) => (
-                  <div key={run.id} className="flex items-center gap-3 rounded-lg bg-muted/30 px-3 py-2">
-                    {run.status === "success"
-                      ? <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
-                      : <XCircle className="h-4 w-4 shrink-0 text-red-400" />
-                    }
-                    <span className="flex-1 min-w-0 text-sm truncate">{run.entityName}</span>
-                    <span className="text-xs text-muted-foreground shrink-0">{run.runAt}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
+          {!loading && !error && runs.length === 0 && (
+            <p className="py-8 text-center text-sm text-muted-foreground">{t("noRuns")}</p>
+          )}
+          <ul className="space-y-2">
+            {runs.map((r) => {
+              const steps = Array.isArray(r.steps_log) ? r.steps_log : [];
+              const failedSteps = steps.filter((s) => !s.success).length;
+              return (
+                <li key={r.id} className="rounded-lg border">
+                  <button onClick={() => setOpen(open === r.id ? null : r.id)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/50">
+                    {r.status === "completed" ? <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                      : r.status === "failed" ? <XCircle className="h-4 w-4 shrink-0 text-red-600" />
+                      : <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_CLS[r.status] ?? "bg-muted")}>
+                      {t.has(`runStatus.${r.status}` as never) ? t(`runStatus.${r.status}` as never) : r.status}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      {r.trigger_event?.event_type ?? ""} · {fmt(r.started_at)}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {t("stepsCount", { count: steps.length, failed: failedSteps })}
+                    </span>
+                  </button>
+                  {open === r.id && (
+                    <div className="space-y-1 border-t bg-muted/20 px-3 py-2 text-xs">
+                      {r.error_message && <p className="text-red-700">{r.error_message}</p>}
+                      {r.trigger_event?.entity_id && (
+                        <p className="text-muted-foreground">
+                          {t("record")}: {r.trigger_event.entity_type} {r.trigger_event.entity_id}
+                        </p>
+                      )}
+                      {steps.length === 0 && <p className="text-muted-foreground">{t("noSteps")}</p>}
+                      {steps.map((s, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          {s.success
+                            ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />
+                            : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />}
+                          <span className="font-medium">{s.action}</span>
+                          <span className={cn("min-w-0 flex-1 break-words", s.success ? "text-muted-foreground" : "text-red-700")}>
+                            {s.result}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
-      </div>
-    </>
-  );
-}
-
-function ActiveEntityRow({ entity }: { entity: ActiveEntity }) {
-  if (entity.type === "deal") {
-    return (
-      <Link href="/pipeline"
-        className="group flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:border-primary/30 hover:bg-muted/30 transition-colors">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100">
-          <Briefcase className="h-3.5 w-3.5 text-blue-700" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{entity.name}</p>
-          <p className="text-xs text-muted-foreground">{entity.company} · {entity.stage} · {entity.value}</p>
-        </div>
-        <div className="text-right shrink-0">
-          <p className="text-xs text-muted-foreground">entered</p>
-          <p className="text-xs font-medium">{entity.enteredAt}</p>
-        </div>
-      </Link>
-    );
-  }
-
-  if (entity.type === "contact") {
-    return (
-      <Link href="/contacts"
-        className="group flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:border-primary/30 hover:bg-muted/30 transition-colors">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple-100">
-          <Users className="h-3.5 w-3.5 text-purple-700" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{entity.name}</p>
-          <p className="text-xs text-muted-foreground truncate">{entity.company} · {entity.email}</p>
-        </div>
-        <div className="text-right shrink-0">
-          <p className="text-xs text-muted-foreground">enrolled</p>
-          <p className="text-xs font-medium">{entity.enteredAt}</p>
-        </div>
-      </Link>
-    );
-  }
-
-  // activity
-  return (
-    <div className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-100">
-        <Activity className="h-3.5 w-3.5 text-green-700" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium capitalize">{entity.activityType}</p>
-        <p className="text-xs text-muted-foreground truncate">{entity.deal} · {entity.contact}</p>
-      </div>
-      <div className="text-right shrink-0">
-        <p className="text-xs text-muted-foreground">{entity.enteredAt}</p>
-      </div>
+      </aside>
     </div>
   );
 }

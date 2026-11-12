@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   FileText, Plus, Download, Search, Filter,
   CheckCircle2, Clock, Send, Eye, ThumbsDown,
   TrendingUp, DollarSign, X, Pencil, Trash2, AlertCircle,
+  ShieldCheck, RefreshCcw, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -15,6 +18,82 @@ import {
 } from "@/lib/quotes";
 import { QuoteBuilderModal } from "@/components/modals/quote-builder-modal";
 import { generateQuotePDF } from "@/lib/quote-pdf";
+import { downloadQuotePdf, errorMessage, readApiError, sendData } from "@/lib/l2q";
+
+/**
+ * Prefer the server-rendered PDF (template + branding live server-side); fall
+ * back to the in-browser renderer only if the endpoint isn't deployed (404).
+ */
+async function downloadPdf(q: Quote): Promise<void> {
+  try {
+    await downloadQuotePdf(q.id, q.quoteNumber || "quote");
+  } catch (e) {
+    if (e && typeof e === "object" && "status" in e && (e as { status: number }).status === 404) {
+      await generateQuotePDF(q);
+      return;
+    }
+    throw e;
+  }
+}
+
+function QuoteActions({ quote, onChanged, onError, compact }: {
+  quote: Quote;
+  onChanged: (patch: Partial<Quote>) => void;
+  onError: (msg: string) => void;
+  compact?: boolean;
+}) {
+  const t = useTranslations("quoteActions");
+  const [busy, setBusy] = useState<null | "pdf" | "submit" | "sync">(null);
+
+  const run = async (kind: "pdf" | "submit" | "sync") => {
+    setBusy(kind);
+    try {
+      if (kind === "pdf") {
+        await downloadPdf(quote);
+      } else if (kind === "submit") {
+        const comment = window.prompt(t("submitCommentPrompt")) ?? undefined;
+        await sendData("post", `/api/v1/quotes/${quote.id}/submit-for-approval`, comment ? { comment } : {});
+        onChanged({ status: "pending_approval" });
+      } else {
+        const data = await sendData<{ dealId: string; value: number }>("post", `/api/v1/quotes/${quote.id}/sync`, {});
+        onChanged({ syncedToDeal: true, dealId: data?.dealId ?? quote.dealId });
+      }
+    } catch (e) {
+      onError(errorMessage(e, t("failed")));
+    } finally { setBusy(null); }
+  };
+
+  const btn = compact
+    ? "rounded p-1 text-xs hover:bg-muted disabled:opacity-50"
+    : "flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50";
+
+  return (
+    <>
+      {quote.approvalRequired && quote.status === "draft" && (
+        <button onClick={() => run("submit")} disabled={busy !== null} title={t("submitForApproval")}
+          className={cn(btn, "text-yellow-700")}>
+          <ShieldCheck className="h-3.5 w-3.5" />{!compact && (busy === "submit" ? t("working") : t("submitForApproval"))}
+        </button>
+      )}
+      {quote.dealId && (
+        quote.syncedToDeal ? (
+          <span title={t("syncedHint")} className={cn(compact ? "p-1" : "flex items-center gap-1.5 px-2 text-sm", "text-green-700")}>
+            <Link2 className="h-3.5 w-3.5" />{!compact && t("synced")}
+          </span>
+        ) : (
+          <button onClick={() => run("sync")} disabled={busy !== null} title={t("syncToDealHint")} className={btn}>
+            <RefreshCcw className={cn("h-3.5 w-3.5", busy === "sync" && "animate-spin")} />{!compact && t("syncToDeal")}
+          </button>
+        )
+      )}
+      <button onClick={() => run("pdf")} disabled={busy !== null} title={t("downloadPdf")}
+        className={compact ? "rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          : "flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"}>
+        <Download className={cn("h-3.5 w-3.5", busy === "pdf" && "animate-pulse")} />{!compact && t("downloadPdf")}
+      </button>
+    </>
+  );
+}
 
 function useStatusFilterOptions() {
   const t = useTranslations("quotes");
@@ -36,11 +115,14 @@ function QuotePreviewModal({
   quote,
   onClose,
   onEdit,
+  onChanged,
 }: {
   quote: Quote;
   onClose: () => void;
   onEdit: () => void;
+  onChanged: (patch: Partial<Quote>) => void;
 }) {
+  const [actionError, setActionError] = useState<string | null>(null);
   const t = useTranslations("quotes");
   const tc = useTranslations("common");
   const totals = computeQuoteTotals(quote.items, quote.discountType, quote.discountValue, quote.taxRate);
@@ -149,18 +231,20 @@ function QuotePreviewModal({
                 <Pencil className="h-3.5 w-3.5" /> {tc("edit")}
               </button>
             )}
-            <button onClick={() => generateQuotePDF(quote)}
-              className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-              <Download className="h-3.5 w-3.5" /> {t("downloadPdf")}
-            </button>
+            <QuoteActions quote={quote} onChanged={onChanged} onError={setActionError} />
           </div>
         </div>
+        {actionError && (
+          <div className="mx-6 mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 shrink-0" />{actionError}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-export default function QuotesPage() {
+function QuotesPageInner() {
   const t = useTranslations("quotes");
   const tc = useTranslations("common");
   const STATUS_FILTER_OPTIONS = useStatusFilterOptions();
@@ -190,6 +274,19 @@ export default function QuotesPage() {
 
   useEffect(() => { fetchQuotes(); }, [fetchQuotes]);
 
+  // Deep link from the approvals inbox: /quotes?id=<quoteId> opens the preview.
+  const searchParams = useSearchParams();
+  const deepLinkId = searchParams.get("id");
+  const deepLinkStatus = searchParams.get("status");
+  useEffect(() => {
+    if (deepLinkStatus) setStatusFilter(deepLinkStatus);
+  }, [deepLinkStatus]);
+  useEffect(() => {
+    if (!deepLinkId || quotes.length === 0) return;
+    const q = quotes.find((x) => x.id === deepLinkId);
+    if (q) setViewQuote(q);
+  }, [deepLinkId, quotes]);
+
   const handleSaved = (q: Quote) => {
     setQuotes((prev) => {
       const idx = prev.findIndex((x) => x.id === q.id);
@@ -202,27 +299,16 @@ export default function QuotesPage() {
   const handleSend = async (id: string) => {
     try {
       const res = await api.post(`/api/v1/quotes/${id}/send`, {});
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? "Failed to send quote");
-      }
+      if (!res.ok) throw new Error((await readApiError(res, "Failed to send quote")).message);
       setQuotes((prev) => prev.map((q) => q.id === id ? { ...q, status: "sent" as QuoteStatus, sentAt: new Date().toISOString() } : q));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send quote");
     }
   };
 
-  const handleApprove = async (id: string) => {
-    try {
-      const res = await api.post(`/api/v1/quotes/${id}/approve`, {});
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? "Failed to approve quote");
-      }
-      setQuotes((prev) => prev.map((q) => q.id === id ? { ...q, status: "draft" as QuoteStatus, approvalRequired: false } : q));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to approve quote");
-    }
+  const patchQuote = (id: string, patch: Partial<Quote>) => {
+    setQuotes((prev) => prev.map((q) => q.id === id ? { ...q, ...patch } : q));
+    setViewQuote((v) => v && v.id === id ? { ...v, ...patch } : v);
   };
 
   const handleDelete = async (id: string) => {
@@ -281,6 +367,7 @@ export default function QuotesPage() {
           quote={viewQuote}
           onClose={() => setViewQuote(null)}
           onEdit={() => { setEditQuote(viewQuote); setViewQuote(null); }}
+          onChanged={(patch) => patchQuote(viewQuote.id, patch)}
         />
       )}
 
@@ -427,15 +514,12 @@ export default function QuotesPage() {
                         </button>
                       )}
                       {q.status === "pending_approval" && (
-                        <button onClick={() => handleApprove(q.id)} title={t("approve")}
+                        <Link href="/approvals" title={t("approve")}
                           className="rounded p-1 text-yellow-700 hover:bg-yellow-50 text-xs">
                           {t("approve")}
-                        </button>
+                        </Link>
                       )}
-                      <button onClick={() => generateQuotePDF(q)} title={t("downloadPdf")}
-                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-                        <Download className="h-3.5 w-3.5" />
-                      </button>
+                      <QuoteActions quote={q} compact onChanged={(patch) => patchQuote(q.id, patch)} onError={setError} />
                       {["draft","pending_approval"].includes(q.status) && (
                         <button onClick={() => handleDelete(q.id)} title={tc("delete")}
                           className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600">
@@ -451,5 +535,13 @@ export default function QuotesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function QuotesPage() {
+  return (
+    <Suspense fallback={null}>
+      <QuotesPageInner />
+    </Suspense>
   );
 }
